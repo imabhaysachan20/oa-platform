@@ -89,7 +89,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       </div>
 
       {/* Editor Body */}
-      <div className="flex-1 overflow-auto text-sm font-mono">
+      <div className="flex-1 overflow-hidden text-sm font-mono relative">
         <CodeMirror
           value={value}
           height="100%"
@@ -109,7 +109,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             highlightActiveLine: true,
             highlightSelectionMatches: true,
           }}
-          className="h-full text-[13px]"
+          className="h-full text-[13px] [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto"
         />
       </div>
     </div>

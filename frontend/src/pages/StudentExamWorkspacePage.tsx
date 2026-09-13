@@ -20,6 +20,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
   const [isFinishModalOpen, setIsFinishModalOpen] = useState(false);
   const [isSubmittingExam, setIsSubmittingExam] = useState(false);
   const [submissionFeedback, setSubmissionFeedback] = useState<string | null>(null);
+  const [isConsoleExpanded, setIsConsoleExpanded] = useState(false);
 
   const {
     questions,
@@ -214,9 +215,9 @@ export const StudentExamWorkspacePage: React.FC = () => {
         </div>
 
         {/* Right Column: Code Editor & Console (7 cols on large) */}
-        <div className="lg:col-span-7 h-full flex flex-col gap-3 overflow-hidden">
-          {/* Editor Container */}
-          <div className="flex-1 min-h-[350px] overflow-hidden">
+        <div className="lg:col-span-7 h-full flex flex-col gap-3 overflow-hidden min-h-0">
+          {/* Editor Container (Independent Scrollbar 1) */}
+          <div className={`transition-all duration-200 min-h-0 overflow-hidden ${isConsoleExpanded ? 'flex-1' : 'flex-[3]'}`}>
             <CodeEditor
               value={currentCode}
               onChange={(val) => setCodeDraft(currentQ.id, currentLang, val)}
@@ -226,7 +227,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
           </div>
 
           {/* Action Buttons Bar */}
-          <div className="flex items-center justify-between bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl">
+          <div className="flex items-center justify-between bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl shrink-0">
             <div className="flex items-center gap-2 text-xs text-slate-400">
               <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
               <span>Judge0 Sandbox Ready</span>
@@ -259,9 +260,16 @@ export const StudentExamWorkspacePage: React.FC = () => {
             </div>
           </div>
 
-          {/* Output & Test Cases Console */}
-          <div className="h-60 overflow-hidden">
-            <OutputConsole output={currentOutput} isRunning={isRunningCode} />
+          {/* Output & Test Cases Console (Independent Scrollbar 2) */}
+          <div className={`transition-all duration-200 min-h-0 overflow-hidden ${isConsoleExpanded ? 'flex-[3]' : 'flex-[2]'}`}>
+            <OutputConsole
+              output={currentOutput}
+              isRunning={isRunningCode}
+              sampleInput={currentQ?.sample_input}
+              sampleOutput={currentQ?.sample_output}
+              isExpanded={isConsoleExpanded}
+              onToggleExpand={() => setIsConsoleExpanded(!isConsoleExpanded)}
+            />
           </div>
         </div>
       </div>

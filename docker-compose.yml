@@ -89,7 +89,12 @@ services:
     volumes:
       - ./judge0.conf:/judge0.conf:ro
     depends_on:
-      - judge0-server
+      judge0-server:
+        condition: service_started
+      judge0-redis:
+        condition: service_healthy
+      judge0-db:
+        condition: service_healthy
 
   # ==========================================
   # FASTAPI BACKEND
@@ -140,8 +145,10 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     command: celery -A backend.app.tasks.celery_app.celery_app worker --loglevel=info
     depends_on:
-      - backend
-      - redis
+      backend:
+        condition: service_started
+      redis:
+        condition: service_healthy
 
   celery-beat:
     build:
@@ -157,8 +164,10 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     command: celery -A backend.app.tasks.celery_app.celery_app beat --loglevel=info
     depends_on:
-      - backend
-      - redis
+      backend:
+        condition: service_started
+      redis:
+        condition: service_healthy
 
   # ==========================================
   # NGINX REVERSE PROXY & STATIC FRONTEND

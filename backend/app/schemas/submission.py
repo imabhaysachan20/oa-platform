@@ -1,0 +1,64 @@
+from datetime import datetime
+from typing import Optional, List
+from pydantic import BaseModel
+
+
+class RunCodeRequest(BaseModel):
+    question_id: int
+    code: str
+    language: str  # "python", "cpp", "java"
+
+
+class TestCaseRunResult(BaseModel):
+    test_case_id: int
+    input: str
+    expected_output: str
+    actual_output: Optional[str] = None
+    stderr: Optional[str] = None
+    compile_output: Optional[str] = None
+    passed: bool
+    status: str
+    time_ms: Optional[float] = None
+
+
+class RunCodeResponse(BaseModel):
+    question_id: int
+    all_passed: bool
+    passed_count: int
+    total_count: int
+    results: List[TestCaseRunResult]
+    compile_error: Optional[str] = None
+
+
+class SubmitCodeRequest(BaseModel):
+    exam_id: int
+    question_id: int
+    code: str
+    language: str
+
+
+class SubmitCodeResponse(BaseModel):
+    submission_id: int
+    assignment_id: int
+    question_id: int
+    status: str
+    test_cases_passed: int
+    total_test_cases: int
+    exec_time_ms: Optional[float] = None
+    is_final: bool
+    submitted_at: datetime
+
+
+class SubmissionHistoryItem(BaseModel):
+    id: int
+    question_id: int
+    language: str
+    status: str
+    test_cases_passed: int
+    total_test_cases: int
+    exec_time_ms: Optional[float] = None
+    is_final: bool
+    submitted_at: datetime
+
+    class Config:
+        from_attributes = True

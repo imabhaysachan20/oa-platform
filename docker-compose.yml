@@ -1,0 +1,181 @@
+services:
+  # ==========================================
+  # APPLICATION DATABASE & CACHE
+  # ==========================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: ubicode-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: ubicode
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ubicode"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: ubicode-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ==========================================
+  # JUDGE0 CE (Self-Hosted Sandbox)
+  # ==========================================
+  judge0-db:
+    image: postgres:13-alpine
+    container_name: ubicode-judge0-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0password
+      POSTGRES_DB: judge0
+    volumes:
+      - judge0_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U judge0 -d judge0"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  judge0-redis:
+    image: redis:7-alpine
+    container_name: ubicode-judge0-redis
+    restart: unless-stopped
+    volumes:
+      - judge0_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  judge0-server:
+    image: judge0/judge0:1.13.1
+    container_name: ubicode-judge0-server
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+    ports:
+      - "2358:2358"
+    depends_on:
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+
+  judge0-workers:
+    image: judge0/judge0:1.13.1
+    container_name: ubicode-judge0-workers
+    restart: unless-stopped
+    privileged: true
+    command: ["./scripts/workers"]
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+    depends_on:
+      - judge0-server
+
+  # ==========================================
+  # FASTAPI BACKEND
+  # ==========================================
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: ubicode-backend
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@postgres:5432/ubicode
+      - DATABASE_SYNC_URL=postgresql://postgres:postgrespassword@postgres:5432/ubicode
+      - REDIS_URL=redis://redis:6379/0
+      - JUDGE0_URL=http://judge0-server:2358
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - SECRET_KEY=ubicode-production-master-secret-key-2024
+      - RUN_RATE_LIMIT=10/minute
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "alembic -c backend/alembic.ini upgrade head &&
+             python backend/seed.py &&
+             uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      judge0-server:
+        condition: service_started
+
+  # ==========================================
+  # CELERY WORKER & BEAT (Auto-Submit Scheduler)
+  # ==========================================
+  celery-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: ubicode-celery-worker
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@postgres:5432/ubicode
+      - REDIS_URL=redis://redis:6379/0
+      - JUDGE0_URL=http://judge0-server:2358
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    command: celery -A backend.app.tasks.celery_app.celery_app worker --loglevel=info
+    depends_on:
+      - backend
+      - redis
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: ubicode-celery-beat
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@postgres:5432/ubicode
+      - REDIS_URL=redis://redis:6379/0
+      - JUDGE0_URL=http://judge0-server:2358
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    command: celery -A backend.app.tasks.celery_app.celery_app beat --loglevel=info
+    depends_on:
+      - backend
+      - redis
+
+  # ==========================================
+  # NGINX REVERSE PROXY & STATIC FRONTEND
+  # ==========================================
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: ubicode-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+  judge0_db_data:
+  judge0_redis_data:

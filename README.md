@@ -263,7 +263,7 @@ erDiagram
 
     EXAM_RESULTS {
         uuid id PK
-        uuid assignment_id FK UK
+        uuid assignment_id FK "one result per assignment"
         float total_score
         int rank
     }

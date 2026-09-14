@@ -47,7 +47,7 @@ const AppContent: React.FC = () => {
   const isLogin = location.pathname === '/login';
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col font-sans transition-colors duration-150">
       {!isWorkspace && !isLogin && <Navbar />}
       <main className="flex-1">
         <Routes>

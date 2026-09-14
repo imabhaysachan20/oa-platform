@@ -4,13 +4,14 @@ import { useQuery } from '@tanstack/react-query';
 import { examsApi } from '../api/exams';
 import { submissionsApi } from '../api/submissions';
 import { useExamStore, STARTER_CODE } from '../store/examStore';
+import { useThemeStore } from '../store/themeStore';
 import { QuestionPanel } from '../components/QuestionPanel';
 import { CodeEditor } from '../components/CodeEditor';
 import { OutputConsole } from '../components/OutputConsole';
 import { Timer } from '../components/ui/Timer';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { Play, Send, CheckCircle, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { Play, Send, CheckCircle, AlertTriangle, ArrowLeft, Sun, Moon } from 'lucide-react';
 
 export const StudentExamWorkspacePage: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
@@ -21,6 +22,8 @@ export const StudentExamWorkspacePage: React.FC = () => {
   const [isSubmittingExam, setIsSubmittingExam] = useState(false);
   const [submissionFeedback, setSubmissionFeedback] = useState<string | null>(null);
   const [isConsoleExpanded, setIsConsoleExpanded] = useState(false);
+
+  const { theme, toggleTheme } = useThemeStore();
 
   const {
     questions,
@@ -135,48 +138,70 @@ export const StudentExamWorkspacePage: React.FC = () => {
 
   if (isLoading || !currentQ) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
         <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500"></div>
-          <p className="text-sm text-slate-400 font-mono">Loading assigned workspace...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-ubi-800 dark:border-ubi-400"></div>
+          <p className="text-sm text-slate-500 dark:text-slate-400 font-mono">Loading assigned workspace...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col bg-slate-950 text-slate-100 overflow-hidden">
+    <div className="h-screen flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden transition-colors duration-150">
       {/* Workspace Top Navigation Bar */}
-      <div className="h-14 bg-slate-900 border-b border-slate-800 px-4 sm:px-6 flex items-center justify-between">
+      <div className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between shadow-sm shrink-0">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate('/')}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800 transition border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
             title="Leave workspace (progress is saved)"
           >
             <ArrowLeft size={18} />
           </button>
-          <div>
-            <h1 className="text-sm font-bold text-white truncate max-w-xs sm:max-w-md">
+
+          {/* UsefulBI Logo Pill */}
+          <div className="bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs hidden sm:flex items-center">
+            <img
+              src="/UsefulBI_Logo_Main.webp"
+              alt="UsefulBI"
+              className="h-5 w-auto object-contain"
+            />
+          </div>
+
+          <div className="border-l border-slate-200 dark:border-slate-800 pl-3">
+            <h1 className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-xs sm:max-w-md">
               {examTitle || 'Coding Assessment'}
             </h1>
-            <span className="text-[11px] text-slate-400">
-              3 Questions Locked • Autosafe Enabled
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+              3 Questions Locked • Autosave Active
             </span>
           </div>
         </div>
 
-        {/* Server-Driven Countdown Timer & Finish Button */}
-        <div className="flex items-center gap-3">
+        {/* Server-Driven Countdown Timer, Theme Toggle & Finish Button */}
+        <div className="flex items-center gap-2.5 sm:gap-3">
           {deadlineAt && (
             <Timer deadlineAt={deadlineAt} onExpire={handleTimeoutExpire} />
           )}
+
+          <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800 transition border border-slate-200 dark:border-slate-800"
+          >
+            {theme === 'dark' ? (
+              <Sun size={16} className="text-amber-400" />
+            ) : (
+              <Moon size={16} className="text-ubi-800" />
+            )}
+          </button>
 
           <Button
             variant="success"
             size="sm"
             onClick={() => setIsFinishModalOpen(true)}
-            className="gap-1.5"
+            className="gap-1.5 font-semibold"
           >
             <CheckCircle size={15} />
             <span>Finish Exam</span>
@@ -186,14 +211,14 @@ export const StudentExamWorkspacePage: React.FC = () => {
 
       {/* Submission Feedback Toast / Bar */}
       {submissionFeedback && (
-        <div className="bg-indigo-950/80 border-b border-indigo-800/60 px-4 py-2 flex items-center justify-between text-xs text-indigo-200 animate-fadeIn">
-          <span className="flex items-center gap-2 font-medium">
-            <CheckCircle size={14} className="text-emerald-400" />
+        <div className="bg-ubi-50 border-b border-ubi-200 text-ubi-900 dark:bg-ubi-950/80 dark:border-ubi-800/60 dark:text-ubi-200 px-4 py-2 flex items-center justify-between text-xs font-semibold animate-fadeIn shrink-0">
+          <span className="flex items-center gap-2">
+            <CheckCircle size={14} className="text-emerald-600 dark:text-emerald-400" />
             {submissionFeedback}
           </span>
           <button
             onClick={() => setSubmissionFeedback(null)}
-            className="text-indigo-400 hover:text-indigo-200 font-bold"
+            className="text-ubi-700 dark:text-ubi-400 hover:text-ubi-900 dark:hover:text-ubi-200 font-bold px-1"
           >
             ✕
           </button>
@@ -201,7 +226,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
       )}
 
       {/* Main 2-Column Workspace Grid */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 overflow-hidden">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 overflow-hidden min-h-0">
         {/* Left Column: Question Panel (5 cols on large) */}
         <div className="lg:col-span-5 h-full overflow-hidden">
           <QuestionPanel
@@ -215,8 +240,8 @@ export const StudentExamWorkspacePage: React.FC = () => {
         </div>
 
         {/* Right Column: Code Editor & Console (7 cols on large) */}
-        <div className="lg:col-span-7 h-full flex flex-col gap-3 overflow-hidden min-h-0">
-          {/* Editor Container (Independent Scrollbar 1) */}
+        <div className="lg:col-span-7 h-full flex flex-col gap-2.5 overflow-hidden min-h-0">
+          {/* Editor Container */}
           <div className={`transition-all duration-200 min-h-0 overflow-hidden ${isConsoleExpanded ? 'flex-1' : 'flex-[3]'}`}>
             <CodeEditor
               value={currentCode}
@@ -227,8 +252,8 @@ export const StudentExamWorkspacePage: React.FC = () => {
           </div>
 
           {/* Action Buttons Bar */}
-          <div className="flex items-center justify-between bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl shrink-0">
-            <div className="flex items-center gap-2 text-xs text-slate-400">
+          <div className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-2 rounded-xl shrink-0 shadow-sm">
+            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
               <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
               <span>Judge0 Sandbox Ready</span>
             </div>
@@ -240,9 +265,9 @@ export const StudentExamWorkspacePage: React.FC = () => {
                 onClick={handleRunCode}
                 isLoading={isRunningCode}
                 disabled={isSubmittingCode}
-                className="gap-1.5"
+                className="gap-1.5 font-semibold"
               >
-                <Play size={14} className="text-indigo-400" />
+                <Play size={14} className="text-ubi-800 dark:text-ubi-400" />
                 <span>Run Code</span>
               </Button>
 
@@ -252,7 +277,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
                 onClick={handleSubmitCode}
                 isLoading={isSubmittingCode}
                 disabled={isRunningCode}
-                className="gap-1.5"
+                className="gap-1.5 font-semibold"
               >
                 <Send size={14} />
                 <span>Submit Solution</span>
@@ -260,7 +285,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
             </div>
           </div>
 
-          {/* Output & Test Cases Console (Independent Scrollbar 2) */}
+          {/* Output & Test Cases Console */}
           <div className={`transition-all duration-200 min-h-0 overflow-hidden ${isConsoleExpanded ? 'flex-[3]' : 'flex-[2]'}`}>
             <OutputConsole
               output={currentOutput}
@@ -280,22 +305,24 @@ export const StudentExamWorkspacePage: React.FC = () => {
         onClose={() => setIsFinishModalOpen(false)}
         title="Submit and Finish Assessment?"
       >
-        <div className="space-y-4 text-sm text-slate-300">
-          <div className="flex items-start gap-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-300 text-xs">
+        <div className="space-y-4 text-sm text-slate-700 dark:text-slate-300">
+          <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-300 rounded-xl text-xs">
             <AlertTriangle size={18} className="shrink-0 mt-0.5" />
             <span>
-              Are you sure you want to finish the exam? Once submitted, your scores will be permanently calculated and you cannot make further submissions.
+              Are you sure you want to finish the exam? Once submitted, your scores will be finalized and you cannot submit further code.
             </span>
           </div>
 
-          <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 space-y-2 text-xs">
-            <p className="font-semibold text-slate-200">Question Submission Status:</p>
+          <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 space-y-2 text-xs">
+            <p className="font-bold text-slate-900 dark:text-slate-200 uppercase tracking-wider text-[11px]">
+              Question Submission Status:
+            </p>
             {questions.map((q, idx) => (
-              <div key={q.id} className="flex items-center justify-between">
-                <span>
+              <div key={q.id} className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-slate-800/60 last:border-0">
+                <span className="font-medium text-slate-700 dark:text-slate-300">
                   Question {idx + 1} ({q.difficulty}):
                 </span>
-                <span className={q.status && q.status !== 'unattempted' ? 'text-emerald-400 font-semibold' : 'text-slate-500'}>
+                <span className={q.status && q.status !== 'unattempted' ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-slate-400 font-medium'}>
                   {q.status && q.status !== 'unattempted' ? q.status : 'Not Submitted'}
                 </span>
               </div>
@@ -316,7 +343,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
               size="sm"
               onClick={handleFinishExam}
               isLoading={isSubmittingExam}
-              className="gap-1.5"
+              className="gap-1.5 font-semibold"
             >
               <CheckCircle size={15} />
               <span>Confirm & Submit Exam</span>

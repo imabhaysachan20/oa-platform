@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../api/admin';
-import { Exam, Question } from '../types';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
@@ -92,16 +91,18 @@ export const AdminExamsPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6 animate-fadeIn">
       {/* Top Action Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-white">Assessment Management</h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Create exams, manage question pools, and inspect live candidates.
+          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">
+            Assessment Management
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Create assessments, configure question pools, and launch live monitoring.
           </p>
         </div>
-        <Button onClick={() => setIsCreateModalOpen(true)} className="gap-2 self-start">
+        <Button onClick={() => setIsCreateModalOpen(true)} className="gap-2 self-start font-semibold">
           <Plus size={16} />
           <span>Create New Assessment</span>
         </Button>
@@ -110,21 +111,21 @@ export const AdminExamsPage: React.FC = () => {
       {/* Exam List */}
       {isLoading ? (
         <div className="py-16 flex justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-ubi-800 dark:border-ubi-400"></div>
         </div>
       ) : exams && exams.length > 0 ? (
         <div className="grid grid-cols-1 gap-4">
           {exams.map((exam) => (
-            <Card key={exam.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <Card key={exam.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-ubi-300 dark:hover:border-ubi-700">
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2.5">
-                  <h3 className="text-base font-bold text-white">{exam.title}</h3>
-                  <span className="text-xs px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-md font-mono">
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">{exam.title}</h3>
+                  <span className="text-xs px-2.5 py-0.5 bg-ubi-50 border border-ubi-200 text-ubi-800 dark:bg-ubi-950 dark:border-ubi-800 dark:text-ubi-300 rounded-md font-mono font-semibold">
                     Pool: {exam.pool_count || 0} Questions
                   </span>
                 </div>
-                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
-                  <span className="flex items-center gap-1">
+                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+                  <span className="flex items-center gap-1 font-medium">
                     <Clock size={13} /> {exam.duration_minutes} min
                   </span>
                   <span>•</span>
@@ -137,9 +138,9 @@ export const AdminExamsPage: React.FC = () => {
                   variant="outline"
                   size="sm"
                   onClick={() => navigate(`/admin/exams/${exam.id}/monitoring`)}
-                  className="gap-1.5"
+                  className="gap-1.5 font-semibold"
                 >
-                  <Activity size={14} className="text-indigo-400" />
+                  <Activity size={14} className="text-ubi-800 dark:text-ubi-400" />
                   <span>Live Monitoring</span>
                 </Button>
                 <Button
@@ -150,7 +151,7 @@ export const AdminExamsPage: React.FC = () => {
                       deleteExamMutation.mutate(exam.id);
                     }
                   }}
-                  className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                  className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:text-rose-300 dark:hover:bg-rose-500/10"
                 >
                   <Trash2 size={14} />
                 </Button>
@@ -159,9 +160,9 @@ export const AdminExamsPage: React.FC = () => {
           ))}
         </div>
       ) : (
-        <div className="text-center py-16 border border-dashed border-slate-800 rounded-xl text-slate-400">
-          No assessments found. Click "Create New Assessment" to build one.
-        </div>
+        <Card className="text-center py-16 text-slate-500 dark:text-slate-400">
+          No assessments created yet. Click "Create New Assessment" to build one.
+        </Card>
       )}
 
       {/* Create Exam Modal */}
@@ -173,7 +174,7 @@ export const AdminExamsPage: React.FC = () => {
       >
         <form onSubmit={handleCreateExamSubmit} className="space-y-4 text-xs">
           <div>
-            <label className="block font-semibold text-slate-300 uppercase tracking-wider mb-1">
+            <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
               Assessment Title
             </label>
             <input
@@ -181,14 +182,14 @@ export const AdminExamsPage: React.FC = () => {
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. UsefulBI Senior Software Engineer Test"
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              placeholder="e.g. UsefulBI Senior Software Engineer Assessment"
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
             />
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
-              <label className="block font-semibold text-slate-300 uppercase tracking-wider mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                 Duration (min)
               </label>
               <input
@@ -197,11 +198,11 @@ export const AdminExamsPage: React.FC = () => {
                 required
                 value={durationMinutes}
                 onChange={(e) => setDurationMinutes(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
               />
             </div>
             <div>
-              <label className="block font-semibold text-slate-300 uppercase tracking-wider mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                 Easy Weight
               </label>
               <input
@@ -209,11 +210,11 @@ export const AdminExamsPage: React.FC = () => {
                 step="any"
                 value={easyWeight}
                 onChange={(e) => setEasyWeight(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
               />
             </div>
             <div>
-              <label className="block font-semibold text-slate-300 uppercase tracking-wider mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                 Medium Weight
               </label>
               <input
@@ -221,11 +222,11 @@ export const AdminExamsPage: React.FC = () => {
                 step="any"
                 value={mediumWeight}
                 onChange={(e) => setMediumWeight(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
               />
             </div>
             <div>
-              <label className="block font-semibold text-slate-300 uppercase tracking-wider mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                 Hard Weight
               </label>
               <input
@@ -233,7 +234,7 @@ export const AdminExamsPage: React.FC = () => {
                 step="any"
                 value={hardWeight}
                 onChange={(e) => setHardWeight(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
               />
             </div>
           </div>
@@ -241,19 +242,19 @@ export const AdminExamsPage: React.FC = () => {
           {/* Question Pool Selector */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="font-semibold text-slate-300 uppercase tracking-wider">
+              <label className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                 Select Questions for Pool ({selectedQuestionIds.length} selected)
               </label>
               <button
                 type="button"
                 onClick={handleSelectAllQuestions}
-                className="text-indigo-400 hover:text-indigo-300 text-xs font-semibold"
+                className="text-ubi-800 dark:text-ubi-400 hover:underline text-xs font-bold"
               >
                 Toggle All
               </button>
             </div>
 
-            <div className="max-h-48 overflow-y-auto bg-slate-950 border border-slate-800 rounded-lg p-2 space-y-1">
+            <div className="max-h-48 overflow-y-auto bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg p-2 space-y-1">
               {questions && questions.length > 0 ? (
                 questions.map((q) => {
                   const isChecked = selectedQuestionIds.includes(q.id);
@@ -261,17 +262,17 @@ export const AdminExamsPage: React.FC = () => {
                     <div
                       key={q.id}
                       onClick={() => handleToggleQuestion(q.id)}
-                      className="flex items-center justify-between p-2 rounded hover:bg-slate-900 cursor-pointer transition text-xs"
+                      className="flex items-center justify-between p-2 rounded hover:bg-slate-200/60 dark:hover:bg-slate-900 cursor-pointer transition text-xs"
                     >
                       <div className="flex items-center gap-2">
                         {isChecked ? (
-                          <CheckSquare size={16} className="text-indigo-500" />
+                          <CheckSquare size={16} className="text-ubi-800 dark:text-ubi-400" />
                         ) : (
-                          <Square size={16} className="text-slate-600" />
+                          <Square size={16} className="text-slate-400 dark:text-slate-600" />
                         )}
-                        <span className="text-slate-200 font-medium">{q.title}</span>
+                        <span className="text-slate-900 dark:text-slate-200 font-semibold">{q.title}</span>
                       </div>
-                      <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-400">
+                      <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400">
                         {q.difficulty}
                       </span>
                     </div>
@@ -283,12 +284,12 @@ export const AdminExamsPage: React.FC = () => {
                 </div>
               )}
             </div>
-            <p className="text-[11px] text-slate-400 mt-1">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
               At exam start, 1 Easy + 2 Medium questions will be randomly sampled from this pool per student.
             </p>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
             <Button
               type="button"
               variant="outline"
@@ -301,6 +302,7 @@ export const AdminExamsPage: React.FC = () => {
               type="submit"
               size="sm"
               isLoading={createExamMutation.isPending}
+              className="font-semibold"
             >
               Save Assessment
             </Button>

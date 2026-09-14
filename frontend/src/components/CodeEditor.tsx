@@ -6,6 +6,7 @@ import { java } from '@codemirror/lang-java';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { RotateCcw } from 'lucide-react';
 import { STARTER_CODE } from '../store/examStore';
+import { useThemeStore } from '../store/themeStore';
 
 interface CodeEditorProps {
   value: string;
@@ -24,6 +25,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   onReset,
   readOnly = false,
 }) => {
+  const { theme } = useThemeStore();
+
   const extensions = useMemo(() => {
     switch (language.toLowerCase()) {
       case 'python':
@@ -51,11 +54,11 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
+    <div className="flex flex-col h-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm dark:shadow-xl">
       {/* Editor Top Bar */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-950/80 border-b border-slate-800 text-sm">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-slate-950/90 border-b border-slate-200 dark:border-slate-800 text-sm">
         <div className="flex items-center gap-3">
-          <label htmlFor="language-select" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+          <label htmlFor="language-select" className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
             Language:
           </label>
           <select
@@ -63,7 +66,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             value={language}
             onChange={(e) => onLanguageChange(e.target.value)}
             disabled={readOnly}
-            className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+            className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-ubi-800 font-semibold shadow-sm"
           >
             <option value="python">Python 3 (Judge0)</option>
             <option value="cpp">C++ (GCC 9.2)</option>
@@ -71,45 +74,59 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           </select>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {!readOnly && (
             <button
               onClick={handleResetToDefault}
               title="Reset Code Template"
-              className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800 px-2 py-1 rounded transition"
+              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 px-2.5 py-1 rounded-md transition font-medium"
             >
               <RotateCcw size={13} />
               <span>Reset</span>
             </button>
           )}
-          <span className="text-[11px] text-slate-400 font-mono">
+          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
             {value.split('\n').length} lines
           </span>
         </div>
       </div>
 
       {/* Editor Body */}
-      <div className="flex-1 overflow-hidden text-sm font-mono relative">
+      <div className="flex-1 overflow-hidden text-sm font-mono relative bg-slate-50/50 dark:bg-transparent">
         <CodeMirror
           value={value}
           height="100%"
-          theme={oneDark}
+          theme={theme === 'dark' ? oneDark : 'light'}
           extensions={extensions}
           onChange={(val) => onChange(val)}
           readOnly={readOnly}
           basicSetup={{
             lineNumbers: true,
+            highlightActiveLineGutter: true,
+            highlightSpecialChars: true,
+            history: true,
             foldGutter: true,
+            drawSelection: true,
             dropCursor: true,
             allowMultipleSelections: true,
             indentOnInput: true,
+            syntaxHighlighting: true,
             bracketMatching: true,
             closeBrackets: true,
             autocompletion: true,
+            rectangularSelection: true,
+            crosshairCursor: true,
             highlightActiveLine: true,
             highlightSelectionMatches: true,
+            closeBracketsKeymap: true,
+            defaultKeymap: true,
+            searchKeymap: true,
+            historyKeymap: true,
+            foldKeymap: true,
+            completionKeymap: true,
+            lintKeymap: true,
           }}
-          className="h-full text-[13px] [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto"
+          className="h-full text-sm font-mono"
         />
       </div>
     </div>

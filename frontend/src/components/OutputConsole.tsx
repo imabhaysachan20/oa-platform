@@ -2,10 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   CheckCircle2, 
   XCircle, 
-  AlertTriangle, 
   Terminal, 
-  Cpu, 
-  SquareCode, 
   CheckSquare, 
   Copy, 
   Check, 
@@ -54,39 +51,39 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
   const selectedResult = output?.results[activeCaseTab];
 
   return (
-    <div className="h-full bg-slate-900 border border-slate-800 rounded-xl flex flex-col overflow-hidden shadow-2xl transition-all duration-200">
+    <div className="h-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl flex flex-col overflow-hidden shadow-sm dark:shadow-xl transition-all duration-200">
       {/* Console Header Bar */}
-      <div className="flex items-center justify-between px-3 py-2 bg-slate-950 border-b border-slate-800 text-xs select-none">
+      <div className="flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-xs select-none">
         {/* Left Tabs: Testcase & Test Result */}
         <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => setMainTab('testcase')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
               mainTab === 'testcase'
-                ? 'bg-slate-800 text-slate-100 shadow-sm border border-slate-700/60'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm border border-slate-200 dark:border-slate-700/60'
+                : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/60'
             }`}
           >
-            <CheckSquare size={14} className={mainTab === 'testcase' ? 'text-emerald-400' : 'text-slate-400'} />
+            <CheckSquare size={14} className={mainTab === 'testcase' ? 'text-ubi-800 dark:text-emerald-400' : 'text-slate-400'} />
             <span>Testcase</span>
           </button>
 
           <button
             type="button"
             onClick={() => setMainTab('testresult')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
               mainTab === 'testresult'
-                ? 'bg-slate-800 text-slate-100 shadow-sm border border-slate-700/60'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm border border-slate-200 dark:border-slate-700/60'
+                : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/60'
             }`}
           >
-            <Terminal size={14} className={mainTab === 'testresult' ? 'text-emerald-400' : 'text-slate-400'} />
+            <Terminal size={14} className={mainTab === 'testresult' ? 'text-ubi-800 dark:text-emerald-400' : 'text-slate-400'} />
             <span>Test Result</span>
             {output && (
               <span
                 className={`w-2 h-2 rounded-full ${
-                  output.all_passed ? 'bg-emerald-400 shadow-sm shadow-emerald-500/50' : 'bg-rose-400'
+                  output.all_passed ? 'bg-emerald-500' : 'bg-rose-500'
                 }`}
               />
             )}
@@ -98,7 +95,7 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
           <button
             type="button"
             onClick={onToggleExpand}
-            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-md transition"
+            className="p-1.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 rounded-md transition"
             title={isExpanded ? 'Collapse Console' : 'Expand Console'}
           >
             {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -110,9 +107,9 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
       <div className="flex-1 overflow-auto p-4 text-xs font-mono">
         {/* RUNNING / LOADING STATE */}
         {isRunning ? (
-          <div className="h-full flex flex-col items-center justify-center gap-3 py-8 text-slate-400">
-            <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-emerald-400"></div>
-            <p className="text-xs font-medium text-slate-300">Running solution against Judge0 sandbox...</p>
+          <div className="h-full flex flex-col items-center justify-center gap-3 py-8 text-slate-500 dark:text-slate-400">
+            <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-ubi-800 dark:border-emerald-400"></div>
+            <p className="text-xs font-medium text-slate-700 dark:text-slate-300">Running solution against Judge0 sandbox...</p>
           </div>
         ) : mainTab === 'testcase' ? (
           /* TESTCASE TAB CONTENT */
@@ -121,29 +118,29 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveSampleTab(0)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
                   activeSampleTab === 0
-                    ? 'bg-slate-800 text-white shadow-sm border border-slate-700'
-                    : 'bg-slate-950/60 text-slate-400 hover:text-slate-200 border border-slate-800'
+                    ? 'bg-ubi-800 text-white shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700'
                 }`}
               >
-                <CheckSquare size={13} className="text-emerald-400" />
+                <CheckSquare size={13} className="text-white" />
                 <span>Case 1</span>
               </button>
             </div>
 
             <div className="space-y-1.5">
-              <div className="text-[11px] font-semibold text-slate-400 tracking-wider uppercase">Input</div>
-              <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-3 text-slate-100 font-mono text-xs whitespace-pre-wrap relative group shadow-inner">
+              <div className="text-[11px] font-bold text-slate-600 dark:text-slate-400 tracking-wider uppercase">Input</div>
+              <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-slate-900 dark:text-slate-100 font-mono text-xs whitespace-pre-wrap relative group shadow-sm">
                 {sampleInput || 'No sample input provided.'}
                 {sampleInput && (
                   <button
                     type="button"
                     onClick={() => handleCopy(sampleInput, 'sample-in')}
-                    className="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition p-1 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded"
+                    className="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 rounded"
                     title="Copy input"
                   >
-                    {copiedId === 'sample-in' ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                    {copiedId === 'sample-in' ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
                   </button>
                 )}
               </div>
@@ -151,16 +148,16 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
 
             {sampleOutput && (
               <div className="space-y-1.5">
-                <div className="text-[11px] font-semibold text-slate-400 tracking-wider uppercase">Expected</div>
-                <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-3 text-slate-100 font-mono text-xs whitespace-pre-wrap relative group shadow-inner">
+                <div className="text-[11px] font-bold text-slate-600 dark:text-slate-400 tracking-wider uppercase">Expected</div>
+                <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-slate-900 dark:text-slate-100 font-mono text-xs whitespace-pre-wrap relative group shadow-sm">
                   {sampleOutput}
                   <button
                     type="button"
                     onClick={() => handleCopy(sampleOutput, 'sample-out')}
-                    className="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition p-1 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded"
+                    className="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 rounded"
                     title="Copy expected output"
                   >
-                    {copiedId === 'sample-out' ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                    {copiedId === 'sample-out' ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
                   </button>
                 </div>
               </div>
@@ -171,31 +168,31 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
           <div>
             {!output ? (
               <div className="h-full flex flex-col items-center justify-center gap-2 py-8 text-slate-400">
-                <Terminal size={26} className="opacity-30 text-indigo-400" />
-                <p className="text-xs">You must run your code first to view Test Results.</p>
+                <Terminal size={26} className="opacity-30 text-ubi-800 dark:text-indigo-400" />
+                <p className="text-xs text-slate-500 dark:text-slate-400">You must run your code first to view Test Results.</p>
               </div>
             ) : output.compile_error ? (
               <div className="space-y-3">
-                <div className="text-xl font-bold text-rose-400 tracking-tight">Compile Error</div>
-                <div className="bg-rose-950/30 border border-rose-900/50 rounded-xl p-3.5 text-rose-300 whitespace-pre-wrap font-mono text-xs leading-relaxed">
+                <div className="text-xl font-extrabold text-rose-600 dark:text-rose-400 tracking-tight">Compile Error</div>
+                <div className="bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950/30 dark:border-rose-900/50 dark:text-rose-300 rounded-xl p-3.5 whitespace-pre-wrap font-mono text-xs leading-relaxed">
                   {output.compile_error}
                 </div>
               </div>
             ) : selectedResult ? (
               <div className="space-y-4">
-                {/* LeetCode Header: Status Banner & Execution Time */}
+                {/* Status Banner & Execution Time */}
                 <div className="flex items-baseline gap-3">
                   <h3
                     className={`text-2xl font-extrabold tracking-tight ${
-                      selectedResult.passed ? 'text-emerald-400' : 'text-rose-500'
+                      selectedResult.passed ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-500'
                     }`}
                   >
                     {selectedResult.passed ? 'Accepted' : selectedResult.status || 'Wrong Answer'}
                   </h3>
 
                   {selectedResult.time_ms !== undefined && selectedResult.time_ms !== null && (
-                    <span className="text-xs text-slate-400 font-medium">
-                      Runtime: <span className="font-mono text-slate-200">{selectedResult.time_ms.toFixed(1)} ms</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                      Runtime: <span className="font-mono text-slate-800 dark:text-slate-200 font-bold">{selectedResult.time_ms.toFixed(1)} ms</span>
                     </span>
                   )}
                 </div>
@@ -210,16 +207,16 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
                           key={res.test_case_id || idx}
                           type="button"
                           onClick={() => setActiveCaseTab(idx)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
                             isActive
-                              ? 'bg-slate-800 text-white shadow-sm border border-slate-700'
-                              : 'bg-slate-950/60 text-slate-400 hover:text-slate-200 border border-slate-800'
+                              ? 'bg-ubi-800 text-white shadow-sm'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700'
                           }`}
                         >
                           {res.passed ? (
-                            <CheckSquare size={13} className="text-emerald-400 shrink-0" />
+                            <CheckSquare size={13} className={isActive ? 'text-white' : 'text-emerald-500'} />
                           ) : (
-                            <XCircle size={13} className="text-rose-400 shrink-0" />
+                            <XCircle size={13} className={isActive ? 'text-white' : 'text-rose-500'} />
                           )}
                           <span>Case {idx + 1}</span>
                         </button>
@@ -230,54 +227,54 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
 
                 {/* Input Card */}
                 <div className="space-y-1.5">
-                  <div className="text-[11px] font-semibold text-slate-400 tracking-wider">Input</div>
-                  <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-3 text-slate-100 font-mono text-xs whitespace-pre-wrap relative group shadow-inner">
+                  <div className="text-[11px] font-bold text-slate-600 dark:text-slate-400 tracking-wider uppercase">Input</div>
+                  <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-slate-900 dark:text-slate-100 font-mono text-xs whitespace-pre-wrap relative group shadow-sm">
                     {selectedResult.input || '(empty)'}
                     <button
                       type="button"
                       onClick={() => handleCopy(selectedResult.input, `in-${activeCaseTab}`)}
-                      className="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition p-1 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded"
+                      className="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 rounded"
                       title="Copy input"
                     >
-                      {copiedId === `in-${activeCaseTab}` ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                      {copiedId === `in-${activeCaseTab}` ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
                     </button>
                   </div>
                 </div>
 
                 {/* Output Card */}
                 <div className="space-y-1.5">
-                  <div className="text-[11px] font-semibold text-slate-400 tracking-wider">Output</div>
+                  <div className="text-[11px] font-bold text-slate-600 dark:text-slate-400 tracking-wider uppercase">Output</div>
                   <div
-                    className={`border rounded-xl p-3 font-mono text-xs whitespace-pre-wrap relative group shadow-inner ${
+                    className={`border rounded-xl p-3 font-mono text-xs whitespace-pre-wrap relative group shadow-sm ${
                       selectedResult.passed
-                        ? 'bg-slate-950 border-slate-800/80 text-slate-100'
-                        : 'bg-rose-950/20 border-rose-900/40 text-rose-200'
+                        ? 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100'
+                        : 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-900 dark:text-rose-200'
                     }`}
                   >
                     {selectedResult.actual_output || '(no output)'}
                     <button
                       type="button"
                       onClick={() => handleCopy(selectedResult.actual_output || '', `out-${activeCaseTab}`)}
-                      className="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition p-1 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded"
+                      className="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 rounded"
                       title="Copy output"
                     >
-                      {copiedId === `out-${activeCaseTab}` ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                      {copiedId === `out-${activeCaseTab}` ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
                     </button>
                   </div>
                 </div>
 
                 {/* Expected Card */}
                 <div className="space-y-1.5">
-                  <div className="text-[11px] font-semibold text-slate-400 tracking-wider">Expected</div>
-                  <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-3 text-slate-100 font-mono text-xs whitespace-pre-wrap relative group shadow-inner">
+                  <div className="text-[11px] font-bold text-slate-600 dark:text-slate-400 tracking-wider uppercase">Expected</div>
+                  <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-slate-900 dark:text-slate-100 font-mono text-xs whitespace-pre-wrap relative group shadow-sm">
                     {selectedResult.expected_output || '(empty)'}
                     <button
                       type="button"
                       onClick={() => handleCopy(selectedResult.expected_output, `exp-${activeCaseTab}`)}
-                      className="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition p-1 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded"
+                      className="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 rounded"
                       title="Copy expected output"
                     >
-                      {copiedId === `exp-${activeCaseTab}` ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                      {copiedId === `exp-${activeCaseTab}` ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
                     </button>
                   </div>
                 </div>
@@ -285,8 +282,8 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
                 {/* Stderr if available */}
                 {selectedResult.stderr && (
                   <div className="space-y-1.5">
-                    <div className="text-[11px] font-semibold text-rose-400 tracking-wider">Stderr</div>
-                    <div className="bg-rose-950/30 border border-rose-900/50 rounded-xl p-3 text-rose-300 font-mono text-xs whitespace-pre-wrap">
+                    <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 tracking-wider uppercase">Stderr</div>
+                    <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-xl p-3 text-rose-800 dark:text-rose-300 font-mono text-xs whitespace-pre-wrap">
                       {selectedResult.stderr}
                     </div>
                   </div>

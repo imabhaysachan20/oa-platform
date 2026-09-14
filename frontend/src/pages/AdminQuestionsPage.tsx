@@ -6,7 +6,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
-import { Plus, Trash2, Code2, ListChecks, Eye, EyeOff } from 'lucide-react';
+import { Plus, Trash2, ListChecks, Eye, EyeOff } from 'lucide-react';
 
 export const AdminQuestionsPage: React.FC = () => {
   const queryClient = useQueryClient();
@@ -111,16 +111,18 @@ export const AdminQuestionsPage: React.FC = () => {
   ) || selectedQuestionForTestCases;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6 animate-fadeIn">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-white">Question Bank Management</h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Configure coding problems, descriptions, and visible/hidden test cases.
+          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">
+            Question Bank Management
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Configure coding problems, descriptions, limits, and sample/hidden test cases.
           </p>
         </div>
-        <Button onClick={() => setIsCreateModalOpen(true)} className="gap-2 self-start">
+        <Button onClick={() => setIsCreateModalOpen(true)} className="gap-2 self-start font-semibold">
           <Plus size={16} />
           <span>Add New Question</span>
         </Button>
@@ -129,20 +131,20 @@ export const AdminQuestionsPage: React.FC = () => {
       {/* Questions Grid */}
       {isLoading ? (
         <div className="py-16 flex justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-ubi-800 dark:border-ubi-400"></div>
         </div>
       ) : questions && questions.length > 0 ? (
         <div className="grid grid-cols-1 gap-4">
           {questions.map((q) => (
-            <Card key={q.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <Card key={q.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-ubi-300 dark:hover:border-ubi-700">
               <div className="space-y-1.5 flex-1">
                 <div className="flex items-center gap-2.5">
                   <Badge variant={q.difficulty}>{q.difficulty}</Badge>
-                  <h3 className="text-base font-bold text-white">{q.title}</h3>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">{q.title}</h3>
                 </div>
-                <p className="text-xs text-slate-400 line-clamp-1">{q.description}</p>
-                <div className="flex items-center gap-3 text-[11px] text-slate-500 font-mono">
-                  <span>{q.test_cases?.length || 0} Test Cases</span>
+                <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-1">{q.description}</p>
+                <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                  <span className="font-semibold">{q.test_cases?.length || 0} Test Cases</span>
                   <span>•</span>
                   <span>{q.time_limit_ms}ms</span>
                   <span>•</span>
@@ -155,9 +157,9 @@ export const AdminQuestionsPage: React.FC = () => {
                   variant="outline"
                   size="sm"
                   onClick={() => setSelectedQuestionForTestCases(q)}
-                  className="gap-1.5"
+                  className="gap-1.5 font-semibold"
                 >
-                  <ListChecks size={14} className="text-indigo-400" />
+                  <ListChecks size={14} className="text-ubi-800 dark:text-ubi-400" />
                   <span>Test Cases ({q.test_cases?.length || 0})</span>
                 </Button>
                 <Button
@@ -168,7 +170,7 @@ export const AdminQuestionsPage: React.FC = () => {
                       deleteQuestionMutation.mutate(q.id);
                     }
                   }}
-                  className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                  className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:text-rose-300 dark:hover:bg-rose-500/10"
                 >
                   <Trash2 size={14} />
                 </Button>
@@ -177,9 +179,9 @@ export const AdminQuestionsPage: React.FC = () => {
           ))}
         </div>
       ) : (
-        <div className="text-center py-16 border border-dashed border-slate-800 rounded-xl text-slate-400">
-          No questions in the question bank.
-        </div>
+        <Card className="text-center py-16 text-slate-500 dark:text-slate-400">
+          No questions in the question bank. Click "Add New Question" to create one.
+        </Card>
       )}
 
       {/* Create Question Modal */}
@@ -191,7 +193,7 @@ export const AdminQuestionsPage: React.FC = () => {
       >
         <form onSubmit={handleCreateQuestion} className="space-y-4 text-xs">
           <div>
-            <label className="block font-semibold text-slate-300 uppercase tracking-wider mb-1">
+            <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
               Title
             </label>
             <input
@@ -200,19 +202,19 @@ export const AdminQuestionsPage: React.FC = () => {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Reverse Linked List"
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
             />
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block font-semibold text-slate-300 uppercase tracking-wider mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                 Difficulty
               </label>
               <select
                 value={difficulty}
                 onChange={(e) => setDifficulty(e.target.value as QuestionDifficulty)}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm font-medium"
               >
                 <option value="easy">Easy</option>
                 <option value="medium">Medium</option>
@@ -220,31 +222,31 @@ export const AdminQuestionsPage: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="block font-semibold text-slate-300 uppercase tracking-wider mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                 Time Limit (ms)
               </label>
               <input
                 type="number"
                 value={timeLimitMs}
                 onChange={(e) => setTimeLimitMs(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm"
               />
             </div>
             <div>
-              <label className="block font-semibold text-slate-300 uppercase tracking-wider mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                 Memory (KB)
               </label>
               <input
                 type="number"
                 value={memoryLimitKb}
                 onChange={(e) => setMemoryLimitKb(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm"
               />
             </div>
           </div>
 
           <div>
-            <label className="block font-semibold text-slate-300 uppercase tracking-wider mb-1">
+            <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
               Description & Constraints
             </label>
             <textarea
@@ -253,13 +255,13 @@ export const AdminQuestionsPage: React.FC = () => {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="State problem constraints, input format, and output format..."
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono"
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none font-mono"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold text-slate-300 uppercase tracking-wider mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                 Sample Input
               </label>
               <textarea
@@ -267,11 +269,11 @@ export const AdminQuestionsPage: React.FC = () => {
                 value={sampleInput}
                 onChange={(e) => setSampleInput(e.target.value)}
                 placeholder="e.g. 5\n1 2 3 4 5"
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-xs font-mono"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs font-mono"
               />
             </div>
             <div>
-              <label className="block font-semibold text-slate-300 uppercase tracking-wider mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                 Sample Output
               </label>
               <textarea
@@ -279,12 +281,12 @@ export const AdminQuestionsPage: React.FC = () => {
                 value={sampleOutput}
                 onChange={(e) => setSampleOutput(e.target.value)}
                 placeholder="e.g. 15"
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-xs font-mono"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs font-mono"
               />
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
             <Button
               type="button"
               variant="outline"
@@ -293,7 +295,7 @@ export const AdminQuestionsPage: React.FC = () => {
             >
               Cancel
             </Button>
-            <Button type="submit" size="sm" isLoading={createQuestionMutation.isPending}>
+            <Button type="submit" size="sm" isLoading={createQuestionMutation.isPending} className="font-semibold">
               Create Question
             </Button>
           </div>
@@ -309,43 +311,43 @@ export const AdminQuestionsPage: React.FC = () => {
       >
         <div className="space-y-5 text-xs">
           {/* Add New Test Case Form */}
-          <form onSubmit={handleAddTestCase} className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
-            <h4 className="font-semibold text-slate-200">Add Test Case</h4>
+          <form onSubmit={handleAddTestCase} className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-3">
+            <h4 className="font-bold text-slate-900 dark:text-slate-200">Add Test Case</h4>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] text-slate-400 mb-1">Input Data</label>
+                <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">Input Data</label>
                 <textarea
                   required
                   rows={2}
                   value={tcInput}
                   onChange={(e) => setTcInput(e.target.value)}
-                  className="w-full p-2 bg-slate-900 border border-slate-800 rounded text-slate-200 font-mono text-xs"
+                  className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded text-slate-900 dark:text-slate-200 font-mono text-xs"
                 />
               </div>
               <div>
-                <label className="block text-[11px] text-slate-400 mb-1">Expected Output</label>
+                <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">Expected Output</label>
                 <textarea
                   required
                   rows={2}
                   value={tcExpected}
                   onChange={(e) => setTcExpected(e.target.value)}
-                  className="w-full p-2 bg-slate-900 border border-slate-800 rounded text-slate-200 font-mono text-xs"
+                  className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded text-slate-900 dark:text-slate-200 font-mono text-xs"
                 />
               </div>
             </div>
 
             <div className="flex items-center justify-between pt-1">
-              <label className="flex items-center gap-2 cursor-pointer text-slate-300">
+              <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
                 <input
                   type="checkbox"
                   checked={tcIsHidden}
                   onChange={(e) => setTcIsHidden(e.target.checked)}
-                  className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                  className="rounded border-slate-300 dark:border-slate-700 text-ubi-800 focus:ring-0"
                 />
                 <span>Hidden Test Case (Used for evaluation only, invisible to candidate)</span>
               </label>
 
-              <Button type="submit" size="sm" isLoading={addTestCaseMutation.isPending}>
+              <Button type="submit" size="sm" isLoading={addTestCaseMutation.isPending} className="font-semibold">
                 Add Case
               </Button>
             </div>
@@ -353,7 +355,7 @@ export const AdminQuestionsPage: React.FC = () => {
 
           {/* Test Case List */}
           <div className="space-y-2">
-            <h4 className="font-semibold text-slate-300">
+            <h4 className="font-bold text-slate-900 dark:text-slate-300">
               Existing Test Cases ({currentActiveQuestion?.test_cases?.length || 0})
             </h4>
             <div className="max-h-60 overflow-y-auto space-y-2">
@@ -361,36 +363,37 @@ export const AdminQuestionsPage: React.FC = () => {
                 currentActiveQuestion.test_cases.map((tc, idx) => (
                   <div
                     key={tc.id}
-                    className="p-3 bg-slate-950 border border-slate-800 rounded-lg flex items-start justify-between gap-3 text-xs"
+                    className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg flex items-start justify-between gap-3 text-xs"
                   >
                     <div className="space-y-1 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-300 font-mono">Case #{idx + 1}</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-300 font-mono">Case #{idx + 1}</span>
                         {tc.is_hidden ? (
-                          <span className="flex items-center gap-1 text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                          <span className="flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 dark:text-amber-400 dark:bg-amber-500/10 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-500/20 font-semibold">
                             <EyeOff size={11} /> Hidden Case
                           </span>
                         ) : (
-                          <span className="flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                          <span className="flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-500/20 font-semibold">
                             <Eye size={11} /> Visible Sample
                           </span>
                         )}
                       </div>
                       <div className="grid grid-cols-2 gap-2 pt-1 font-mono text-[11px]">
                         <div>
-                          <span className="text-slate-500 block">Input:</span>
-                          <span className="text-slate-300 truncate block">{tc.input}</span>
+                          <span className="text-slate-500 block text-[10px] uppercase font-bold">Input:</span>
+                          <span className="text-slate-800 dark:text-slate-300 truncate block">{tc.input}</span>
                         </div>
                         <div>
-                          <span className="text-slate-500 block">Expected:</span>
-                          <span className="text-slate-300 truncate block">{tc.expected_output}</span>
+                          <span className="text-slate-500 block text-[10px] uppercase font-bold">Expected:</span>
+                          <span className="text-slate-800 dark:text-slate-300 truncate block">{tc.expected_output}</span>
                         </div>
                       </div>
                     </div>
 
                     <button
                       onClick={() => deleteTestCaseMutation.mutate(tc.id)}
-                      className="text-rose-400 hover:text-rose-300 p-1"
+                      className="text-rose-600 dark:text-rose-400 hover:text-rose-700 p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-500/10 transition"
+                      title="Delete Test Case"
                     >
                       <Trash2 size={15} />
                     </button>

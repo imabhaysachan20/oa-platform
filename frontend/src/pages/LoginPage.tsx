@@ -67,11 +67,11 @@ export const LoginPage: React.FC = () => {
 
       <div className="sm:mx-auto sm:w-full sm:max-w-md z-10 text-center">
         {/* UsefulBI Official Logo Header */}
-        <div className="inline-flex items-center justify-center bg-white p-4 rounded-2xl border border-slate-200 shadow-md mb-4">
+        <div className="inline-flex items-center justify-center mb-5">
           <img
             src="/UsefulBI_Logo_Main.webp"
             alt="UsefulBI Logo"
-            className="h-10 sm:h-12 w-auto object-contain"
+            className="h-12 sm:h-14 w-auto object-contain"
           />
         </div>
 

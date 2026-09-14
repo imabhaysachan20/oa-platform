@@ -24,11 +24,11 @@ export const Navbar: React.FC = () => {
           {/* Brand Logo & Product Badge */}
           <Link to="/" className="flex items-center gap-3 group">
             {/* UsefulBI Logo */}
-            <div className="bg-white px-2.5 py-1 rounded-lg border border-slate-200/80 dark:border-slate-700 shadow-sm flex items-center justify-center transition group-hover:shadow">
+            <div className="flex items-center justify-center">
               <img
                 src="/UsefulBI_Logo_Main.webp"
                 alt="UsefulBI Logo"
-                className="h-7 sm:h-8 w-auto object-contain"
+                className="h-8 sm:h-9 w-auto object-contain transition group-hover:opacity-90"
               />
             </div>
 

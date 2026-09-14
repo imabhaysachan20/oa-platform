@@ -44,12 +44,12 @@ export const StudentResultPage: React.FC = () => {
     <div className="max-w-4xl mx-auto px-4 py-10 space-y-8 animate-fadeIn">
       {/* Top Banner Card with UsefulBI Identity */}
       <div className="bg-gradient-to-br from-ubi-50/80 via-white to-slate-50 dark:from-ubi-950/60 dark:via-slate-900 dark:to-slate-900 border border-ubi-200/80 dark:border-ubi-800/40 rounded-2xl p-8 shadow-sm dark:shadow-2xl text-center relative overflow-hidden">
-        {/* UsefulBI Logo Pill */}
-        <div className="inline-flex items-center justify-center bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm mb-4">
+        {/* UsefulBI Logo */}
+        <div className="inline-flex items-center justify-center mb-4">
           <img
             src="/UsefulBI_Logo_Main.webp"
             alt="UsefulBI"
-            className="h-8 w-auto object-contain"
+            className="h-10 w-auto object-contain"
           />
         </div>
 

@@ -160,12 +160,12 @@ export const StudentExamWorkspacePage: React.FC = () => {
             <ArrowLeft size={18} />
           </button>
 
-          {/* UsefulBI Logo Pill */}
-          <div className="bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs hidden sm:flex items-center">
+          {/* UsefulBI Logo */}
+          <div className="hidden sm:flex items-center">
             <img
               src="/UsefulBI_Logo_Main.webp"
               alt="UsefulBI"
-              className="h-5 w-auto object-contain"
+              className="h-6 w-auto object-contain"
             />
           </div>
 

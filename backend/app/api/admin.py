@@ -3,6 +3,7 @@ import io
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
@@ -23,8 +24,10 @@ from backend.app.schemas.question import (
     TestCaseCreate,
     TestCaseResponse
 )
+from backend.app.schemas.submission import AdminPlaygroundRunRequest, RunCodeResponse
 from backend.app.schemas.auth import UserResponse
 from backend.app.services.exam_service import get_live_exam_monitoring
+from backend.app.services.submission_service import execute_judge0_test_cases
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -180,6 +183,7 @@ async def get_exam_pool_questions(
         select(Question)
         .join(ExamQuestionPool, ExamQuestionPool.question_id == Question.id)
         .where(ExamQuestionPool.exam_id == exam_id)
+        .options(selectinload(Question.test_cases))
     )
     questions = (await db.execute(stmt)).scalars().all()
     return questions
@@ -232,6 +236,31 @@ async def remove_question_from_pool(
     return {"message": "Question removed from exam pool"}
 
 
+# ==================== PLAYGROUND ====================
+
+@router.post("/playground/run", response_model=RunCodeResponse)
+async def run_playground_code(
+    body: AdminPlaygroundRunRequest,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Execute code against arbitrary test cases provided in the request body.
+    Used for testing new questions before they are saved to the database.
+    """
+    cpu_limit = float(body.time_limit_ms) / 1000.0
+    mem_limit = body.memory_limit_kb
+
+    return await execute_judge0_test_cases(
+        test_cases=body.test_cases,
+        code=body.code,
+        language=body.language,
+        cpu_limit=cpu_limit,
+        mem_limit=mem_limit,
+        question_id=0
+    )
+
+
 # ==================== QUESTIONS ====================
 
 @router.get("/questions", response_model=List[QuestionResponse])
@@ -239,17 +268,9 @@ async def list_questions(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    stmt = select(Question).order_by(Question.id.asc())
+    stmt = select(Question).options(selectinload(Question.test_cases)).order_by(Question.id.asc())
     questions = (await db.execute(stmt)).scalars().all()
-
-    result = []
-    for q in questions:
-        tc_stmt = select(TestCase).where(TestCase.question_id == q.id).order_by(TestCase.id.asc())
-        tcs = (await db.execute(tc_stmt)).scalars().all()
-        q_resp = QuestionResponse.model_validate(q)
-        q_resp.test_cases = [TestCaseResponse.model_validate(tc) for tc in tcs]
-        result.append(q_resp)
-    return result
+    return [QuestionResponse.model_validate(q) for q in questions]
 
 
 @router.post("/questions", response_model=QuestionResponse)
@@ -282,13 +303,10 @@ async def create_question(
             db.add(tc)
 
     await db.commit()
-    await db.refresh(q)
 
-    tc_stmt = select(TestCase).where(TestCase.question_id == q.id).order_by(TestCase.id.asc())
-    tcs = (await db.execute(tc_stmt)).scalars().all()
-    q_resp = QuestionResponse.model_validate(q)
-    q_resp.test_cases = [TestCaseResponse.model_validate(tc) for tc in tcs]
-    return q_resp
+    q_stmt = select(Question).options(selectinload(Question.test_cases)).where(Question.id == q.id)
+    q_with_tc = (await db.execute(q_stmt)).scalar_one()
+    return QuestionResponse.model_validate(q_with_tc)
 
 
 @router.get("/questions/{question_id}", response_model=QuestionResponse)
@@ -297,15 +315,11 @@ async def get_question(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    q = (await db.execute(select(Question).where(Question.id == question_id))).scalar_one_or_none()
+    stmt = select(Question).options(selectinload(Question.test_cases)).where(Question.id == question_id)
+    q = (await db.execute(stmt)).scalar_one_or_none()
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
-
-    tc_stmt = select(TestCase).where(TestCase.question_id == q.id).order_by(TestCase.id.asc())
-    tcs = (await db.execute(tc_stmt)).scalars().all()
-    q_resp = QuestionResponse.model_validate(q)
-    q_resp.test_cases = [TestCaseResponse.model_validate(tc) for tc in tcs]
-    return q_resp
+    return QuestionResponse.model_validate(q)
 
 
 @router.put("/questions/{question_id}", response_model=QuestionResponse)
@@ -315,7 +329,8 @@ async def update_question(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    q = (await db.execute(select(Question).where(Question.id == question_id))).scalar_one_or_none()
+    stmt = select(Question).where(Question.id == question_id)
+    q = (await db.execute(stmt)).scalar_one_or_none()
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
 
@@ -335,13 +350,10 @@ async def update_question(
         q.sample_output = body.sample_output
 
     await db.commit()
-    await db.refresh(q)
 
-    tc_stmt = select(TestCase).where(TestCase.question_id == q.id).order_by(TestCase.id.asc())
-    tcs = (await db.execute(tc_stmt)).scalars().all()
-    q_resp = QuestionResponse.model_validate(q)
-    q_resp.test_cases = [TestCaseResponse.model_validate(tc) for tc in tcs]
-    return q_resp
+    q_stmt = select(Question).options(selectinload(Question.test_cases)).where(Question.id == q.id)
+    q_with_tc = (await db.execute(q_stmt)).scalar_one()
+    return QuestionResponse.model_validate(q_with_tc)
 
 
 @router.delete("/questions/{question_id}")

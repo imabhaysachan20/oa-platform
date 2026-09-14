@@ -29,6 +29,106 @@ def _normalize_output(text: Optional[str]) -> str:
     return "\n".join(lines)
 
 
+async def execute_judge0_test_cases(
+    test_cases: List[Any],
+    code: str,
+    language: str,
+    cpu_limit: float,
+    mem_limit: int,
+    question_id: int = 0
+) -> RunCodeResponse:
+    """
+    Core function to execute code against a list of test cases (duck-typed to have id, input, expected_output).
+    Returns a RunCodeResponse with the result.
+    """
+    lang_id = get_language_id(language)
+    results: List[TestCaseRunResult] = []
+    compile_error: Optional[str] = None
+    passed_count = 0
+
+    for tc in test_cases:
+        try:
+            judge_res = await judge0_client.execute(
+                source_code=code,
+                language_id=lang_id,
+                stdin=tc.input,
+                expected_output=tc.expected_output,
+                cpu_time_limit=cpu_limit,
+                memory_limit_kb=mem_limit,
+            )
+        except Exception as exc:
+            # Judge0 communication error
+            results.append(TestCaseRunResult(
+                test_case_id=tc.id or 0,
+                input=tc.input,
+                expected_output=tc.expected_output,
+                actual_output=None,
+                stderr=str(exc),
+                compile_output=None,
+                passed=False,
+                status="Execution Server Error",
+                time_ms=None
+            ))
+            continue
+
+        status_info = judge_res.get("status", {})
+        status_id = status_info.get("id", 0)
+        status_desc = status_info.get("description") or JUDGE0_STATUS_DESCRIPTIONS.get(status_id, "Unknown")
+
+        raw_stdout = judge_res.get("stdout") or ""
+        raw_stderr = judge_res.get("stderr") or ""
+        raw_compile = judge_res.get("compile_output") or ""
+        exec_time = judge_res.get("time")
+        exec_time_ms = float(exec_time) * 1000.0 if exec_time is not None else None
+
+        if status_id == 6:  # Compilation Error
+            compile_error = raw_compile or raw_stderr
+            results.append(TestCaseRunResult(
+                test_case_id=tc.id or 0,
+                input=tc.input,
+                expected_output=tc.expected_output,
+                actual_output="",
+                stderr=raw_stderr,
+                compile_output=compile_error,
+                passed=False,
+                status=status_desc,
+                time_ms=exec_time_ms
+            ))
+            break  # No need to run further test cases on compilation error
+
+        norm_actual = _normalize_output(raw_stdout)
+        norm_expected = _normalize_output(tc.expected_output)
+
+        is_passed = (status_id == 3) or (norm_actual == norm_expected and not raw_stderr)
+        if is_passed:
+            passed_count += 1
+            status_desc = "Accepted"
+        elif status_id not in [5, 6, 7, 8, 9, 10, 11, 12]:
+            status_desc = "Wrong Answer"
+
+        results.append(TestCaseRunResult(
+            test_case_id=tc.id or 0,
+            input=tc.input,
+            expected_output=tc.expected_output,
+            actual_output=raw_stdout,
+            stderr=raw_stderr,
+            compile_output=raw_compile,
+            passed=is_passed,
+            status=status_desc,
+            time_ms=exec_time_ms
+        ))
+
+    total = len(test_cases)
+    return RunCodeResponse(
+        question_id=question_id,
+        all_passed=(passed_count == total and total > 0),
+        passed_count=passed_count,
+        total_count=total,
+        results=results,
+        compile_error=compile_error
+    )
+
+
 async def run_code_samples(
     db: AsyncSession,
     question_id: int,
@@ -65,94 +165,16 @@ async def run_code_samples(
         )
         test_cases = [mock_tc]
 
-    lang_id = get_language_id(language)
     cpu_limit = float(question.time_limit_ms) / 1000.0
     mem_limit = question.memory_limit_kb
 
-    results: List[TestCaseRunResult] = []
-    compile_error: Optional[str] = None
-    passed_count = 0
-
-    for tc in test_cases:
-        try:
-            judge_res = await judge0_client.execute(
-                source_code=code,
-                language_id=lang_id,
-                stdin=tc.input,
-                expected_output=tc.expected_output,
-                cpu_time_limit=cpu_limit,
-                memory_limit_kb=mem_limit,
-            )
-        except Exception as exc:
-            # Judge0 communication error
-            results.append(TestCaseRunResult(
-                test_case_id=tc.id,
-                input=tc.input,
-                expected_output=tc.expected_output,
-                actual_output=None,
-                stderr=str(exc),
-                compile_output=None,
-                passed=False,
-                status="Execution Server Error",
-                time_ms=None
-            ))
-            continue
-
-        status_info = judge_res.get("status", {})
-        status_id = status_info.get("id", 0)
-        status_desc = status_info.get("description") or JUDGE0_STATUS_DESCRIPTIONS.get(status_id, "Unknown")
-
-        raw_stdout = judge_res.get("stdout") or ""
-        raw_stderr = judge_res.get("stderr") or ""
-        raw_compile = judge_res.get("compile_output") or ""
-        exec_time = judge_res.get("time")
-        exec_time_ms = float(exec_time) * 1000.0 if exec_time is not None else None
-
-        if status_id == 6:  # Compilation Error
-            compile_error = raw_compile or raw_stderr
-            results.append(TestCaseRunResult(
-                test_case_id=tc.id,
-                input=tc.input,
-                expected_output=tc.expected_output,
-                actual_output="",
-                stderr=raw_stderr,
-                compile_output=compile_error,
-                passed=False,
-                status=status_desc,
-                time_ms=exec_time_ms
-            ))
-            break  # No need to run further test cases on compilation error
-
-        norm_actual = _normalize_output(raw_stdout)
-        norm_expected = _normalize_output(tc.expected_output)
-
-        is_passed = (status_id == 3) or (norm_actual == norm_expected and not raw_stderr)
-        if is_passed:
-            passed_count += 1
-            status_desc = "Accepted"
-        elif status_id not in [5, 6, 7, 8, 9, 10, 11, 12]:
-            status_desc = "Wrong Answer"
-
-        results.append(TestCaseRunResult(
-            test_case_id=tc.id,
-            input=tc.input,
-            expected_output=tc.expected_output,
-            actual_output=raw_stdout,
-            stderr=raw_stderr,
-            compile_output=raw_compile,
-            passed=is_passed,
-            status=status_desc,
-            time_ms=exec_time_ms
-        ))
-
-    total = len(test_cases)
-    return RunCodeResponse(
-        question_id=question_id,
-        all_passed=(passed_count == total and total > 0),
-        passed_count=passed_count,
-        total_count=total,
-        results=results,
-        compile_error=compile_error
+    return await execute_judge0_test_cases(
+        test_cases=test_cases,
+        code=code,
+        language=language,
+        cpu_limit=cpu_limit,
+        mem_limit=mem_limit,
+        question_id=question_id
     )
 
 

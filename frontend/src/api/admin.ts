@@ -100,4 +100,17 @@ export const adminApi = {
     const res = await api.get<MonitoringStudentView[]>(`/admin/exams/${examId}/monitoring`);
     return res.data;
   },
+
+  // Playground
+  runPlaygroundCode: async (payload: {
+    code: string;
+    language: string;
+    time_limit_ms: number;
+    memory_limit_kb: number;
+    test_cases: { id?: number; input: string; expected_output: string }[];
+  }) => {
+    const res = await api.post('/admin/playground/run', payload);
+    return res.data;
+  },
 };
+

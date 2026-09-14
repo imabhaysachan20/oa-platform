@@ -6,12 +6,14 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
-import { Plus, Trash2, ListChecks, Eye, EyeOff } from 'lucide-react';
+import { AdminPlaygroundModal } from '../components/AdminPlaygroundModal';
+import { Plus, Trash2, Code2, ListChecks, Eye, EyeOff } from 'lucide-react';
 
 export const AdminQuestionsPage: React.FC = () => {
   const queryClient = useQueryClient();
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isPlaygroundModalOpen, setIsPlaygroundModalOpen] = useState(false);
   const [selectedQuestionForTestCases, setSelectedQuestionForTestCases] = useState<Question | null>(null);
 
   // Question Form State
@@ -39,6 +41,7 @@ export const AdminQuestionsPage: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['adminQuestions'] });
       setIsCreateModalOpen(false);
+      setIsPlaygroundModalOpen(false);
       resetQuestionForm();
     },
   });
@@ -259,6 +262,14 @@ export const AdminQuestionsPage: React.FC = () => {
             />
           </div>
 
+          <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-3 text-xs">
+            <h4 className="text-indigo-400 font-semibold mb-1">Input & Output Format Guidelines</h4>
+            <ul className="list-disc list-inside text-indigo-300/80 space-y-1">
+              <li><strong>Strings:</strong> Provide raw strings (no surrounding quotes).</li>
+              <li><strong>Arrays & Vectors:</strong> Use space-separated values (e.g., <code>1 2 3</code>) or newline-separated values. Do not use brackets like <code>[1, 2, 3]</code>.</li>
+            </ul>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
@@ -295,12 +306,54 @@ export const AdminQuestionsPage: React.FC = () => {
             >
               Cancel
             </Button>
+            <Button 
+              type="button" 
+              size="sm" 
+              variant="secondary"
+              onClick={() => {
+                if (!title || !description) {
+                  alert('Please enter a title and description before testing.');
+                  return;
+                }
+                setIsPlaygroundModalOpen(true);
+              }}
+            >
+              Test in Playground
+            </Button>
             <Button type="submit" size="sm" isLoading={createQuestionMutation.isPending} className="font-semibold">
-              Create Question
+              Skip & Save
             </Button>
           </div>
         </form>
       </Modal>
+
+      {/* Admin Playground Modal */}
+      {isPlaygroundModalOpen && (
+        <AdminPlaygroundModal
+          isOpen={isPlaygroundModalOpen}
+          onClose={() => setIsPlaygroundModalOpen(false)}
+          questionData={{
+            title,
+            description,
+            timeLimitMs,
+            memoryLimitKb,
+            sampleInput,
+            sampleOutput,
+          }}
+          onSaveQuestion={() => {
+            createQuestionMutation.mutate({
+              title,
+              description,
+              difficulty,
+              time_limit_ms: timeLimitMs,
+              memory_limit_kb: memoryLimitKb,
+              sample_input: sampleInput,
+              sample_output: sampleOutput,
+            });
+          }}
+          isSaving={createQuestionMutation.isPending}
+        />
+      )}
 
       {/* Test Cases Manager Modal */}
       <Modal
@@ -312,7 +365,13 @@ export const AdminQuestionsPage: React.FC = () => {
         <div className="space-y-5 text-xs">
           {/* Add New Test Case Form */}
           <form onSubmit={handleAddTestCase} className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-3">
-            <h4 className="font-bold text-slate-900 dark:text-slate-200">Add Test Case</h4>
+            <div className="flex justify-between items-center">
+              <h4 className="font-bold text-slate-900 dark:text-slate-200">Add Test Case</h4>
+            </div>
+            
+            <div className="bg-indigo-500/10 border border-indigo-500/20 rounded p-2 text-indigo-300/80 text-[11px]">
+              <strong>Format Note:</strong> For arrays/vectors, use space-separated values (no brackets). For strings, provide raw text without quotes.
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">Input Data</label>

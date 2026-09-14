@@ -9,6 +9,20 @@ class RunCodeRequest(BaseModel):
     language: str  # "python", "cpp", "java"
 
 
+class PlaygroundTestCase(BaseModel):
+    id: Optional[int] = None
+    input: str
+    expected_output: str
+
+
+class AdminPlaygroundRunRequest(BaseModel):
+    code: str
+    language: str
+    time_limit_ms: int
+    memory_limit_kb: int
+    test_cases: List[PlaygroundTestCase]
+
+
 class TestCaseRunResult(BaseModel):
     test_case_id: int
     input: str

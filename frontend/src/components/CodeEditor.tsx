@@ -14,6 +14,7 @@ interface CodeEditorProps {
   onChange: (val: string) => void;
   language: string;
   onLanguageChange: (lang: string) => void;
+  starterCode?: string;
   onReset?: () => void;
   readOnly?: boolean;
 }
@@ -23,6 +24,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   onChange,
   language,
   onLanguageChange,
+  starterCode,
   onReset,
   readOnly = false,
 }) => {
@@ -53,7 +55,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       if (onReset) {
         onReset();
       } else {
-        onChange(STARTER_CODE[language] || '');
+        onChange(starterCode || STARTER_CODE[language] || '');
       }
     }
   };

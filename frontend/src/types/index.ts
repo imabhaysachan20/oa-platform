@@ -43,6 +43,8 @@ export interface StudentQuestionView {
   order_index: number;
   last_code?: string;
   last_language?: string;
+  starter_code?: Record<string, string>;
+  function_signature?: string;
   status?: string;
 }
 

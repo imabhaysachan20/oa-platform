@@ -17,6 +17,7 @@ from backend.app.schemas.submission import (
     TestCaseRunResult,
     SubmitCodeResponse
 )
+from backend.app.services.question_templates import wrap_code_with_driver
 
 
 def _normalize_output(text: Optional[str]) -> str:
@@ -168,9 +169,11 @@ async def run_code_samples(
     cpu_limit = float(question.time_limit_ms) / 1000.0
     mem_limit = question.memory_limit_kb
 
+    code_to_run = wrap_code_with_driver(question.title, code, language)
+
     return await execute_judge0_test_cases(
         test_cases=test_cases,
-        code=code,
+        code=code_to_run,
         language=language,
         cpu_limit=cpu_limit,
         mem_limit=mem_limit,
@@ -241,6 +244,8 @@ async def submit_code_solution(
     cpu_limit = float(question.time_limit_ms) / 1000.0
     mem_limit = question.memory_limit_kb
 
+    code_to_run = wrap_code_with_driver(question.title, code, language)
+
     passed_count = 0
     total_test_cases = len(test_cases)
     overall_status = "Accepted"
@@ -250,7 +255,7 @@ async def submit_code_solution(
     for tc in test_cases:
         try:
             judge_res = await judge0_client.execute(
-                source_code=code,
+                source_code=code_to_run,
                 language_id=lang_id,
                 stdin=tc.input,
                 expected_output=tc.expected_output,

@@ -109,8 +109,9 @@ export const StudentExamWorkspacePage: React.FC = () => {
 
   const currentQ = questions[activeQuestionIndex];
   const currentLang = currentQ ? selectedLanguage[currentQ.id] || 'python' : 'python';
+  const currentStarter = currentQ?.starter_code?.[currentLang] || STARTER_CODE[currentLang] || '';
   const currentCode = currentQ
-    ? codeDrafts[currentQ.id]?.[currentLang] || STARTER_CODE[currentLang] || ''
+    ? codeDrafts[currentQ.id]?.[currentLang] || currentStarter
     : '';
   const currentOutput = currentQ ? runOutputs[currentQ.id] || null : null;
 
@@ -302,6 +303,8 @@ export const StudentExamWorkspacePage: React.FC = () => {
               onChange={(val) => setCodeDraft(currentQ.id, currentLang, val)}
               language={currentLang}
               onLanguageChange={(lang) => setSelectedLanguage(currentQ.id, lang)}
+              starterCode={currentStarter}
+              onReset={() => currentQ && setCodeDraft(currentQ.id, currentLang, currentStarter)}
             />
           </div>
 

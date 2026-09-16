@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pydantic import BaseModel
 from backend.app.models.question import QuestionDifficulty
 
@@ -66,6 +66,8 @@ class StudentQuestionView(BaseModel):
     order_index: int
     last_code: Optional[str] = None
     last_language: Optional[str] = None
+    starter_code: Optional[Dict[str, str]] = None
+    function_signature: Optional[str] = None
     status: Optional[str] = None  # "unattempted", "submitted"
 
     class Config:

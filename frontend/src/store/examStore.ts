@@ -72,9 +72,15 @@ export const useExamStore = create<ExamState>((set) => ({
         if (!drafts[q.id]) {
           drafts[q.id] = {};
         }
-        if (!drafts[q.id][lang]) {
-          drafts[q.id][lang] = q.last_code || STARTER_CODE[lang] || STARTER_CODE['python'];
-        }
+        ['python', 'javascript', 'cpp', 'java'].forEach((l) => {
+          if (!drafts[q.id][l]) {
+            if (l === lang && q.last_code) {
+              drafts[q.id][l] = q.last_code;
+            } else {
+              drafts[q.id][l] = q.starter_code?.[l] || STARTER_CODE[l] || '';
+            }
+          }
+        });
       });
 
       return {

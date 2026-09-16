@@ -1,7 +1,7 @@
 import React from 'react';
 import { Badge } from './ui/Badge';
 import { StudentQuestionView } from '../types';
-import { Clock, HardDrive, CheckCircle2 } from 'lucide-react';
+import { Clock, HardDrive, CheckCircle2, Code2 } from 'lucide-react';
 
 interface QuestionPanelProps {
   questions: StudentQuestionView[];
@@ -78,6 +78,27 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({
         {/* Description */}
         <div className="prose prose-slate dark:prose-invert max-w-none text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line border-t border-slate-200 dark:border-slate-800 pt-4">
           {currentQ.description}
+        </div>
+
+        {/* LeetCode Style Method Signature & Automated I/O Info */}
+        <div className="bg-ubi-50/70 dark:bg-ubi-950/40 border border-ubi-200/80 dark:border-ubi-800/60 rounded-xl p-4 space-y-2">
+          <div className="flex items-center gap-2 text-xs font-bold text-ubi-900 dark:text-ubi-200">
+            <Code2 size={15} className="text-ubi-700 dark:text-ubi-400" />
+            <span>LeetCode Style Function Completion</span>
+          </div>
+          <p className="text-xs text-slate-600 dark:text-slate-300 leading-normal">
+            Complete the solution function/method. Input ingestion and test assertions are handled automatically behind the scenes.
+          </p>
+          {currentQ.function_signature && (
+            <div className="pt-1">
+              <span className="text-[10px] uppercase tracking-wider font-bold text-slate-500 dark:text-slate-400 block mb-1">
+                Method Signature
+              </span>
+              <div className="font-mono text-xs text-ubi-950 dark:text-ubi-200 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-ubi-200/60 dark:border-ubi-800/50">
+                {currentQ.function_signature}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Sample Input / Output */}

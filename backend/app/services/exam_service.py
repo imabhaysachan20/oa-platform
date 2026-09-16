@@ -25,6 +25,10 @@ from backend.app.schemas.exam import (
     MonitoringStudentView
 )
 from backend.app.services.scoring_service import compute_and_save_exam_scores
+from backend.app.services.question_templates import (
+    get_question_starter_templates,
+    get_question_signature
+)
 
 
 async def start_exam_for_student(
@@ -299,6 +303,8 @@ async def _get_assigned_question_views(db: AsyncSession, assignment_id: int) -> 
             order_index=assigned_q.order_index,
             last_code=latest_sub.code if latest_sub else None,
             last_language=latest_sub.language if latest_sub else None,
+            starter_code=get_question_starter_templates(q.title),
+            function_signature=get_question_signature(q.title),
             status=latest_sub.status if latest_sub else "unattempted"
         ))
     return views

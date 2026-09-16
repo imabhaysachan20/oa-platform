@@ -1,66 +1,66 @@
 import pytest
-
-
+ 
+ 
 def calculate_question_score_formula(
     diff_weight: float,
     passed: int,
     total: int,
-    time_taken_sec: float,
-    allowed_time_sec: float
-) -> tuple[float, float, float]:
+) -> tuple[float, float]:
     correctness = float(passed) / float(total) if total > 0 else 0.0
-    ratio = 1.0 - (time_taken_sec / allowed_time_sec) if allowed_time_sec > 0 else 0.0
-    time_bonus = max(0.0, min(0.2, ratio))
-    q_score = diff_weight * correctness * (1.0 + time_bonus)
-    return correctness, time_bonus, round(q_score, 2)
-
-
-def test_scoring_perfect_quick_submission():
-    correctness, time_bonus, score = calculate_question_score_formula(
+    q_score = round(diff_weight * correctness, 2)
+    return correctness, q_score
+ 
+ 
+def test_scoring_perfect_submission():
+    correctness, score = calculate_question_score_formula(
         diff_weight=10.0,
         passed=4,
-        total=4,
-        time_taken_sec=0.0,
-        allowed_time_sec=3600.0
+        total=4
     )
     assert correctness == 1.0
-    assert time_bonus == 0.2
-    assert score == 12.0
-
-
-def test_scoring_half_correct():
-    correctness, time_bonus, score = calculate_question_score_formula(
-        diff_weight=20.0,
+    assert score == 10.0
+ 
+ 
+def test_scoring_half_correct_10_marks_4_testcases():
+    # User requirement: 10 marks question, 4 test cases, 2 passed -> exactly 5.0 marks
+    correctness, score = calculate_question_score_formula(
+        diff_weight=10.0,
         passed=2,
-        total=4,
-        time_taken_sec=1800.0,
-        allowed_time_sec=3600.0
+        total=4
     )
     assert correctness == 0.5
-    assert time_bonus == 0.2
-    assert score == 12.0
-
-
-def test_scoring_last_second():
-    correctness, time_bonus, score = calculate_question_score_formula(
+    assert score == 5.0
+ 
+ 
+def test_scoring_partial_correct_20_marks():
+    # 20 marks question, 5 test cases, 3 passed -> 12.0 marks
+    correctness, score = calculate_question_score_formula(
         diff_weight=20.0,
-        passed=4,
-        total=4,
-        time_taken_sec=3600.0,
-        allowed_time_sec=3600.0
+        passed=3,
+        total=5
     )
-    assert correctness == 1.0
-    assert time_bonus == 0.0
-    assert score == 20.0
-
-
+    assert correctness == 0.6
+    assert score == 12.0
+ 
+ 
+def test_scoring_zero_passed():
+    correctness, score = calculate_question_score_formula(
+        diff_weight=15.0,
+        passed=0,
+        total=4
+    )
+    assert correctness == 0.0
+    assert score == 0.0
+ 
+ 
 def test_total_normalized_score():
-    max_possible = (10.0 * 1.2) + (20.0 * 1.2) + (20.0 * 1.2)
+    max_possible = 10.0 + 20.0 + 20.0  # 50.0
+ 
+    earned_q1 = 5.0   # 2/4 on 10-mark
+    earned_q2 = 20.0  # 4/4 on 20-mark
+    earned_q3 = 10.0  # 2/4 on 20-mark
+    total_earned = earned_q1 + earned_q2 + earned_q3  # 35.0
+ 
+    normalized_total = round((total_earned / max_possible) * 100.0, 2)
+    assert normalized_total == 70.0
 
-    earned_q1 = 10.0 * 1.0 * 1.2  # 12.0
-    earned_q2 = 20.0 * 1.0 * 1.2  # 24.0
-    earned_q3 = 20.0 * 1.0 * 1.2  # 24.0
-    total_earned = earned_q1 + earned_q2 + earned_q3
-
-    normalized_total = (total_earned / max_possible) * 100.0
-    assert normalized_total == 100.0

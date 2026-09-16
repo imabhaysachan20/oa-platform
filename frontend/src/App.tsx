@@ -81,7 +81,7 @@ const AppContent: React.FC = () => {
           <Route
             path="/exam/:examId/leaderboard"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute adminOnly>
                 <LeaderboardPage />
               </ProtectedRoute>
             }

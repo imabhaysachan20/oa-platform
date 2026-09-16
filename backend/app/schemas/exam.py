@@ -90,9 +90,10 @@ class ExamResultDetail(BaseModel):
     student_name: str
     roll_no: Optional[str] = None
     status: str
-    total_score: float
+    total_score: Optional[float] = None
     rank: Optional[int] = None
-    question_scores: List[QuestionScoreBreakdown]
+    submitted_at: Optional[datetime] = None
+    question_scores: List[QuestionScoreBreakdown] = []
 
 
 class MonitoringStudentView(BaseModel):

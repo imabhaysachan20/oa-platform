@@ -81,8 +81,8 @@ async def execute_judge0_test_cases(
         exec_time = judge_res.get("time")
         exec_time_ms = float(exec_time) * 1000.0 if exec_time is not None else None
 
-        if status_id == 6:  # Compilation Error
-            compile_error = raw_compile or raw_stderr
+        if status_id == 6 or raw_compile:  # Compilation Error
+            compile_error = raw_compile or raw_stderr or "Compilation Error"
             results.append(TestCaseRunResult(
                 test_case_id=tc.id or 0,
                 input=tc.input,
@@ -91,7 +91,7 @@ async def execute_judge0_test_cases(
                 stderr=raw_stderr,
                 compile_output=compile_error,
                 passed=False,
-                status=status_desc,
+                status="Compilation Error",
                 time_ms=exec_time_ms
             ))
             break  # No need to run further test cases on compilation error
@@ -284,8 +284,9 @@ async def submit_code_solution(
             passed_count += 1
         else:
             if overall_status == "Accepted":
-                if status_id == 6:
+                if status_id == 6 or raw_compile:
                     overall_status = "Compilation Error"
+                    break
                 elif status_id == 5:
                     overall_status = "Time Limit Exceeded"
                 elif status_id in [7, 8, 9, 10, 11, 12]:

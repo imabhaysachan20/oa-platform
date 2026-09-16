@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import logging
 import subprocess
 import sys
@@ -8,6 +9,21 @@ import httpx
 from backend.app.core.config import settings
 
 logger = logging.getLogger("judge0")
+
+
+def _b64_encode(text: Optional[str]) -> Optional[str]:
+    if text is None:
+        return None
+    return base64.b64encode(text.encode("utf-8")).decode("ascii")
+
+
+def _b64_decode(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return text
+    try:
+        return base64.b64decode(text).decode("utf-8", errors="replace")
+    except Exception:
+        return text
 
 LANGUAGE_ID_MAP = {
     # Python
@@ -215,25 +231,36 @@ class Judge0Client:
         memory_limit_kb: int = 128000,
     ) -> Dict[str, Any]:
         """
-        Execute code synchronously (wait=true) on Judge0.
+        Execute code synchronously (wait=true) on Judge0 with base64 encoding.
         Falls back gracefully if Judge0 service is downloading or offline.
         """
-        url = f"{self.base_url}/submissions?base64_encoded=false&wait=true"
+        url = f"{self.base_url}/submissions?base64_encoded=true&wait=true"
         payload = {
-            "source_code": source_code,
+            "source_code": _b64_encode(source_code),
             "language_id": language_id,
-            "stdin": stdin,
+            "stdin": _b64_encode(stdin) if stdin is not None else None,
             "cpu_time_limit": cpu_time_limit,
             "memory_limit": memory_limit_kb,
         }
         if expected_output is not None:
-            payload["expected_output"] = expected_output
+            payload["expected_output"] = _b64_encode(expected_output)
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 response = await client.post(url, json=payload, headers=self.headers)
                 response.raise_for_status()
-                return response.json()
+                data = response.json()
+
+                if "stdout" in data and data["stdout"]:
+                    data["stdout"] = _b64_decode(data["stdout"])
+                if "stderr" in data and data["stderr"]:
+                    data["stderr"] = _b64_decode(data["stderr"])
+                if "compile_output" in data and data["compile_output"]:
+                    data["compile_output"] = _b64_decode(data["compile_output"])
+                if "message" in data and data["message"]:
+                    data["message"] = _b64_decode(data["message"])
+
+                return data
         except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError) as exc:
             logger.warning(f"Judge0 connection error ({exc}). Invoking fallback executor.")
             if language_id == 71:  # Python
@@ -248,8 +275,19 @@ class Judge0Client:
         self,
         submissions: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        url = f"{self.base_url}/submissions/batch?base64_encoded=false"
-        payload = {"submissions": submissions}
+        url = f"{self.base_url}/submissions/batch?base64_encoded=true"
+        encoded_submissions = []
+        for s in submissions:
+            item = dict(s)
+            if "source_code" in item and item["source_code"] is not None:
+                item["source_code"] = _b64_encode(item["source_code"])
+            if "stdin" in item and item["stdin"] is not None:
+                item["stdin"] = _b64_encode(item["stdin"])
+            if "expected_output" in item and item["expected_output"] is not None:
+                item["expected_output"] = _b64_encode(item["expected_output"])
+            encoded_submissions.append(item)
+
+        payload = {"submissions": encoded_submissions}
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
@@ -262,20 +300,39 @@ class Judge0Client:
                     return []
 
                 tokens_str = ",".join(tokens)
-                poll_url = f"{self.base_url}/submissions/batch?tokens={tokens_str}&base64_encoded=false"
+                poll_url = f"{self.base_url}/submissions/batch?tokens={tokens_str}&base64_encoded=true"
                 poll_res = await client.get(poll_url, headers=self.headers)
                 poll_res.raise_for_status()
-                return poll_res.json().get("submissions", [])
+                results = poll_res.json().get("submissions", [])
+                for data in results:
+                    if "stdout" in data and data["stdout"]:
+                        data["stdout"] = _b64_decode(data["stdout"])
+                    if "stderr" in data and data["stderr"]:
+                        data["stderr"] = _b64_decode(data["stderr"])
+                    if "compile_output" in data and data["compile_output"]:
+                        data["compile_output"] = _b64_decode(data["compile_output"])
+                    if "message" in data and data["message"]:
+                        data["message"] = _b64_decode(data["message"])
+                return results
             except Exception as exc:
                 logger.error(f"Judge0 batch execution error: {exc}")
                 raise RuntimeError(f"Judge0 batch request failed: {str(exc)}")
 
     async def get_submission(self, token: str) -> Dict[str, Any]:
-        url = f"{self.base_url}/submissions/{token}?base64_encoded=false"
+        url = f"{self.base_url}/submissions/{token}?base64_encoded=true"
         async with httpx.AsyncClient(timeout=10.0) as client:
             res = await client.get(url, headers=self.headers)
             res.raise_for_status()
-            return res.json()
+            data = res.json()
+            if "stdout" in data and data["stdout"]:
+                data["stdout"] = _b64_decode(data["stdout"])
+            if "stderr" in data and data["stderr"]:
+                data["stderr"] = _b64_decode(data["stderr"])
+            if "compile_output" in data and data["compile_output"]:
+                data["compile_output"] = _b64_decode(data["compile_output"])
+            if "message" in data and data["message"]:
+                data["message"] = _b64_decode(data["message"])
+            return data
 
 
 judge0_client = Judge0Client()

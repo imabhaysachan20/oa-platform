@@ -149,6 +149,8 @@ services:
       - RUN_RATE_LIMIT=10/minute
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend:/app/backend
     command: >
       sh -c "alembic -c backend/alembic.ini upgrade head &&
              python backend/seed.py &&
@@ -173,6 +175,8 @@ services:
     links:
       - postgres:postgres
       - redis:redis
+    volumes:
+      - ./backend:/app/backend
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@postgres:5432/ubicode
       - REDIS_URL=redis://redis:6379/0
@@ -195,6 +199,8 @@ services:
     links:
       - postgres:postgres
       - redis:redis
+    volumes:
+      - ./backend:/app/backend
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@postgres:5432/ubicode
       - REDIS_URL=redis://redis:6379/0

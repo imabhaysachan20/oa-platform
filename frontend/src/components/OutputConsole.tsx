@@ -251,7 +251,7 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
                         : 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-900 dark:text-rose-200'
                     }`}
                   >
-                    {selectedResult.actual_output || '(no output)'}
+                    {selectedResult.actual_output || (selectedResult.stderr || selectedResult.compile_output ? '(no output - see error details below)' : '(no output)')}
                     <button
                       type="button"
                       onClick={() => handleCopy(selectedResult.actual_output || '', `out-${activeCaseTab}`)}
@@ -279,11 +279,21 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
                   </div>
                 </div>
 
+                {/* Compilation Output if available */}
+                {selectedResult.compile_output && (
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 tracking-wider uppercase">Compiler Output</div>
+                    <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-xl p-3 text-rose-800 dark:text-rose-300 font-mono text-xs whitespace-pre-wrap leading-relaxed">
+                      {selectedResult.compile_output}
+                    </div>
+                  </div>
+                )}
+
                 {/* Stderr if available */}
                 {selectedResult.stderr && (
                   <div className="space-y-1.5">
-                    <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 tracking-wider uppercase">Stderr</div>
-                    <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-xl p-3 text-rose-800 dark:text-rose-300 font-mono text-xs whitespace-pre-wrap">
+                    <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 tracking-wider uppercase">Stderr / Runtime Error</div>
+                    <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-xl p-3 text-rose-800 dark:text-rose-300 font-mono text-xs whitespace-pre-wrap leading-relaxed">
                       {selectedResult.stderr}
                     </div>
                   </div>

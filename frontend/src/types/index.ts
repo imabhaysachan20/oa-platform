@@ -144,8 +144,9 @@ export interface ExamResultDetail {
   student_name: string;
   roll_no?: string;
   status: string;
-  total_score: number;
-  rank?: number;
+  total_score?: number | null;
+  rank?: number | null;
+  submitted_at?: string | null;
   question_scores: QuestionScoreBreakdown[];
 }
 

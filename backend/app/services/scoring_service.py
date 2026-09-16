@@ -68,8 +68,7 @@ async def compute_and_save_exam_scores(db: AsyncSession, assignment_id: int) -> 
 
     for assigned_q, q in assigned_rows:
         diff_weight = calculate_difficulty_weight(exam, assigned_q.difficulty)
-        # Max score for a question occurs when correctness=1 and time_bonus=0.2 => 1.2 * diff_weight
-        max_possible_score += diff_weight * 1.2
+        max_possible_score += diff_weight
 
         # Find latest final submission for this question
         stmt_sub = (
@@ -92,16 +91,9 @@ async def compute_and_save_exam_scores(db: AsyncSession, assignment_id: int) -> 
             correctness = 0.0
             time_taken_sec = overall_time_taken_sec
 
-        # Formula:
-        # time_bonus = clamp(1 - (time_taken_sec / allowed_time_sec), 0, 0.2)
-        if allowed_time_sec > 0:
-            ratio = 1.0 - (time_taken_sec / allowed_time_sec)
-        else:
-            ratio = 0.0
-        time_bonus = max(0.0, min(0.2, ratio))
-
-        # question_score = difficulty_weight * correctness * (1 + time_bonus)
-        q_score = diff_weight * correctness * (1.0 + time_bonus)
+        # Exact partial marking based on passed test cases ratio:
+        # e.g. 10 marks question, 4 test cases, student passes 2 => 10.0 * (2/4) = 5.0 marks
+        q_score = round(diff_weight * correctness, 2)
         total_earned_score += q_score
 
         question_score_obj = QuestionScore(
@@ -110,8 +102,8 @@ async def compute_and_save_exam_scores(db: AsyncSession, assignment_id: int) -> 
             correctness=correctness,
             time_taken_sec=time_taken_sec,
             difficulty_weight=diff_weight,
-            time_bonus=time_bonus,
-            final_score=round(q_score, 2),
+            time_bonus=0.0,
+            final_score=q_score,
         )
         db.add(question_score_obj)
 

@@ -287,9 +287,15 @@ async def _get_assigned_question_views(db: AsyncSession, assignment_id: int) -> 
     return views
 
 
-async def get_exam_result_detail(db: AsyncSession, assignment_id: int) -> ExamResultDetail:
+async def get_exam_result_detail(
+    db: AsyncSession,
+    assignment_id: int,
+    is_admin: bool = False
+) -> ExamResultDetail:
     """
     Returns full score breakdown for an assignment.
+    Marks, scores, and rankings are strictly reserved for admins (is_admin=True).
+    Students receive a secure submission confirmation without any scores.
     """
     stmt = (
         select(ExamAssignment, Exam, User, ExamResult)
@@ -304,27 +310,35 @@ async def get_exam_result_detail(db: AsyncSession, assignment_id: int) -> ExamRe
 
     assignment, exam, user, result = row
 
-    # Fetch question scores
-    stmt_scores = (
-        select(QuestionScore, Question)
-        .join(Question, QuestionScore.question_id == Question.id)
-        .where(QuestionScore.assignment_id == assignment_id)
-    )
-    score_rows = (await db.execute(stmt_scores)).all()
-
-    scores_breakdown = [
-        QuestionScoreBreakdown(
-            question_id=q.id,
-            question_title=q.title,
-            difficulty=q.difficulty.value,
-            correctness=qs.correctness,
-            time_taken_sec=qs.time_taken_sec,
-            difficulty_weight=qs.difficulty_weight,
-            time_bonus=qs.time_bonus,
-            final_score=qs.final_score,
+    if is_admin:
+        # Fetch question scores for admin only
+        stmt_scores = (
+            select(QuestionScore, Question)
+            .join(Question, QuestionScore.question_id == Question.id)
+            .where(QuestionScore.assignment_id == assignment_id)
         )
-        for qs, q in score_rows
-    ]
+        score_rows = (await db.execute(stmt_scores)).all()
+
+        scores_breakdown = [
+            QuestionScoreBreakdown(
+                question_id=q.id,
+                question_title=q.title,
+                difficulty=q.difficulty.value,
+                correctness=qs.correctness,
+                time_taken_sec=qs.time_taken_sec,
+                difficulty_weight=qs.difficulty_weight,
+                time_bonus=qs.time_bonus,
+                final_score=qs.final_score,
+            )
+            for qs, q in score_rows
+        ]
+        total_score_val = result.total_score if result else 0.0
+        rank_val = result.rank if result else None
+    else:
+        # For students, all scores are withheld and fully controlled by admin
+        scores_breakdown = []
+        total_score_val = None
+        rank_val = None
 
     return ExamResultDetail(
         assignment_id=assignment.id,
@@ -333,8 +347,9 @@ async def get_exam_result_detail(db: AsyncSession, assignment_id: int) -> ExamRe
         student_name=user.name,
         roll_no=user.roll_no,
         status=assignment.status.value,
-        total_score=result.total_score if result else 0.0,
-        rank=result.rank if result else None,
+        total_score=total_score_val,
+        rank=rank_val,
+        submitted_at=assignment.submitted_at,
         question_scores=scores_breakdown
     )
 

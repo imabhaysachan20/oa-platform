@@ -11,7 +11,7 @@ import { OutputConsole } from '../components/OutputConsole';
 import { Timer } from '../components/ui/Timer';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { Play, Send, CheckCircle, AlertTriangle, ArrowLeft, Sun, Moon } from 'lucide-react';
+import { Play, Send, CheckCircle, AlertTriangle, ArrowLeft, Sun, Moon, ShieldAlert, ShieldCheck } from 'lucide-react';
 
 export const StudentExamWorkspacePage: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
@@ -22,6 +22,10 @@ export const StudentExamWorkspacePage: React.FC = () => {
   const [isSubmittingExam, setIsSubmittingExam] = useState(false);
   const [submissionFeedback, setSubmissionFeedback] = useState<string | null>(null);
   const [isConsoleExpanded, setIsConsoleExpanded] = useState(false);
+
+  // Anti-Cheat & Proctoring Tracking
+  const [tabSwitchCount, setTabSwitchCount] = useState(0);
+  const [showTabSwitchWarning, setShowTabSwitchWarning] = useState(false);
 
   const { theme, toggleTheme } = useThemeStore();
 
@@ -70,6 +74,32 @@ export const StudentExamWorkspacePage: React.FC = () => {
       );
     }
   }, [examData, id, navigate, setExamSession]);
+
+  // Anti-Cheat: Tab-switch, window blur & beforeunload listeners
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        setTabSwitchCount((prev) => {
+          const next = prev + 1;
+          setShowTabSwitchWarning(true);
+          return next;
+        });
+      }
+    };
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
 
   const currentQ = questions[activeQuestionIndex];
   const currentLang = currentQ ? selectedLanguage[currentQ.id] || 'python' : 'python';
@@ -148,7 +178,10 @@ export const StudentExamWorkspacePage: React.FC = () => {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden transition-colors duration-150">
+    <div
+      onContextMenu={(e) => e.preventDefault()}
+      className="h-screen flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden transition-colors duration-150"
+    >
       {/* Workspace Top Navigation Bar */}
       <div className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between shadow-sm shrink-0">
         <div className="flex items-center gap-3">
@@ -179,8 +212,23 @@ export const StudentExamWorkspacePage: React.FC = () => {
           </div>
         </div>
 
-        {/* Server-Driven Countdown Timer, Theme Toggle & Finish Button */}
+        {/* Proctoring Status Badge, Server-Driven Countdown Timer, Theme Toggle & Finish Button */}
         <div className="flex items-center gap-2.5 sm:gap-3">
+          {/* Anti-Cheat Proctoring Status Badge */}
+          <div className="hidden md:flex items-center gap-2">
+            {tabSwitchCount === 0 ? (
+              <span className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                <ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400" />
+                <span>Proctored Session</span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200 dark:border-rose-800 animate-pulse">
+                <AlertTriangle size={14} className="text-rose-600 dark:text-rose-400" />
+                <span>{tabSwitchCount} Tab Switch Warning{tabSwitchCount > 1 ? 's' : ''}</span>
+              </span>
+            )}
+          </div>
+
           {deadlineAt && (
             <Timer deadlineAt={deadlineAt} onExpire={handleTimeoutExpire} />
           )}
@@ -347,6 +395,47 @@ export const StudentExamWorkspacePage: React.FC = () => {
             >
               <CheckCircle size={15} />
               <span>Confirm & Submit Exam</span>
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Tab Switch & Anti-Cheat Alert Modal */}
+      <Modal
+        isOpen={showTabSwitchWarning}
+        onClose={() => setShowTabSwitchWarning(false)}
+        title="⚠️ Tab Switch Detected!"
+        maxWidth="lg"
+      >
+        <div className="space-y-4 text-sm text-slate-700 dark:text-slate-300">
+          <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950/60 dark:border-rose-800/80 dark:text-rose-200 rounded-xl space-y-2">
+            <div className="flex items-center gap-2 font-bold text-rose-900 dark:text-rose-100">
+              <ShieldAlert size={20} className="text-rose-600 dark:text-rose-400 shrink-0" />
+              <span>Security Warning (Infraction #{tabSwitchCount})</span>
+            </div>
+            <p className="text-xs text-rose-700 dark:text-rose-300 leading-relaxed">
+              You navigated away from the assessment workspace or switched browser tabs. This action has been logged by the proctoring monitor.
+            </p>
+          </div>
+
+          <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-950 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
+            <p className="font-semibold text-slate-900 dark:text-slate-200">Strict Assessment Rules:</p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>Do not leave or minimize the assessment window.</li>
+              <li>Do not switch tabs or open external applications/tools.</li>
+              <li>All focus departures are recorded and included in your test audit report.</li>
+              <li>Continued tab switching will lead to immediate exam disqualification.</li>
+            </ul>
+          </div>
+
+          <div className="flex items-center justify-end pt-2">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setShowTabSwitchWarning(false)}
+              className="font-semibold w-full sm:w-auto"
+            >
+              I Understand & Return to Exam
             </Button>
           </div>
         </div>

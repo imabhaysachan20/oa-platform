@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
 from backend.app.core.security import get_current_user, get_current_admin
-from backend.app.models.user import User
+from backend.app.models.user import User, UserRole
 from backend.app.models.exam import Exam, ExamAssignment
 from backend.app.schemas.exam import (
     ExamResponse,
@@ -108,6 +108,7 @@ async def get_my_exam_result(
 ):
     """
     Returns the student's result and question score breakdown for this exam.
+    Rank is hidden from students; only admins can view rankings.
     """
     stmt = (
         select(ExamAssignment)
@@ -117,17 +118,18 @@ async def get_my_exam_result(
     if not assignment:
         raise HTTPException(status_code=404, detail="Exam assignment not found")
 
-    return await get_exam_result_detail(db, assignment.id)
+    is_admin = (current_user.role == UserRole.ADMIN)
+    return await get_exam_result_detail(db, assignment.id, is_admin=is_admin)
 
 
 @router.get("/{exam_id}/leaderboard", response_model=List[LeaderboardEntry])
 async def get_leaderboard(
     exam_id: int,
-    current_user: User = Depends(get_current_user),
+    current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Leaderboard of finalized student results for the exam.
+    Leaderboard of finalized student results for the exam. Admin only.
     """
     return await get_exam_leaderboard(db, exam_id)
 

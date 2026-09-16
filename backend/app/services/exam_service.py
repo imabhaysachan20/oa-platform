@@ -63,7 +63,24 @@ async def start_exam_for_student(
     assignment = (await db.execute(stmt_assign)).scalar_one_or_none()
 
     if assignment:
-        # If already started or completed, return existing locked questions
+        # If already completed or expired, reject starting again
+        if assignment.status in [AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]:
+            raise HTTPException(
+                status_code=400,
+                detail="You have already completed and submitted this assessment."
+            )
+
+        if assignment.deadline_at and now > assignment.deadline_at:
+            assignment.status = AssignmentStatus.AUTO_SUBMITTED
+            assignment.submitted_at = assignment.deadline_at
+            await db.commit()
+            await compute_and_save_exam_scores(db, assignment.id)
+            raise HTTPException(
+                status_code=400,
+                detail="Assessment time limit has expired and your test has been submitted."
+            )
+
+        # If already started, return existing locked questions
         assigned_views = await _get_assigned_question_views(db, assignment.id)
         return ExamStartResponse(
             assignment_id=assignment.id,

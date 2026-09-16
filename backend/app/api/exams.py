@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -6,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.database import get_db
 from backend.app.core.security import get_current_user, get_current_admin
 from backend.app.models.user import User, UserRole
-from backend.app.models.exam import Exam, ExamAssignment
+from backend.app.models.exam import Exam, ExamAssignment, AssignmentStatus
 from backend.app.schemas.exam import (
     ExamResponse,
     ExamStartResponse,
@@ -31,11 +32,43 @@ async def list_available_exams(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    List published exams available for students.
+    List published exams available for students, including assignment and completion state.
     """
     stmt = select(Exam).where(Exam.is_published == True).order_by(Exam.id.desc())
     exams = (await db.execute(stmt)).scalars().all()
-    return exams
+    if not exams:
+        return []
+
+    exam_ids = [e.id for e in exams]
+    assign_stmt = select(ExamAssignment).where(
+        ExamAssignment.user_id == current_user.id,
+        ExamAssignment.exam_id.in_(exam_ids)
+    )
+    assignments = (await db.execute(assign_stmt)).scalars().all()
+    assignments_by_exam_id = {a.exam_id: a for a in assignments}
+
+    now = datetime.now(timezone.utc)
+    results = []
+    for exam in exams:
+        resp = ExamResponse.model_validate(exam)
+        assign = assignments_by_exam_id.get(exam.id)
+        if assign:
+            is_done = (
+                assign.status in [AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]
+                or bool(assign.deadline_at and assign.deadline_at <= now)
+            )
+            resp.is_completed = is_done
+            resp.assignment_status = (
+                AssignmentStatus.AUTO_SUBMITTED
+                if (is_done and assign.status == AssignmentStatus.IN_PROGRESS)
+                else assign.status
+            )
+        else:
+            resp.is_completed = False
+            resp.assignment_status = AssignmentStatus.NOT_STARTED
+        results.append(resp)
+
+    return results
 
 
 @router.get("/{exam_id}", response_model=ExamResponse)
@@ -48,7 +81,30 @@ async def get_exam_details(
     exam = (await db.execute(stmt)).scalar_one_or_none()
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
-    return exam
+
+    resp = ExamResponse.model_validate(exam)
+    assign_stmt = select(ExamAssignment).where(
+        ExamAssignment.user_id == current_user.id,
+        ExamAssignment.exam_id == exam.id
+    )
+    assign = (await db.execute(assign_stmt)).scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+    if assign:
+        is_done = (
+            assign.status in [AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]
+            or bool(assign.deadline_at and assign.deadline_at <= now)
+        )
+        resp.is_completed = is_done
+        resp.assignment_status = (
+            AssignmentStatus.AUTO_SUBMITTED
+            if (is_done and assign.status == AssignmentStatus.IN_PROGRESS)
+            else assign.status
+        )
+    else:
+        resp.is_completed = False
+        resp.assignment_status = AssignmentStatus.NOT_STARTED
+
+    return resp
 
 
 @router.post("/{exam_id}/start", response_model=ExamStartResponse)

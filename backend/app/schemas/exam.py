@@ -36,6 +36,8 @@ class ExamResponse(ExamBase):
     id: int
     pool_count: Optional[int] = 0
     created_at: Optional[datetime] = None
+    assignment_status: Optional[AssignmentStatus] = None
+    is_completed: Optional[bool] = False
 
     class Config:
         from_attributes = True

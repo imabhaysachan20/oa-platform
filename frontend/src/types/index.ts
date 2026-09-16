@@ -60,6 +60,8 @@ export interface Exam {
   is_published: boolean;
   pool_count?: number;
   created_at?: string;
+  assignment_status?: AssignmentStatus;
+  is_completed?: boolean;
 }
 
 export interface ExamStartResponse {

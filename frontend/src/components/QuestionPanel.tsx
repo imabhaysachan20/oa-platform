@@ -36,21 +36,13 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({
             <button
               key={q.id}
               onClick={() => onSelectIndex(idx)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap ${
-                isSelected
-                  ? 'bg-ubi-800 text-white shadow-sm'
-                  : 'bg-white dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-transparent'
-              }`}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap ${isSelected
+                ? 'bg-ubi-800 text-white shadow-sm'
+                : 'bg-white dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-transparent'
+                }`}
             >
               <span>Question {idx + 1}</span>
-              <Badge
-                variant={q.difficulty}
-                className={`text-[10px] px-1.5 py-0 ${
-                  isSelected ? 'bg-white/20 text-white border-white/30' : ''
-                }`}
-              >
-                {q.difficulty}
-              </Badge>
+
               {isSubmitted && (
                 <CheckCircle2
                   size={14}
@@ -67,7 +59,6 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({
         {/* Title & Limits Meta */}
         <div>
           <div className="flex items-center gap-2.5 mb-2">
-            <Badge variant={currentQ.difficulty}>{currentQ.difficulty}</Badge>
             <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 font-medium">
               <span className="flex items-center gap-1">
                 <Clock size={13} className="text-slate-400" />

@@ -5,6 +5,7 @@ export const STARTER_CODE: Record<string, string> = {
   python: `# Write your Python solution here\nimport sys\n\ndef solve():\n    lines = sys.stdin.read().splitlines()\n    if not lines:\n        return\n    # Process input...\n\nif __name__ == "__main__":\n    solve()\n`,
   cpp: `// Write your C++ solution here\n#include <iostream>\n#include <vector>\n#include <string>\n\nusing namespace std;\n\nint main() {\n    ios_base::sync_with_stdio(false);\n    cin.tie(NULL);\n    \n    // Read input and solve...\n    \n    return 0;\n}\n`,
   java: `// Write your Java solution here\nimport java.util.*;\nimport java.io.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        // Read input and solve...\n        \n    }\n}\n`,
+  javascript: `// Write your JavaScript (Node.js) solution here\nconst fs = require('fs');\n\nfunction solve() {\n    const input = fs.readFileSync(0, 'utf-8').trim();\n    if (!input) return;\n    \n    // Process input and output your solution\n    // const lines = input.split('\\n');\n}\n\nsolve();\n`,
 };
 
 interface ExamState {

@@ -174,7 +174,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
               {examTitle || 'Coding Assessment'}
             </h1>
             <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-              3 Questions Locked • Autosave Active
+              Autosave Active
             </span>
           </div>
         </div>
@@ -255,7 +255,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
           <div className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-2 rounded-xl shrink-0 shadow-sm">
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
               <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span>Judge0 Sandbox Ready</span>
+              <span>Proctored Exam</span>
             </div>
 
             <div className="flex items-center gap-2">

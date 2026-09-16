@@ -3,6 +3,7 @@ import CodeMirror from '@uiw/react-codemirror';
 import { python } from '@codemirror/lang-python';
 import { cpp } from '@codemirror/lang-cpp';
 import { java } from '@codemirror/lang-java';
+import { javascript } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { RotateCcw } from 'lucide-react';
 import { STARTER_CODE } from '../store/examStore';
@@ -38,6 +39,10 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
         return [cpp()];
       case 'java':
         return [java()];
+      case 'javascript':
+      case 'js':
+      case 'node':
+        return [javascript()];
       default:
         return [python()];
     }
@@ -69,6 +74,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-ubi-800 font-semibold shadow-sm"
           >
             <option value="python">Python 3 (Judge0)</option>
+            <option value="javascript">JavaScript (Node.js)</option>
             <option value="cpp">C++ (GCC 9.2)</option>
             <option value="java">Java (OpenJDK 13)</option>
           </select>

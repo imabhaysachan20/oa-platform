@@ -19,6 +19,11 @@ LANGUAGE_ID_MAP = {
     "c++": 54,
     # Java
     "java": 62,         # Java (OpenJDK 13.0.1)
+    # JavaScript
+    "javascript": 63,   # JavaScript (Node.js 12.14.0)
+    "js": 63,
+    "node": 63,
+    "nodejs": 63,
 }
 
 # Status descriptions from Judge0
@@ -47,7 +52,7 @@ def get_language_id(language: str) -> int:
     try:
         return int(norm)
     except ValueError:
-        raise ValueError(f"Unsupported language: {language}. Supported: python, cpp, java")
+        raise ValueError(f"Unsupported language: {language}. Supported: python, javascript, cpp, java")
 
 
 def _execute_python_fallback(
@@ -122,6 +127,77 @@ def _execute_python_fallback(
         }
 
 
+def _execute_node_fallback(
+    source_code: str,
+    stdin: str,
+    expected_output: Optional[str] = None,
+    cpu_time_limit: float = 2.0
+) -> Dict[str, Any]:
+    """
+    Fallback runner when Judge0 is temporarily connecting/downloading.
+    Executes JavaScript code in a Node.js subprocess with timeout.
+    """
+    start_t = time.perf_counter()
+    try:
+        proc = subprocess.run(
+            ["node", "-e", source_code],
+            input=stdin,
+            capture_output=True,
+            text=True,
+            timeout=cpu_time_limit
+        )
+        elapsed = time.perf_counter() - start_t
+        stdout = proc.stdout
+        stderr = proc.stderr
+
+        if proc.returncode != 0:
+            return {
+                "status": {"id": 11, "description": "Runtime Error (NZEC)"},
+                "stdout": stdout,
+                "stderr": stderr,
+                "compile_output": None,
+                "time": str(round(elapsed, 3)),
+                "token": "local-js-fallback"
+            }
+
+        status_id = 3
+        status_desc = "Accepted"
+        if expected_output is not None:
+            norm_act = stdout.strip().replace("\r\n", "\n")
+            norm_exp = expected_output.strip().replace("\r\n", "\n")
+            if norm_act != norm_exp:
+                status_id = 4
+                status_desc = "Wrong Answer"
+
+        return {
+            "status": {"id": status_id, "description": status_desc},
+            "stdout": stdout,
+            "stderr": stderr,
+            "compile_output": None,
+            "time": str(round(elapsed, 3)),
+            "token": "local-js-fallback"
+        }
+    except subprocess.TimeoutExpired:
+        elapsed = time.perf_counter() - start_t
+        return {
+            "status": {"id": 5, "description": "Time Limit Exceeded"},
+            "stdout": None,
+            "stderr": "Execution timed out",
+            "compile_output": None,
+            "time": str(round(elapsed, 3)),
+            "token": "local-js-fallback"
+        }
+    except Exception as e:
+        return {
+            "status": {"id": 13, "description": f"Execution Error: {str(e)}"},
+            "stdout": None,
+            "stderr": str(e),
+            "compile_output": None,
+            "time": "0.0",
+            "token": "local-js-fallback"
+        }
+
+
 class Judge0Client:
     def __init__(self, base_url: str = settings.JUDGE0_URL, api_key: Optional[str] = settings.JUDGE0_API_KEY):
         self.base_url = base_url.rstrip("/")
@@ -162,6 +238,8 @@ class Judge0Client:
             logger.warning(f"Judge0 connection error ({exc}). Invoking fallback executor.")
             if language_id == 71:  # Python
                 return _execute_python_fallback(source_code, stdin, expected_output, cpu_time_limit)
+            if language_id == 63:  # JavaScript (Node.js)
+                return _execute_node_fallback(source_code, stdin, expected_output, cpu_time_limit)
             raise RuntimeError(
                 f"Judge0 service is starting or unreachable ({str(exc)}). Please wait a moment."
             )

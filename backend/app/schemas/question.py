@@ -30,6 +30,7 @@ class QuestionBase(BaseModel):
     memory_limit_kb: int = 128000
     sample_input: Optional[str] = None
     sample_output: Optional[str] = None
+    input_format: Optional[str] = None
 
 
 class QuestionCreate(QuestionBase):
@@ -44,6 +45,7 @@ class QuestionUpdate(BaseModel):
     memory_limit_kb: Optional[int] = None
     sample_input: Optional[str] = None
     sample_output: Optional[str] = None
+    input_format: Optional[str] = None
 
 
 class QuestionResponse(QuestionBase):
@@ -63,6 +65,7 @@ class StudentQuestionView(BaseModel):
     memory_limit_kb: int
     sample_input: Optional[str] = None
     sample_output: Optional[str] = None
+    input_format: Optional[str] = None
     order_index: int
     last_code: Optional[str] = None
     last_language: Optional[str] = None

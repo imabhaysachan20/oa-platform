@@ -28,6 +28,7 @@ export interface Question {
   memory_limit_kb: number;
   sample_input?: string;
   sample_output?: string;
+  input_format?: string;
   test_cases?: TestCase[];
 }
 
@@ -40,6 +41,7 @@ export interface StudentQuestionView {
   memory_limit_kb: number;
   sample_input?: string;
   sample_output?: string;
+  input_format?: string;
   order_index: number;
   last_code?: string;
   last_language?: string;

@@ -46,6 +46,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
     setRunOutput,
     setIsRunningCode,
     setIsSubmittingCode,
+    resetExamState,
   } = useExamStore();
 
   // Load exam questions & state (supports resume on reload)
@@ -159,6 +160,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
     try {
       await examsApi.finish(id);
       setIsFinishModalOpen(false);
+      resetExamState();
       navigate(`/exam/${id}/result`);
     } catch (err: any) {
       alert(err.response?.data?.detail || 'Failed to finish exam');
@@ -170,6 +172,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
   // Auto-submit callback triggered when Timer hits 00:00:00
   const handleTimeoutExpire = () => {
     alert('Time limit reached! Your assessment has been automatically submitted.');
+    resetExamState();
     navigate(`/exam/${id}/result`);
   };
 

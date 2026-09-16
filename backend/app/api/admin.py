@@ -287,6 +287,7 @@ async def create_question(
         memory_limit_kb=body.memory_limit_kb,
         sample_input=body.sample_input,
         sample_output=body.sample_output,
+        input_format=body.input_format,
     )
     db.add(q)
     await db.flush()
@@ -348,6 +349,8 @@ async def update_question(
         q.sample_input = body.sample_input
     if body.sample_output is not None:
         q.sample_output = body.sample_output
+    if body.input_format is not None:
+        q.input_format = body.input_format
 
     await db.commit()
 

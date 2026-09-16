@@ -300,6 +300,7 @@ async def _get_assigned_question_views(db: AsyncSession, assignment_id: int) -> 
             memory_limit_kb=q.memory_limit_kb,
             sample_input=q.sample_input,
             sample_output=q.sample_output,
+            input_format=q.input_format,
             order_index=assigned_q.order_index,
             last_code=latest_sub.code if latest_sub else None,
             last_language=latest_sub.language if latest_sub else None,

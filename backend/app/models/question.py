@@ -25,6 +25,7 @@ class Question(Base, TimestampMixin):
     memory_limit_kb: Mapped[int] = mapped_column(Integer, default=128000, nullable=False)
     sample_input: Mapped[str] = mapped_column(Text, nullable=True)
     sample_output: Mapped[str] = mapped_column(Text, nullable=True)
+    input_format: Mapped[str] = mapped_column(Text, nullable=True)
 
     # Relationships
     test_cases = relationship("TestCase", back_populates="question", cascade="all, delete-orphan")

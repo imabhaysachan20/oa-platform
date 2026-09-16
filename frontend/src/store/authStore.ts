@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { User } from '../types';
+import { useExamStore } from './examStore';
 
 interface AuthState {
   token: string | null;
@@ -32,6 +33,7 @@ export const useAuthStore = create<AuthState>((set) => {
     logout: () => {
       localStorage.removeItem('ubicode_token');
       localStorage.removeItem('ubicode_user');
+      useExamStore.getState().resetExamState();
       set({ token: null, user: null, isAuthenticated: false });
     },
   };

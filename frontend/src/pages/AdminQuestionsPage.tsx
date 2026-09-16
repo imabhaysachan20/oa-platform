@@ -6,8 +6,9 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
-import { AdminPlaygroundModal } from '../components/AdminPlaygroundModal';
-import { Plus, Trash2, Code2, ListChecks, Eye, EyeOff } from 'lucide-react';
+import { AdminPlaygroundModal, QuestionFormData } from '../components/AdminPlaygroundModal';
+import { RichTextEditor } from '../components/ui/RichTextEditor';
+import { Plus, Trash2, Code2, ListChecks, Eye, EyeOff, Pencil } from 'lucide-react';
 
 export const AdminQuestionsPage: React.FC = () => {
   const queryClient = useQueryClient();
@@ -16,9 +17,11 @@ export const AdminQuestionsPage: React.FC = () => {
   const [isPlaygroundModalOpen, setIsPlaygroundModalOpen] = useState(false);
   const [selectedQuestionForTestCases, setSelectedQuestionForTestCases] = useState<Question | null>(null);
 
-  // Question Form State
+  // Question Form State (supports both create and edit)
+  const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [inputFormat, setInputFormat] = useState('');
   const [difficulty, setDifficulty] = useState<QuestionDifficulty>('easy');
   const [timeLimitMs, setTimeLimitMs] = useState(2000);
   const [memoryLimitKb, setMemoryLimitKb] = useState(128000);
@@ -38,6 +41,17 @@ export const AdminQuestionsPage: React.FC = () => {
 
   const createQuestionMutation = useMutation({
     mutationFn: adminApi.createQuestion,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['adminQuestions'] });
+      setIsCreateModalOpen(false);
+      setIsPlaygroundModalOpen(false);
+      resetQuestionForm();
+    },
+  });
+
+  const updateQuestionMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Partial<Question> }) =>
+      adminApi.updateQuestion(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['adminQuestions'] });
       setIsCreateModalOpen(false);
@@ -72,8 +86,10 @@ export const AdminQuestionsPage: React.FC = () => {
   });
 
   const resetQuestionForm = () => {
+    setEditingQuestionId(null);
     setTitle('');
     setDescription('');
+    setInputFormat('');
     setDifficulty('easy');
     setTimeLimitMs(2000);
     setMemoryLimitKb(128000);
@@ -81,9 +97,27 @@ export const AdminQuestionsPage: React.FC = () => {
     setSampleOutput('');
   };
 
-  const handleCreateQuestion = (e: React.FormEvent) => {
+  const handleOpenCreateModal = () => {
+    resetQuestionForm();
+    setIsCreateModalOpen(true);
+  };
+
+  const handleOpenEditModal = (q: Question) => {
+    setEditingQuestionId(q.id);
+    setTitle(q.title);
+    setDescription(q.description);
+    setInputFormat(q.input_format || '');
+    setDifficulty(q.difficulty);
+    setTimeLimitMs(q.time_limit_ms);
+    setMemoryLimitKb(q.memory_limit_kb);
+    setSampleInput(q.sample_input || '');
+    setSampleOutput(q.sample_output || '');
+    setIsCreateModalOpen(true);
+  };
+
+  const handleSubmitQuestion = (e: React.FormEvent) => {
     e.preventDefault();
-    createQuestionMutation.mutate({
+    const payload = {
       title,
       description,
       difficulty,
@@ -91,7 +125,33 @@ export const AdminQuestionsPage: React.FC = () => {
       memory_limit_kb: memoryLimitKb,
       sample_input: sampleInput,
       sample_output: sampleOutput,
-    });
+      input_format: inputFormat,
+    };
+
+    if (editingQuestionId) {
+      updateQuestionMutation.mutate({ id: editingQuestionId, data: payload });
+    } else {
+      createQuestionMutation.mutate(payload);
+    }
+  };
+
+  const handleSaveFromPlayground = (formData: QuestionFormData) => {
+    const payload = {
+      title: formData.title,
+      description: formData.description,
+      difficulty: formData.difficulty,
+      time_limit_ms: formData.timeLimitMs,
+      memory_limit_kb: formData.memoryLimitKb,
+      sample_input: formData.sampleInput,
+      sample_output: formData.sampleOutput,
+      input_format: formData.inputFormat,
+    };
+
+    if (editingQuestionId) {
+      updateQuestionMutation.mutate({ id: editingQuestionId, data: payload });
+    } else {
+      createQuestionMutation.mutate(payload);
+    }
   };
 
   const handleAddTestCase = (e: React.FormEvent) => {
@@ -125,7 +185,7 @@ export const AdminQuestionsPage: React.FC = () => {
             Configure coding problems, descriptions, limits, and sample/hidden test cases.
           </p>
         </div>
-        <Button onClick={() => setIsCreateModalOpen(true)} className="gap-2 self-start font-semibold">
+        <Button onClick={handleOpenCreateModal} className="gap-2 self-start font-semibold">
           <Plus size={16} />
           <span>Add New Question</span>
         </Button>
@@ -146,6 +206,11 @@ export const AdminQuestionsPage: React.FC = () => {
                   <h3 className="text-base font-bold text-slate-900 dark:text-white">{q.title}</h3>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-1">{q.description}</p>
+                {q.input_format && (
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">
+                    <strong className="text-slate-700 dark:text-slate-300">Format:</strong> {q.input_format}
+                  </p>
+                )}
                 <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
                   <span className="font-semibold">{q.test_cases?.length || 0} Test Cases</span>
                   <span>•</span>
@@ -156,6 +221,15 @@ export const AdminQuestionsPage: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleOpenEditModal(q)}
+                  className="gap-1.5 font-semibold text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                >
+                  <Pencil size={14} />
+                  <span>Edit</span>
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -187,14 +261,14 @@ export const AdminQuestionsPage: React.FC = () => {
         </Card>
       )}
 
-      {/* Create Question Modal */}
+      {/* Create / Edit Question Modal */}
       <Modal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        title="Add New Coding Question"
-        maxWidth="lg"
+        title={editingQuestionId ? 'Edit Coding Question' : 'Add New Coding Question'}
+        maxWidth="2xl"
       >
-        <form onSubmit={handleCreateQuestion} className="space-y-4 text-xs">
+        <form onSubmit={handleSubmitQuestion} className="space-y-4 text-xs">
           <div>
             <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
               Title
@@ -250,15 +324,27 @@ export const AdminQuestionsPage: React.FC = () => {
 
           <div>
             <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-              Description & Constraints
+              Description & Constraints (Rich Text)
+            </label>
+            <RichTextEditor
+              value={description}
+              onChange={setDescription}
+              placeholder="State problem statement, constraints, notes... Supports bold, lists, and code blocks."
+              rows={5}
+            />
+          </div>
+
+          <div>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+              Input Format <span className="text-rose-500">*</span>
             </label>
             <textarea
               required
-              rows={4}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="State problem constraints, input format, and output format..."
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none font-mono"
+              rows={2}
+              value={inputFormat}
+              onChange={(e) => setInputFormat(e.target.value)}
+              placeholder="e.g. First line contains N integers representing nums. Second line contains target integer."
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none"
             />
           </div>
 
@@ -297,7 +383,7 @@ export const AdminQuestionsPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
             <Button
               type="button"
               variant="outline"
@@ -306,23 +392,30 @@ export const AdminQuestionsPage: React.FC = () => {
             >
               Cancel
             </Button>
-            <Button 
-              type="button" 
-              size="sm" 
-              variant="secondary"
-              onClick={() => {
-                if (!title || !description) {
-                  alert('Please enter a title and description before testing.');
-                  return;
-                }
-                setIsPlaygroundModalOpen(true);
-              }}
-            >
-              Test in Playground
-            </Button>
-            <Button type="submit" size="sm" isLoading={createQuestionMutation.isPending} className="font-semibold">
-              Skip & Save
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button 
+                type="button" 
+                size="sm" 
+                variant="secondary"
+                onClick={() => {
+                  if (!title || !description) {
+                    alert('Please enter a title and description before testing.');
+                    return;
+                  }
+                  setIsPlaygroundModalOpen(true);
+                }}
+              >
+                Test in Playground
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                isLoading={createQuestionMutation.isPending || updateQuestionMutation.isPending}
+                className="font-semibold"
+              >
+                {editingQuestionId ? 'Update Question' : 'Save Question'}
+              </Button>
+            </div>
           </div>
         </form>
       </Modal>
@@ -333,25 +426,29 @@ export const AdminQuestionsPage: React.FC = () => {
           isOpen={isPlaygroundModalOpen}
           onClose={() => setIsPlaygroundModalOpen(false)}
           questionData={{
+            id: editingQuestionId ?? undefined,
             title,
             description,
+            difficulty,
             timeLimitMs,
             memoryLimitKb,
             sampleInput,
             sampleOutput,
+            inputFormat,
           }}
-          onSaveQuestion={() => {
-            createQuestionMutation.mutate({
-              title,
-              description,
-              difficulty,
-              time_limit_ms: timeLimitMs,
-              memory_limit_kb: memoryLimitKb,
-              sample_input: sampleInput,
-              sample_output: sampleOutput,
-            });
+          onChangeQuestionData={(updated) => {
+            setTitle(updated.title);
+            setDescription(updated.description);
+            setDifficulty(updated.difficulty);
+            setTimeLimitMs(updated.timeLimitMs);
+            setMemoryLimitKb(updated.memoryLimitKb);
+            setSampleInput(updated.sampleInput);
+            setSampleOutput(updated.sampleOutput);
+            setInputFormat(updated.inputFormat || '');
           }}
-          isSaving={createQuestionMutation.isPending}
+          onSaveQuestion={handleSaveFromPlayground}
+          isSaving={createQuestionMutation.isPending || updateQuestionMutation.isPending}
+          isEditMode={!!editingQuestionId}
         />
       )}
 

@@ -61,8 +61,10 @@ export const useExamStore = create<ExamState>((set) => ({
 
   setExamSession: (examId, assignmentId, examTitle, status, startedAt, deadlineAt, questions) => {
     set((state) => {
-      const drafts = { ...state.codeDrafts };
-      const langs = { ...state.selectedLanguage };
+      const isSameSession = state.assignmentId === assignmentId && state.examId === examId;
+      const drafts = isSameSession ? { ...state.codeDrafts } : {};
+      const langs = isSameSession ? { ...state.selectedLanguage } : {};
+      const runOutputs = isSameSession ? { ...state.runOutputs } : {};
 
       questions.forEach((q) => {
         const lang = q.last_language || 'python';
@@ -93,6 +95,7 @@ export const useExamStore = create<ExamState>((set) => ({
         questions,
         codeDrafts: drafts,
         selectedLanguage: langs,
+        runOutputs,
       };
     });
   },

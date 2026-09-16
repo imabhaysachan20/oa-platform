@@ -1,7 +1,8 @@
 import React from 'react';
 import { Badge } from './ui/Badge';
 import { StudentQuestionView } from '../types';
-import { Clock, HardDrive, CheckCircle2, Code2 } from 'lucide-react';
+import { Clock, HardDrive, CheckCircle2, Code2, AlignLeft } from 'lucide-react';
+import { MarkdownRenderer } from './ui/RichTextEditor';
 
 interface QuestionPanelProps {
   questions: StudentQuestionView[];
@@ -76,9 +77,22 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({
         </div>
 
         {/* Description */}
-        <div className="prose prose-slate dark:prose-invert max-w-none text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line border-t border-slate-200 dark:border-slate-800 pt-4">
-          {currentQ.description}
+        <div className="border-t border-slate-200 dark:border-slate-800 pt-4 text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+          <MarkdownRenderer content={currentQ.description} />
         </div>
+
+        {/* Input Format Section */}
+        {currentQ.input_format && (
+          <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 space-y-1.5">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+              <AlignLeft size={13} className="text-ubi-700 dark:text-ubi-400" />
+              <span>Input Format</span>
+            </div>
+            <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              <MarkdownRenderer content={currentQ.input_format} />
+            </div>
+          </div>
+        )}
 
         {/* LeetCode Style Method Signature & Automated I/O Info */}
         <div className="bg-ubi-50/70 dark:bg-ubi-950/40 border border-ubi-200/80 dark:border-ubi-800/60 rounded-xl p-4 space-y-2">

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { useExamStore } from '../store/examStore';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -21,6 +22,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('ubicode_token');
       localStorage.removeItem('ubicode_user');
+      useExamStore.getState().resetExamState();
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
       }

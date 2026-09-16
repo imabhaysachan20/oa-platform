@@ -281,6 +281,7 @@ async def submit_code_solution(
 
         raw_stdout = judge_res.get("stdout") or ""
         raw_stderr = judge_res.get("stderr") or ""
+        raw_compile = judge_res.get("compile_output") or ""
         norm_actual = _normalize_output(raw_stdout)
         norm_expected = _normalize_output(tc.expected_output)
 

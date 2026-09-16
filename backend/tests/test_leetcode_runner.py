@@ -145,3 +145,23 @@ def test_python_max_subarray_execution():
     )
     assert res.returncode == 0, f"Error: {res.stderr}"
     assert res.stdout.strip() == "6"
+
+
+def test_cpp_palindrome_wrapping():
+    cpp_solution = '''#include <iostream>
+#include <string>
+
+using namespace std;
+
+class Solution {
+public:
+    bool isPalindrome(string s) {
+        return true;
+    }
+};
+'''
+    wrapped = wrap_code_with_driver("Palindrome String Checker", cpp_solution, "cpp")
+    assert "class Solution" in wrapped
+    assert "int main()" in wrapped
+    assert "sol.isPalindrome" in wrapped
+

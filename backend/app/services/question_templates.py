@@ -5,10 +5,12 @@ from typing import Dict, Any, Optional
 QUESTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
     "Two Sum Target": {
         "function_name": "twoSum",
-        "description_signature": "twoSum(nums: list[int], target: int) -> list[int]",
+        "description_signature": "twoSum(nums: List[int], target: int) -> List[int]",
         "starter": {
-            "python": '''class Solution:
-    def twoSum(self, nums: list[int], target: int) -> list[int]:
+            "python": '''from typing import List
+
+class Solution:
+    def twoSum(self, nums: List[int], target: int) -> List[int]:
         # Write your code here
         pass
 ''',
@@ -478,10 +480,12 @@ public class Main {
 
     "Maximum Subarray Sum (Kadane's)": {
         "function_name": "maxSubArray",
-        "description_signature": "maxSubArray(nums: list[int]) -> int",
+        "description_signature": "maxSubArray(nums: List[int]) -> int",
         "starter": {
-            "python": '''class Solution:
-    def maxSubArray(self, nums: list[int]) -> int:
+            "python": '''from typing import List
+
+class Solution:
+    def maxSubArray(self, nums: List[int]) -> int:
         # Write your code here
         pass
 ''',
@@ -572,10 +576,12 @@ public class Main {
 
     "Coin Change Minimum": {
         "function_name": "coinChange",
-        "description_signature": "coinChange(coins: list[int], amount: int) -> int",
+        "description_signature": "coinChange(coins: List[int], amount: int) -> int",
         "starter": {
-            "python": '''class Solution:
-    def coinChange(self, coins: list[int], amount: int) -> int:
+            "python": '''from typing import List
+
+class Solution:
+    def coinChange(self, coins: List[int], amount: int) -> int:
         # Write your code here
         pass
 ''',
@@ -592,6 +598,7 @@ function coinChange(coins, amount) {
             "cpp": '''#include <iostream>
 #include <vector>
 #include <algorithm>
+#include <sstream>
 
 using namespace std;
 
@@ -704,10 +711,12 @@ public class Main {
 
     "Merge Intervals": {
         "function_name": "merge",
-        "description_signature": "merge(intervals: list[list[int]]) -> list[list[int]]",
+        "description_signature": "merge(intervals: List[List[int]]) -> List[List[int]]",
         "starter": {
-            "python": '''class Solution:
-    def merge(self, intervals: list[list[int]]) -> list[list[int]]:
+            "python": '''from typing import List
+
+class Solution:
+    def merge(self, intervals: List[List[int]]) -> List[List[int]]:
         # Write your code here
         pass
 ''',
@@ -830,10 +839,12 @@ public class Main {
 
     "Trapping Rain Water": {
         "function_name": "trap",
-        "description_signature": "trap(height: list[int]) -> int",
+        "description_signature": "trap(height: List[int]) -> int",
         "starter": {
-            "python": '''class Solution:
-    def trap(self, height: list[int]) -> int:
+            "python": '''from typing import List
+
+class Solution:
+    def trap(self, height: List[int]) -> int:
         # Write your code here
         pass
 ''',
@@ -922,10 +933,12 @@ public class Main {
 
     "Median of Two Sorted Arrays": {
         "function_name": "findMedianSortedArrays",
-        "description_signature": "findMedianSortedArrays(nums1: list[int], nums2: list[int]) -> float",
+        "description_signature": "findMedianSortedArrays(nums1: List[int], nums2: List[int]) -> float",
         "starter": {
-            "python": '''class Solution:
-    def findMedianSortedArrays(self, nums1: list[int], nums2: list[int]) -> float:
+            "python": '''from typing import List
+
+class Solution:
+    def findMedianSortedArrays(self, nums1: List[int], nums2: List[int]) -> float:
         # Write your code here
         pass
 ''',
@@ -942,6 +955,7 @@ function findMedianSortedArrays(nums1, nums2) {
             "cpp": '''#include <iostream>
 #include <vector>
 #include <iomanip>
+#include <sstream>
 
 using namespace std;
 
@@ -1127,7 +1141,8 @@ def wrap_code_with_driver(title: str, code: str, language: str) -> str:
         if '__name__ == "__main__"' in code or "__name__ == '__main__'" in code:
             return code
         driver = matched_q["drivers"].get("python", "")
-        return f"{code}\n\n{driver}"
+        py_headers = "from __future__ import annotations\nfrom typing import List, Dict, Tuple, Optional, Any, Set\n\n"
+        return f"{py_headers}{code}\n\n{driver}"
 
     elif lang_clean in ["javascript", "js", "node"]:
         if "fs.readFileSync" in code and "console.log" in code:
@@ -1139,7 +1154,8 @@ def wrap_code_with_driver(title: str, code: str, language: str) -> str:
         if "int main(" in code or "int main ()" in code:
             return code
         driver = matched_q["drivers"].get("cpp", "")
-        return f"{code}\n\n{driver}"
+        cpp_driver_headers = "#include <iostream>\n#include <sstream>\n#include <iomanip>\n#include <vector>\n#include <string>\n#include <algorithm>\n#include <climits>\n#include <cmath>\n#include <stack>\n#include <queue>\n#include <unordered_map>\n#include <unordered_set>\n"
+        return f"{cpp_driver_headers}\n{code}\n\n{driver}"
 
     elif lang_clean in ["java"]:
         if "public static void main" in code:

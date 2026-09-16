@@ -165,3 +165,47 @@ public:
     assert "int main()" in wrapped
     assert "sol.isPalindrome" in wrapped
 
+
+def test_python_coin_change_with_subscripted_list():
+    # User's exact snippet with coins: list[int]
+    student_solution = '''class Solution:
+    def coinChange(self, coins: list[int], amount: int) -> int:
+        dp = [float('inf')] * (amount + 1)
+        dp[0] = 0
+        for coin in coins:
+            for x in range(coin, amount + 1):
+                dp[x] = min(dp[x], dp[x - coin] + 1)
+        return dp[amount] if dp[amount] != float('inf') else -1
+'''
+    wrapped = wrap_code_with_driver("Coin Change Minimum", student_solution, "python")
+    res = subprocess.run(
+        [sys.executable, "-c", wrapped],
+        input="1 2 5\n11",
+        capture_output=True,
+        text=True
+    )
+    assert res.returncode == 0, f"Error: {res.stderr}"
+    assert res.stdout.strip() == "3"
+
+
+def test_cpp_coin_change_wrapping():
+    # User's exact C++ snippet
+    cpp_solution = '''#include <iostream>
+#include <vector>
+#include <algorithm>
+
+using namespace std;
+
+class Solution {
+public:
+    int coinChange(vector<int>& coins, int amount) {
+        return 3;
+    }
+};
+'''
+    wrapped = wrap_code_with_driver("Coin Change Minimum", cpp_solution, "cpp")
+    assert "<sstream>" in wrapped, "C++ driver must include <sstream> for stringstream support"
+    assert "<iomanip>" in wrapped
+    assert "sol.coinChange" in wrapped
+
+

@@ -175,16 +175,16 @@ export function useExamSecurity({
       }
     };
 
-    // 2. Window blur (focus lost to another window, app, or monitor)
+    // 2. Window blur & focus departure (clicking outside, start menu, taskbar, alt-tab)
     const handleWindowBlur = () => {
       if (!hasInitiatedFullscreenRef.current) return;
       if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
-      // 1.5s delay to avoid transient blur on browser dialogs/focus transfers
+      // Fast check (250ms) to detect window focus loss to external app, taskbar, or start menu
       blurTimeoutRef.current = setTimeout(() => {
-        if (!document.hasFocus() && !document.hidden) {
-          logInfraction('WINDOW_BLUR');
+        if (!document.hasFocus()) {
+          logInfraction('WINDOW_BLUR', 'Assessment window lost focus to an external application, taskbar, or system menu.');
         }
-      }, 1500);
+      }, 250);
     };
 
     const handleWindowFocus = () => {
@@ -235,9 +235,15 @@ export function useExamSecurity({
       logInfraction('COPY_ATTEMPT', 'Cutting question content is disabled.');
     };
 
-    // 5. Global Keyboard shortcut blocking (DevTools, Source, Print, Save)
+    // 5. Global Keyboard shortcut blocking (DevTools, Source, Print, Save, System Start Key)
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toUpperCase();
+
+      // Windows / Meta / OS key (Start menu)
+      if (e.key === 'Meta' || e.key === 'OS' || e.keyCode === 91 || e.keyCode === 92) {
+        logInfraction('WINDOW_BLUR', 'System Start Menu key was activated.');
+        return;
+      }
 
       // F12 (DevTools)
       if (e.key === 'F12') {
@@ -305,6 +311,7 @@ export function useExamSecurity({
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focusout', handleWindowBlur);
     window.addEventListener('focus', handleWindowFocus);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('copy', handleCopy);
@@ -317,6 +324,7 @@ export function useExamSecurity({
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focusout', handleWindowBlur);
       window.removeEventListener('focus', handleWindowFocus);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('copy', handleCopy);

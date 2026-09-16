@@ -62,6 +62,9 @@ export interface Exam {
   created_at?: string;
   assignment_status?: AssignmentStatus;
   is_completed?: boolean;
+  is_upcoming?: boolean;
+  is_expired?: boolean;
+  server_time?: string;
 }
 
 export interface ExamStartResponse {

@@ -9,6 +9,7 @@ import { LoginPage } from './pages/LoginPage';
 import { StudentExamLandingPage } from './pages/StudentExamLandingPage';
 import { StudentExamWorkspacePage } from './pages/StudentExamWorkspacePage';
 import { StudentResultPage } from './pages/StudentResultPage';
+import { ExamWaitingRoomPage } from './pages/ExamWaitingRoomPage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
 import { AdminExamsPage } from './pages/AdminExamsPage';
 import { AdminQuestionsPage } from './pages/AdminQuestionsPage';
@@ -75,6 +76,14 @@ const AppContent: React.FC = () => {
             element={
               <ProtectedRoute>
                 <StudentResultPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/exam/:examId/waiting-room"
+            element={
+              <ProtectedRoute>
+                <ExamWaitingRoomPage />
               </ProtectedRoute>
             }
           />

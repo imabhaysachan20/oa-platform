@@ -2,7 +2,7 @@ import csv
 import io
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -135,20 +135,20 @@ async def update_exam(
         exam.is_published = body.is_published
 
     if body.question_ids is not None:
-        # Clear existing pool and replace
-        del_stmt = select(ExamQuestionPool).where(ExamQuestionPool.exam_id == exam.id)
-        existing = (await db.execute(del_stmt)).scalars().all()
-        for e in existing:
-            await db.delete(e)
+        # Clear existing pool using direct SQL delete and flush before inserting
+        await db.execute(delete(ExamQuestionPool).where(ExamQuestionPool.exam_id == exam.id))
+        await db.flush()
 
-        for q_id in body.question_ids:
-            q = (await db.execute(select(Question).where(Question.id == q_id))).scalar_one_or_none()
-            if q:
+        unique_q_ids = list(dict.fromkeys(body.question_ids))
+        for q_id in unique_q_ids:
+            q_diff = (await db.execute(select(Question.difficulty).where(Question.id == q_id))).scalar_one_or_none()
+            if q_diff is not None:
                 db.add(ExamQuestionPool(
                     exam_id=exam.id,
-                    question_id=q.id,
-                    difficulty=q.difficulty
+                    question_id=q_id,
+                    difficulty=q_diff
                 ))
+        await db.flush()
 
     await db.commit()
     await db.refresh(exam)

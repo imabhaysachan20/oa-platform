@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { examsApi } from '../api/exams';
 import { useExamStore } from '../store/examStore';
-import { useAuthStore } from '../store/authStore';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
@@ -19,14 +18,14 @@ import {
   EyeOff,
   Scale,
   ShieldCheck,
-  Check
+  Check,
+  Calendar
 } from 'lucide-react';
 
 export const StudentExamLandingPage: React.FC = () => {
   const navigate = useNavigate();
   const setExamSession = useExamStore((s) => s.setExamSession);
-  const { user } = useAuthStore();
-  const isAdmin = user?.role === 'admin';
+
 
   const [selectedExam, setSelectedExam] = useState<any | null>(null);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
@@ -37,13 +36,51 @@ export const StudentExamLandingPage: React.FC = () => {
     queryFn: examsApi.list,
   });
 
+  const formatScheduleIST = (startTime?: string, endTime?: string) => {
+    if (!startTime) return null;
+    const start = new Date(startTime);
+    const end = endTime ? new Date(endTime) : null;
+    const dateFormatted = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: 'numeric',
+      month: 'short',
+    }).format(start);
+    const startFormatted = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(start);
+
+    if (end) {
+      const endFormatted = new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      }).format(end);
+      return `${dateFormatted}, ${startFormatted} – ${endFormatted} IST`;
+    }
+    return `${dateFormatted} at ${startFormatted} IST`;
+  };
+
   const handleOpenInstructions = (exam: any) => {
+    const now = new Date().getTime();
+    if (exam.start_time && now < new Date(exam.start_time).getTime()) {
+      navigate(`/exam/${exam.id}/waiting-room`);
+      return;
+    }
     setSelectedExam(exam);
     setAgreedToTerms(false);
   };
 
   const handleStartConfirmed = async () => {
     if (!selectedExam || !agreedToTerms || isStarting) return;
+    const now = new Date().getTime();
+    if (selectedExam.start_time && now < new Date(selectedExam.start_time).getTime()) {
+      navigate(`/exam/${selectedExam.id}/waiting-room`);
+      return;
+    }
     setIsStarting(true);
     try {
       const res = await examsApi.start(selectedExam.id);
@@ -138,8 +175,13 @@ export const StudentExamLandingPage: React.FC = () => {
         ) : exams && exams.length > 0 ? (
           <div className="grid grid-cols-1 gap-4">
             {exams.map((exam) => {
+              const now = new Date().getTime();
               const isCompleted = exam.is_completed || exam.assignment_status === 'submitted' || exam.assignment_status === 'auto_submitted';
               const isInProgress = !isCompleted && exam.assignment_status === 'in_progress';
+              const isUpcoming = !isCompleted && (exam.is_upcoming || (exam.start_time && now < new Date(exam.start_time).getTime()));
+              const isExpired = !isCompleted && !isInProgress && (exam.is_expired || (exam.end_time && now > new Date(exam.end_time).getTime()));
+
+              const scheduleText = formatScheduleIST(exam.start_time, exam.end_time);
 
               return (
                 <Card
@@ -158,6 +200,15 @@ export const StudentExamLandingPage: React.FC = () => {
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30">
                           In Progress
                         </span>
+                      ) : isUpcoming ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-ubi-50 text-ubi-700 border border-ubi-200 dark:bg-ubi-950/60 dark:text-ubi-300 dark:border-ubi-800 flex items-center gap-1 font-semibold">
+                          <Clock size={10} className="text-ubi-600 dark:text-ubi-400" />
+                          Upcoming
+                        </span>
+                      ) : isExpired ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30">
+                          Closed
+                        </span>
                       ) : (
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30">
                           Active
@@ -170,6 +221,12 @@ export const StudentExamLandingPage: React.FC = () => {
                         <Clock size={14} className="text-slate-400" />
                         Duration: {exam.duration_minutes} minutes
                       </span>
+                      {scheduleText && (
+                        <span className="flex items-center gap-1.5 font-medium text-ubi-800 dark:text-ubi-300">
+                          <Calendar size={14} className="text-ubi-700 dark:text-ubi-400" />
+                          {scheduleText}
+                        </span>
+                      )}
                       <span className="flex items-center gap-1.5 font-medium">
                         <FileCode2 size={14} className="text-slate-400" />
                         3 Questions (1 Easy, 2 Medium)
@@ -178,16 +235,6 @@ export const StudentExamLandingPage: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-3 w-full sm:w-auto">
-                    {isAdmin && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => navigate(`/exam/${exam.id}/leaderboard`)}
-                        className="w-full sm:w-auto"
-                      >
-                        Leaderboard (Admin)
-                      </Button>
-                    )}
                     {isCompleted ? (
                       <Button
                         variant="secondary"
@@ -207,6 +254,25 @@ export const StudentExamLandingPage: React.FC = () => {
                       >
                         <Play size={14} fill="currentColor" />
                         <span>Resume Assessment</span>
+                      </Button>
+                    ) : isUpcoming ? (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => navigate(`/exam/${exam.id}/waiting-room`)}
+                        className="w-full sm:w-auto font-semibold gap-1.5"
+                      >
+                        <Play size={14} fill="currentColor" />
+                        <span>Start Assessment</span>
+                      </Button>
+                    ) : isExpired ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled
+                        className="w-full sm:w-auto font-semibold gap-1.5 opacity-60 cursor-not-allowed text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                      >
+                        <span>Closed</span>
                       </Button>
                     ) : (
                       <Button

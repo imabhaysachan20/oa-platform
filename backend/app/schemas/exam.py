@@ -38,6 +38,9 @@ class ExamResponse(ExamBase):
     created_at: Optional[datetime] = None
     assignment_status: Optional[AssignmentStatus] = None
     is_completed: Optional[bool] = False
+    is_upcoming: Optional[bool] = False
+    is_expired: Optional[bool] = False
+    server_time: Optional[datetime] = None
 
     class Config:
         from_attributes = True

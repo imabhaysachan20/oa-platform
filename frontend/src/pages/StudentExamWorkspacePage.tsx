@@ -49,12 +49,18 @@ export const StudentExamWorkspacePage: React.FC = () => {
   } = useExamStore();
 
   // Load exam questions & state (supports resume on reload)
-  const { data: examData, isLoading, refetch } = useQuery({
+  const { data: examData, isLoading, error, refetch } = useQuery({
     queryKey: ['myQuestions', id],
     queryFn: () => examsApi.getMyQuestions(id),
     enabled: !!id,
     refetchOnWindowFocus: false,
   });
+
+  useEffect(() => {
+    if (error) {
+      navigate(`/exam/${id}/waiting-room`, { replace: true });
+    }
+  }, [error, id, navigate]);
 
   useEffect(() => {
     if (examData) {

@@ -51,6 +51,10 @@ async def list_available_exams(
     results = []
     for exam in exams:
         resp = ExamResponse.model_validate(exam)
+        resp.server_time = now
+        resp.is_upcoming = bool(exam.start_time and now < exam.start_time)
+        resp.is_expired = bool(exam.end_time and now > exam.end_time)
+
         assign = assignments_by_exam_id.get(exam.id)
         if assign:
             is_done = (
@@ -82,13 +86,17 @@ async def get_exam_details(
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
+    now = datetime.now(timezone.utc)
     resp = ExamResponse.model_validate(exam)
+    resp.server_time = now
+    resp.is_upcoming = bool(exam.start_time and now < exam.start_time)
+    resp.is_expired = bool(exam.end_time and now > exam.end_time)
+
     assign_stmt = select(ExamAssignment).where(
         ExamAssignment.user_id == current_user.id,
         ExamAssignment.exam_id == exam.id
     )
     assign = (await db.execute(assign_stmt)).scalar_one_or_none()
-    now = datetime.now(timezone.utc)
     if assign:
         is_done = (
             assign.status in [AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]

@@ -81,6 +81,14 @@ export const StudentExamLandingPage: React.FC = () => {
       navigate(`/exam/${selectedExam.id}/waiting-room`);
       return;
     }
+    // Request fullscreen immediately on candidate click gesture
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch (fsErr) {
+      console.warn('Fullscreen request prompt failed or declined:', fsErr);
+    }
     setIsStarting(true);
     try {
       const res = await examsApi.start(selectedExam.id);
@@ -249,7 +257,12 @@ export const StudentExamLandingPage: React.FC = () => {
                       <Button
                         variant="primary"
                         size="sm"
-                        onClick={() => navigate(`/exam/${exam.id}/workspace`)}
+                        onClick={async () => {
+                          if (!document.fullscreenElement) {
+                            await document.documentElement.requestFullscreen().catch(() => {});
+                          }
+                          navigate(`/exam/${exam.id}/workspace`);
+                        }}
                         className="w-full sm:w-auto font-semibold gap-1.5 bg-amber-600 hover:bg-amber-700 text-white"
                       >
                         <Play size={14} fill="currentColor" />

@@ -56,7 +56,11 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({
       </div>
 
       {/* Question Body */}
-      <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
+      <div
+        className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 select-none"
+        onCopy={(e) => e.preventDefault()}
+        onContextMenu={(e) => e.preventDefault()}
+      >
         {/* Title & Limits Meta */}
         <div>
           <div className="flex items-center gap-2.5 mb-2">

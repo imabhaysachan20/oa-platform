@@ -49,6 +49,9 @@ export const ExamWaitingRoomPage: React.FC = () => {
     setIsStarting(true);
 
     try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen().catch(() => {});
+      }
       const res = await examsApi.start(id);
       setExamSession(
         res.exam_id,

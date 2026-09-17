@@ -1,9 +1,9 @@
 import enum
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from sqlalchemy import (
     String, Integer, Float, Boolean, ForeignKey, Enum, DateTime,
-    UniqueConstraint, Index
+    UniqueConstraint, Index, JSON
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.models.base import Base, TimestampMixin
@@ -29,6 +29,7 @@ class Exam(Base, TimestampMixin):
     medium_weight: Mapped[float] = mapped_column(Float, default=20.0, nullable=False)
     hard_weight: Mapped[float] = mapped_column(Float, default=30.0, nullable=False)
     is_published: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    target_groups: Mapped[Optional[list[str]]] = mapped_column(JSON, default=list, nullable=True)
 
     # Relationships
     question_pool = relationship("ExamQuestionPool", back_populates="exam", cascade="all, delete-orphan")

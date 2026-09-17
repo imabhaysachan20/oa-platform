@@ -6,6 +6,7 @@ import { Exam } from '../types';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
+import { Badge } from '../components/ui/Badge';
 import {
   Plus,
   Activity,
@@ -16,7 +17,9 @@ import {
   Calendar,
   Pencil,
   Search,
-  AlertTriangle
+  AlertTriangle,
+  Layers,
+  X,
 } from 'lucide-react';
 
 export const AdminExamsPage: React.FC = () => {
@@ -33,10 +36,18 @@ export const AdminExamsPage: React.FC = () => {
   const [editEasyWeight, setEditEasyWeight] = useState(10);
   const [editMediumWeight, setEditMediumWeight] = useState(20);
   const [editHardWeight, setEditHardWeight] = useState(30);
+  const [editSelectedGroups, setEditSelectedGroups] = useState<string[]>([]);
+  const [editCustomGroupInput, setEditCustomGroupInput] = useState('');
   const [editSelectedQuestionIds, setEditSelectedQuestionIds] = useState<number[]>([]);
   const [editStartTime, setEditStartTime] = useState('');
   const [editEndTime, setEditEndTime] = useState('');
   const [editSearchQuery, setEditSearchQuery] = useState('');
+
+  // Fetch student groups
+  const { data: groupsData } = useQuery({
+    queryKey: ['adminStudentGroups'],
+    queryFn: adminApi.listStudentGroups,
+  });
 
   // Fetch exams
   const { data: exams, isLoading } = useQuery({
@@ -129,6 +140,8 @@ export const AdminExamsPage: React.FC = () => {
     setEditEasyWeight(exam.easy_weight);
     setEditMediumWeight(exam.medium_weight);
     setEditHardWeight(exam.hard_weight);
+    setEditSelectedGroups(exam.target_groups || []);
+    setEditCustomGroupInput('');
     setEditStartTime(toLocalDatetimeInput(exam.start_time));
     setEditEndTime(toLocalDatetimeInput(exam.end_time));
     setEditSearchQuery('');
@@ -138,6 +151,20 @@ export const AdminExamsPage: React.FC = () => {
       setEditSelectedQuestionIds(pool.map((q) => q.id));
     } catch {
       setEditSelectedQuestionIds([]);
+    }
+  };
+
+  const handleToggleEditGroup = (grp: string) => {
+    setEditSelectedGroups((prev) =>
+      prev.includes(grp) ? prev.filter((g) => g !== grp) : [...prev, grp]
+    );
+  };
+
+  const handleAddEditCustomGroup = () => {
+    const trimmed = editCustomGroupInput.trim();
+    if (trimmed && !editSelectedGroups.includes(trimmed)) {
+      setEditSelectedGroups((prev) => [...prev, trimmed]);
+      setEditCustomGroupInput('');
     }
   };
 
@@ -169,6 +196,7 @@ export const AdminExamsPage: React.FC = () => {
         medium_weight: editMediumWeight,
         hard_weight: editHardWeight,
         is_published: true,
+        target_groups: editSelectedGroups,
         question_ids: editSelectedQuestionIds,
         start_time: toISO(editStartTime),
         end_time: toISO(editEndTime),
@@ -255,6 +283,23 @@ export const AdminExamsPage: React.FC = () => {
                     <span>•</span>
                     <span>Weights: Easy({exam.easy_weight}) Med({exam.medium_weight}) Hard({exam.hard_weight})</span>
                   </div>
+
+                  {/* Groups Assigned */}
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 pt-0.5">
+                    <Layers size={13} className="text-slate-400 shrink-0" />
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">Target Groups:</span>
+                    {exam.target_groups && exam.target_groups.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {exam.target_groups.map((grp) => (
+                          <Badge key={grp} variant="brand" className="text-[9px]">
+                            {grp}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-slate-400 italic">Open to All Groups</span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -309,7 +354,7 @@ export const AdminExamsPage: React.FC = () => {
         >
           <form onSubmit={handleUpdateExamSubmit} className="space-y-4 text-xs">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-              {/* LEFT COLUMN: Title, Duration/Weights, Schedule */}
+              {/* LEFT COLUMN: Title, Duration/Weights, Candidate Groups, Schedule */}
               <div className="space-y-3.5">
                 {/* Title */}
                 <div>
@@ -377,6 +422,94 @@ export const AdminExamsPage: React.FC = () => {
                       />
                     </div>
                   </div>
+                </div>
+
+                {/* Candidate Group Access Config */}
+                <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
+                      <Layers size={13} className="text-ubi-700 dark:text-ubi-400" />
+                      Candidate Group Access
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-medium">
+                      {editSelectedGroups.length > 0 ? `${editSelectedGroups.length} selected` : 'Open to All'}
+                    </span>
+                  </div>
+
+                  {groupsData?.groups && groupsData.groups.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {groupsData.groups.map((grp) => {
+                        const isSelected = editSelectedGroups.includes(grp);
+                        return (
+                          <button
+                            key={grp}
+                            type="button"
+                            onClick={() => handleToggleEditGroup(grp)}
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition border ${
+                              isSelected
+                                ? 'bg-ubi-800 text-white border-ubi-900 dark:bg-ubi-700 dark:border-ubi-600'
+                                : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-300 dark:border-slate-800'
+                            }`}
+                          >
+                            {isSelected ? <CheckSquare size={11} /> : <Square size={11} />}
+                            <span>{grp}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Custom tag input in modal */}
+                  <div className="flex gap-1.5 pt-1">
+                    <input
+                      type="text"
+                      value={editCustomGroupInput}
+                      onChange={(e) => setEditCustomGroupInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddEditCustomGroup();
+                        }
+                      }}
+                      placeholder="Add custom group tag..."
+                      className="flex-1 px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-slate-900 dark:text-slate-100 text-[11px] focus:ring-1 focus:ring-ubi-800 focus:outline-none"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddEditCustomGroup}
+                      className="text-[10px] py-1 px-2 gap-1 font-semibold"
+                    >
+                      <Plus size={11} />
+                      <span>Add</span>
+                    </Button>
+                  </div>
+
+                  {/* Selected badges */}
+                  {editSelectedGroups.length > 0 ? (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {editSelectedGroups.map((grp) => (
+                        <span
+                          key={grp}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 bg-ubi-50 border border-ubi-200 text-ubi-800 dark:bg-ubi-950 dark:border-ubi-800 dark:text-ubi-300 rounded text-[10px] font-semibold"
+                        >
+                          <span>{grp}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleEditGroup(grp)}
+                            className="hover:text-rose-600 dark:hover:text-rose-400"
+                          >
+                            <X size={10} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 italic">
+                      No groups selected (open to all candidates).
+                    </p>
+                  )}
                 </div>
 
                 {/* Schedule Window Config */}

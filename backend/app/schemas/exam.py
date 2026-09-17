@@ -14,6 +14,7 @@ class ExamBase(BaseModel):
     medium_weight: float = 20.0
     hard_weight: float = 30.0
     is_published: bool = True
+    target_groups: Optional[List[str]] = []
 
 
 class ExamCreate(ExamBase):
@@ -29,6 +30,7 @@ class ExamUpdate(BaseModel):
     medium_weight: Optional[float] = None
     hard_weight: Optional[float] = None
     is_published: Optional[bool] = None
+    target_groups: Optional[List[str]] = None
     question_ids: Optional[List[int]] = None
 
 

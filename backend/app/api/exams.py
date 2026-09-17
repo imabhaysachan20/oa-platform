@@ -41,6 +41,19 @@ async def list_available_exams(
     if not exams:
         return []
 
+    # If student, only show exams open to all or targeted to their candidate group
+    if current_user.role == UserRole.STUDENT:
+        filtered = []
+        for e in exams:
+            if not e.target_groups or len(e.target_groups) == 0:
+                filtered.append(e)
+            elif current_user.candidate_group and current_user.candidate_group in e.target_groups:
+                filtered.append(e)
+        exams = filtered
+
+    if not exams:
+        return []
+
     exam_ids = [e.id for e in exams]
     assign_stmt = select(ExamAssignment).where(
         ExamAssignment.user_id == current_user.id,

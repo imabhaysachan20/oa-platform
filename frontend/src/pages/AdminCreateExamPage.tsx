@@ -13,6 +13,9 @@ import {
   Search,
   BookOpen,
   Sparkles,
+  Layers,
+  Plus,
+  X,
 } from 'lucide-react';
 
 export const AdminCreateExamPage: React.FC = () => {
@@ -25,16 +28,38 @@ export const AdminCreateExamPage: React.FC = () => {
   const [easyWeight, setEasyWeight] = useState(10);
   const [mediumWeight, setMediumWeight] = useState(20);
   const [hardWeight, setHardWeight] = useState(30);
+  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
+  const [customGroupInput, setCustomGroupInput] = useState('');
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<number[]>([]);
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Fetch available student groups
+  const { data: groupsData } = useQuery({
+    queryKey: ['adminStudentGroups'],
+    queryFn: adminApi.listStudentGroups,
+  });
 
   // Fetch available questions for pool selection
   const { data: questions, isLoading: isLoadingQuestions } = useQuery({
     queryKey: ['adminQuestions'],
     queryFn: adminApi.listQuestions,
   });
+
+  const handleToggleGroup = (groupName: string) => {
+    setSelectedGroups((prev) =>
+      prev.includes(groupName) ? prev.filter((g) => g !== groupName) : [...prev, groupName]
+    );
+  };
+
+  const handleAddCustomGroup = () => {
+    const trimmed = customGroupInput.trim();
+    if (trimmed && !selectedGroups.includes(trimmed)) {
+      setSelectedGroups((prev) => [...prev, trimmed]);
+      setCustomGroupInput('');
+    }
+  };
 
   // Helper: Convert local datetime-local string to ISO UTC
   const toISO = (localStr?: string) => {
@@ -114,6 +139,7 @@ export const AdminCreateExamPage: React.FC = () => {
       medium_weight: mediumWeight,
       hard_weight: hardWeight,
       is_published: true,
+      target_groups: selectedGroups,
       question_ids: selectedQuestionIds,
       start_time: toISO(startTime),
       end_time: toISO(endTime),
@@ -142,7 +168,7 @@ export const AdminCreateExamPage: React.FC = () => {
             <span>Create New Assessment</span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Configure assessment details, timing window, scoring weights, and select questions for the pool.
+            Configure assessment details, target candidate groups, timing window, scoring weights, and select questions for the pool.
           </p>
         </div>
       </div>
@@ -229,12 +255,124 @@ export const AdminCreateExamPage: React.FC = () => {
           </div>
         </Card>
 
+        {/* Candidate Group Access Card */}
+        <Card className="space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
+              <Layers size={16} className="text-ubi-800 dark:text-ubi-400" />
+              <span>2. Candidate Group Access (Multi-Group Selection)</span>
+            </h2>
+            <span className="text-[11px] text-slate-500 font-medium">
+              {selectedGroups.length > 0 ? `${selectedGroups.length} group(s) selected` : 'Open to All Candidates'}
+            </span>
+          </div>
+
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Select one or more candidate groups/batches eligible to attempt this online assessment. Leaving this empty makes the assessment available to all registered students.
+          </p>
+
+          {/* Quick toggle chips from enrolled batches */}
+          <div>
+            <label className="block font-semibold text-slate-700 dark:text-slate-300 text-xs mb-1.5">
+              Available Candidate Batches / Groups:
+            </label>
+            {groupsData?.groups && groupsData.groups.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {groupsData.groups.map((grp) => {
+                  const isSelected = selectedGroups.includes(grp);
+                  return (
+                    <button
+                      key={grp}
+                      type="button"
+                      onClick={() => handleToggleGroup(grp)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border ${
+                        isSelected
+                          ? 'bg-ubi-800 text-white border-ubi-900 shadow-sm dark:bg-ubi-700 dark:border-ubi-600'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-300 dark:border-slate-800'
+                      }`}
+                    >
+                      {isSelected ? <CheckSquare size={13} /> : <Square size={13} />}
+                      <span>{grp}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 dark:text-slate-500 italic">
+                No candidate batches uploaded yet. You can type and add a group tag below.
+              </p>
+            )}
+          </div>
+
+          {/* Custom group tag input */}
+          <div className="pt-1">
+            <label className="block font-semibold text-slate-700 dark:text-slate-300 text-xs mb-1">
+              Add Custom or Upcoming Group Tag:
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={customGroupInput}
+                onChange={(e) => setCustomGroupInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddCustomGroup();
+                  }
+                }}
+                placeholder="e.g. IIT Delhi 2026, Campus Drive 2"
+                className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleAddCustomGroup}
+                className="gap-1 font-semibold text-xs"
+              >
+                <Plus size={14} />
+                <span>Add Group</span>
+              </Button>
+            </div>
+          </div>
+
+          {/* Currently selected groups summary */}
+          <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg">
+            <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+              Assigned Groups for this Assessment:
+            </span>
+            {selectedGroups.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {selectedGroups.map((grp) => (
+                  <span
+                    key={grp}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-ubi-50 border border-ubi-200 text-ubi-800 dark:bg-ubi-950 dark:border-ubi-800 dark:text-ubi-300 rounded-md text-xs font-semibold"
+                  >
+                    <span>{grp}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleGroup(grp)}
+                      className="hover:text-rose-600 dark:hover:text-rose-400 p-0.5"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className="text-xs text-slate-500 dark:text-slate-400 italic">
+                None selected — this assessment will be accessible by all registered candidates.
+              </span>
+            )}
+          </div>
+        </Card>
+
         {/* Schedule Access Window Card */}
         <Card className="space-y-4">
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
             <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
               <Calendar size={16} className="text-ubi-800 dark:text-ubi-400" />
-              <span>2. Scheduled Access Window</span>
+              <span>3. Scheduled Access Window</span>
             </h2>
             <span className="text-[11px] text-slate-500 font-medium">Optional (Leave empty for flexible access)</span>
           </div>

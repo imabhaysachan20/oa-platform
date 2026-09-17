@@ -84,6 +84,7 @@ async def create_exam(
         medium_weight=body.medium_weight,
         hard_weight=body.hard_weight,
         is_published=body.is_published,
+        target_groups=body.target_groups or [],
     )
     db.add(exam)
     await db.flush()
@@ -150,6 +151,8 @@ async def update_exam(
         exam.hard_weight = body.hard_weight
     if body.is_published is not None:
         exam.is_published = body.is_published
+    if body.target_groups is not None:
+        exam.target_groups = body.target_groups
 
     if body.question_ids is not None:
         # Clear existing pool using direct SQL delete and flush before inserting

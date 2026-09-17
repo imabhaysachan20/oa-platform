@@ -63,6 +63,16 @@ async def start_exam_for_student(
     if exam.end_time and now > exam.end_time:
         raise HTTPException(status_code=400, detail="Exam window has expired")
 
+    # Check candidate group eligibility
+    if exam.target_groups and len(exam.target_groups) > 0:
+        student = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if not student or not student.candidate_group or student.candidate_group not in exam.target_groups:
+            allowed_groups_str = ", ".join(exam.target_groups)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"This assessment is restricted to specific candidate batches/groups ({allowed_groups_str})."
+            )
+
     # 2. Check for existing assignment
     stmt_assign = (
         select(ExamAssignment)

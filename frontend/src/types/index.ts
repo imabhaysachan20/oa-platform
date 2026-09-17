@@ -92,6 +92,7 @@ export interface Exam {
   medium_weight: number;
   hard_weight: number;
   is_published: boolean;
+  target_groups?: string[];
   pool_count?: number;
   created_at?: string;
   assignment_status?: AssignmentStatus;

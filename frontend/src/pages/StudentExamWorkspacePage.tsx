@@ -11,7 +11,8 @@ import { OutputConsole } from '../components/OutputConsole';
 import { Timer } from '../components/ui/Timer';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { Play, Send, CheckCircle, AlertTriangle, ArrowLeft, Sun, Moon, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Play, Send, CheckCircle, AlertTriangle, ArrowLeft, Sun, Moon, ShieldAlert, ShieldCheck, Maximize2, Minimize2 } from 'lucide-react';
+import { useExamSecurity } from '../hooks/useExamSecurity';
 
 export const StudentExamWorkspacePage: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
@@ -23,9 +24,6 @@ export const StudentExamWorkspacePage: React.FC = () => {
   const [submissionFeedback, setSubmissionFeedback] = useState<string | null>(null);
   const [isConsoleExpanded, setIsConsoleExpanded] = useState(false);
 
-  // Anti-Cheat & Proctoring Tracking
-  const [tabSwitchCount, setTabSwitchCount] = useState(0);
-  const [showTabSwitchWarning, setShowTabSwitchWarning] = useState(false);
 
   const { theme, toggleTheme } = useThemeStore();
 
@@ -82,28 +80,32 @@ export const StudentExamWorkspacePage: React.FC = () => {
     }
   }, [examData, id, navigate, setExamSession]);
 
-  // Anti-Cheat: Tab-switch, window blur & beforeunload listeners
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        setTabSwitchCount((prev) => {
-          const next = prev + 1;
-          setShowTabSwitchWarning(true);
-          return next;
-        });
-      }
-    };
+  // Comprehensive Anti-Cheat & Proctoring Engine
+  const {
+    infractions,
+    strikeCount,
+    maxStrikes,
+    isFullscreen,
+    hasInitiatedFullscreen,
+    fullscreenRequiredModal,
+    activeWarning,
+    enterFullscreen,
+    logInfraction,
+    dismissActiveWarning,
+  } = useExamSecurity({
+    enabled: !!examData && examData.status === 'in_progress',
+    maxStrikes: 3,
+    requireFullscreen: true,
+  });
 
+  // Warn on accidental tab/window close
+  useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = '';
     };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('beforeunload', handleBeforeUnload);
-
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);
@@ -224,17 +226,30 @@ export const StudentExamWorkspacePage: React.FC = () => {
 
         {/* Proctoring Status Badge, Server-Driven Countdown Timer, Theme Toggle & Finish Button */}
         <div className="flex items-center gap-2.5 sm:gap-3">
-          {/* Anti-Cheat Proctoring Status Badge */}
+          {/* Anti-Cheat Proctoring Status & Fullscreen Trigger */}
           <div className="hidden md:flex items-center gap-2">
-            {tabSwitchCount === 0 ? (
+            <button
+              onClick={enterFullscreen}
+              title={isFullscreen ? 'Full Screen Active' : 'Enter Full Screen'}
+              className={`px-2.5 py-1 rounded-full transition border text-xs font-semibold flex items-center gap-1.5 ${
+                isFullscreen
+                  ? 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-950/60 dark:border-emerald-800'
+                  : 'text-amber-800 bg-amber-50 border-amber-300 dark:text-amber-300 dark:bg-amber-950/60 dark:border-amber-800 animate-pulse'
+              }`}
+            >
+              {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+              <span>{isFullscreen ? 'Fullscreen Active' : 'Enable Fullscreen'}</span>
+            </button>
+
+            {strikeCount === 0 ? (
               <span className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                 <ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400" />
-                <span>Proctored Session</span>
+                <span>Proctored (0/{maxStrikes} Strikes)</span>
               </span>
             ) : (
               <span className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200 dark:border-rose-800 animate-pulse">
                 <AlertTriangle size={14} className="text-rose-600 dark:text-rose-400" />
-                <span>{tabSwitchCount} Tab Switch Warning{tabSwitchCount > 1 ? 's' : ''}</span>
+                <span>{strikeCount}/{maxStrikes} Infractions</span>
               </span>
             )}
           </div>
@@ -308,6 +323,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
               onLanguageChange={(lang) => setSelectedLanguage(currentQ.id, lang)}
               starterCode={currentStarter}
               onReset={() => currentQ && setCodeDraft(currentQ.id, currentLang, currentStarter)}
+              onPasteAttempt={() => logInfraction('PASTE_ATTEMPT')}
             />
           </div>
 
@@ -412,42 +428,104 @@ export const StudentExamWorkspacePage: React.FC = () => {
         </div>
       </Modal>
 
-      {/* Tab Switch & Anti-Cheat Alert Modal */}
+      {/* Mandatory Full-Screen Start & Pause Lockout Gate */}
+      {(!isFullscreen || fullscreenRequiredModal) && (
+        <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full p-6 sm:p-8 shadow-2xl text-center space-y-6">
+            <div className="mx-auto w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
+              <ShieldAlert size={32} />
+            </div>
+
+            <div className="space-y-2">
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                {hasInitiatedFullscreen ? 'Assessment Suspended: Full Screen Exited' : 'Full Screen Required to Start'}
+              </h2>
+              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                {hasInitiatedFullscreen
+                  ? 'You exited full-screen mode. Full-screen mode is strictly required. Your workspace and code editor are locked until full screen is restored.'
+                  : 'This assessment is strictly proctored and cannot begin without full-screen mode enabled. The questions, timer, and editor will unlock once full screen is active.'}
+              </p>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 rounded-xl p-4 text-xs text-slate-600 dark:text-slate-400 text-left space-y-2">
+              <p className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-[11px]">Strict Proctoring Guidelines:</p>
+              <ul className="list-disc pl-4 space-y-1">
+                <li>The exam must stay in full-screen mode until final submission.</li>
+                <li>Switching tabs, minimizing, or clicking outside triggers security strikes.</li>
+                <li>Copying questions and pasting external code are blocked and flagged.</li>
+                <li>All infraction events are stored and provided to the recruiting committee.</li>
+              </ul>
+            </div>
+
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={enterFullscreen}
+              className="w-full justify-center gap-2 font-bold py-3 text-base shadow-lg shadow-ubi-900/20"
+            >
+              <Maximize2 size={18} />
+              <span>{hasInitiatedFullscreen ? 'Re-enter Full Screen to Resume' : 'Enter Full Screen & Start Assessment'}</span>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Security Infraction Alert Modal */}
       <Modal
-        isOpen={showTabSwitchWarning}
-        onClose={() => setShowTabSwitchWarning(false)}
-        title="⚠️ Tab Switch Detected!"
+        isOpen={!!activeWarning}
+        onClose={dismissActiveWarning}
+        title={strikeCount >= maxStrikes ? "⚠️ Security Infraction Limit Notice" : "⚠️ Security Infraction Detected"}
         maxWidth="lg"
       >
         <div className="space-y-4 text-sm text-slate-700 dark:text-slate-300">
           <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950/60 dark:border-rose-800/80 dark:text-rose-200 rounded-xl space-y-2">
-            <div className="flex items-center gap-2 font-bold text-rose-900 dark:text-rose-100">
-              <ShieldAlert size={20} className="text-rose-600 dark:text-rose-400 shrink-0" />
-              <span>Security Warning (Infraction #{tabSwitchCount})</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-rose-900 dark:text-rose-100">
+                <ShieldAlert size={20} className="text-rose-600 dark:text-rose-400 shrink-0" />
+                <span>{activeWarning?.title}</span>
+              </div>
+              <span className="text-xs font-bold px-2 py-0.5 rounded bg-rose-200 text-rose-900 dark:bg-rose-900 dark:text-rose-200">
+                Infraction #{strikeCount}
+              </span>
             </div>
             <p className="text-xs text-rose-700 dark:text-rose-300 leading-relaxed">
-              You navigated away from the assessment workspace or switched browser tabs. This action has been logged by the proctoring monitor.
+              {activeWarning?.description}
             </p>
           </div>
+
+          {strikeCount >= maxStrikes && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 text-amber-900 dark:bg-amber-950/60 dark:border-amber-800 dark:text-amber-200 rounded-xl text-xs space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-amber-950 dark:text-amber-100">
+                <AlertTriangle size={15} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                <span>Security Audit Threshold Reached</span>
+              </div>
+              <p className="text-amber-800 dark:text-amber-300 leading-relaxed">
+                You have accumulated {strikeCount} security infractions. All incidents are logged with exact timestamps and will be submitted with your evaluation report. Please continue your assessment carefully.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-950 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
             <p className="font-semibold text-slate-900 dark:text-slate-200">Strict Assessment Rules:</p>
             <ul className="list-disc pl-5 space-y-1">
-              <li>Do not leave or minimize the assessment window.</li>
-              <li>Do not switch tabs or open external applications/tools.</li>
-              <li>All focus departures are recorded and included in your test audit report.</li>
-              <li>Continued tab switching will lead to immediate exam disqualification.</li>
+              <li>Do not leave full screen or switch browser tabs.</li>
+              <li>Do not click outside the workspace or open background tools.</li>
+              <li>Copying questions or pasting external solutions is prohibited.</li>
+              <li>All infraction events are stored and provided to the recruiting team.</li>
             </ul>
           </div>
 
-          <div className="flex items-center justify-end pt-2">
+          <div className="flex items-center justify-between pt-2">
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              {strikeCount} total security flag{strikeCount === 1 ? '' : 's'} recorded
+            </span>
             <Button
               variant="primary"
               size="sm"
-              onClick={() => setShowTabSwitchWarning(false)}
-              className="font-semibold w-full sm:w-auto"
+              onClick={dismissActiveWarning}
+              className="font-semibold"
             >
-              I Understand & Return to Exam
+              I Understand & Resume Test
             </Button>
           </div>
         </div>

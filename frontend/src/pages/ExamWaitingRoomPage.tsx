@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { examsApi } from '../api/exams';
 import { useExamStore } from '../store/examStore';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { Modal } from '../components/ui/Modal';
 import {
   Clock,
   Calendar,
@@ -12,9 +13,12 @@ import {
   AlertTriangle,
   ArrowLeft,
   Sparkles,
-  Wifi,
+  ShieldAlert,
+  ShieldCheck,
+  FileCode2,
+  Scale,
   Eye,
-  Laptop
+  Terminal,
 } from 'lucide-react';
 
 export const ExamWaitingRoomPage: React.FC = () => {
@@ -34,7 +38,8 @@ export const ExamWaitingRoomPage: React.FC = () => {
   const [isLive, setIsLive] = useState(false);
   const [isExpired, setIsExpired] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
-  const hasAutoStarted = useRef(false);
+  const [isGuidelinesModalOpen, setIsGuidelinesModalOpen] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   const { data: exam, isLoading, error } = useQuery({
     queryKey: ['examDetails', id],
@@ -43,12 +48,14 @@ export const ExamWaitingRoomPage: React.FC = () => {
     refetchInterval: isLive ? false : 10000,
   });
 
-  const startTestAndNavigate = useCallback(async () => {
-    if (hasAutoStarted.current || isStarting) return;
-    hasAutoStarted.current = true;
+  const handleStartConfirmed = async () => {
+    if (!agreedToTerms || isStarting) return;
     setIsStarting(true);
 
     try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen().catch(() => {});
+      }
       const res = await examsApi.start(id);
       setExamSession(
         res.exam_id,
@@ -59,16 +66,13 @@ export const ExamWaitingRoomPage: React.FC = () => {
         res.deadline_at,
         res.questions
       );
+      setIsGuidelinesModalOpen(false);
       navigate(`/exam/${id}/workspace`, { replace: true });
     } catch (err: any) {
-      console.error('Failed to start exam:', err);
-      // If server clock is slightly behind client clock, allow retry in 1.5 seconds
-      setTimeout(() => {
-        hasAutoStarted.current = false;
-        setIsStarting(false);
-      }, 1500);
+      alert(err.response?.data?.detail || 'Failed to start exam');
+      setIsStarting(false);
     }
-  }, [exam, id, isStarting, navigate, setExamSession]);
+  };
 
   useEffect(() => {
     if (!exam || !exam.start_time) {
@@ -93,8 +97,6 @@ export const ExamWaitingRoomPage: React.FC = () => {
       if (diff <= 0) {
         setIsLive(true);
         setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0, totalSeconds: 0 });
-        // Automatically start the test when timer hits 0:00!
-        startTestAndNavigate();
       } else {
         setIsLive(false);
         const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -114,7 +116,7 @@ export const ExamWaitingRoomPage: React.FC = () => {
     checkTime();
     const interval = setInterval(checkTime, 1000);
     return () => clearInterval(interval);
-  }, [exam, startTestAndNavigate]);
+  }, [exam]);
 
   const formatIST = (dateStr?: string) => {
     if (!dateStr) return '';
@@ -223,7 +225,7 @@ export const ExamWaitingRoomPage: React.FC = () => {
                 <Button
                   variant="primary"
                   size="lg"
-                  onClick={startTestAndNavigate}
+                  onClick={() => setIsGuidelinesModalOpen(true)}
                   isLoading={isStarting}
                   className="w-full sm:w-auto font-bold bg-emerald-600 hover:bg-emerald-700 border-emerald-700 text-white px-8 shadow-md"
                 >
@@ -267,51 +269,199 @@ export const ExamWaitingRoomPage: React.FC = () => {
                 </div>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 pt-1">
-                Stay on this page. When the countdown reaches 00:00, your assessment will automatically start and enter the workspace.
+                Stay on this page. When the countdown completes, review the guidelines and click Start Assessment to enter your workspace.
               </p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Pre-Exam Preparation Checklist */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="flex items-start gap-3.5">
-          <div className="p-2 bg-ubi-50 dark:bg-ubi-950 border border-ubi-200 dark:border-ubi-800 rounded-xl text-ubi-800 dark:text-ubi-400 shrink-0">
-            <Wifi size={18} />
+      {/* Assessment Guidelines Summary Card */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-sm space-y-5">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-ubi-50 dark:bg-ubi-950/70 text-ubi-800 dark:text-ubi-400 border border-ubi-200 dark:border-ubi-800">
+              <ShieldCheck size={18} />
+            </div>
+            <div>
+              <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                Assessment Instructions & Proctoring Rules
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Review these essential guidelines before entering the workspace.
+              </p>
+            </div>
           </div>
-          <div>
-            <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100">Check Your Network</h4>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-              Ensure you are connected to high-speed, reliable internet. The server timer will continuously synchronize.
-            </p>
-          </div>
-        </Card>
+          <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+            Proctored Session
+          </span>
+        </div>
 
-        <Card className="flex items-start gap-3.5">
-          <div className="p-2 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 shrink-0">
-            <Eye size={18} />
-          </div>
-          <div>
-            <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100">Proctoring Ready</h4>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-              Window focus, blur, and tab switching are monitored in real-time. Do not open other applications or tabs.
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* 1. Full Screen & Anti-Cheat */}
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1">
+            <div className="flex items-center gap-2 font-bold text-xs text-slate-900 dark:text-slate-200">
+              <ShieldAlert size={15} className="text-rose-600 dark:text-rose-400 shrink-0" />
+              <span>Mandatory Full-Screen & Focus Lock</span>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed pl-5">
+              The test opens in full-screen mode. Switching tabs, minimizing, pressing the Windows key, or clicking outside is monitored in real-time.
             </p>
           </div>
-        </Card>
 
-        <Card className="flex items-start gap-3.5">
-          <div className="p-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl text-amber-600 dark:text-amber-400 shrink-0">
-            <Laptop size={18} />
-          </div>
-          <div>
-            <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100">Workspace Setup</h4>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-              Use a modern desktop browser (Chrome, Edge, Firefox). Ensure external monitors and browser extensions are closed.
+          {/* 2. Run Code vs Submit Solution */}
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1">
+            <div className="flex items-center gap-2 font-bold text-xs text-slate-900 dark:text-slate-200">
+              <Terminal size={15} className="text-ubi-700 dark:text-ubi-400 shrink-0" />
+              <span>Run Code vs. Submit Solution</span>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed pl-5">
+              <strong>Run Code</strong> tests against visible sample cases with no score penalty. <strong>Submit Solution</strong> grades against all hidden test cases.
             </p>
           </div>
-        </Card>
+
+          {/* 3. Partial Marking System */}
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1">
+            <div className="flex items-center gap-2 font-bold text-xs text-slate-900 dark:text-slate-200">
+              <Scale size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>Proportional Partial Marking</span>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed pl-5">
+              Marks are awarded proportionately according to the number of test cases passed on your final submission for each problem.
+            </p>
+          </div>
+
+          {/* 4. Code Editor Clipboard Rules */}
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1">
+            <div className="flex items-center gap-2 font-bold text-xs text-slate-900 dark:text-slate-200">
+              <FileCode2 size={15} className="text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>Code Editor Clipboard Rules</span>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed pl-5">
+              Copying, cutting, and duplicating code <em>within</em> the code editor is permitted. Pasting code from external sources is blocked and flagged.
+            </p>
+          </div>
+        </div>
       </div>
+
+      {/* Guidelines & Rules Confirmation Modal */}
+      <Modal
+        isOpen={isGuidelinesModalOpen}
+        onClose={() => setIsGuidelinesModalOpen(false)}
+        title="Assessment Instructions & Proctoring Guidelines"
+        maxWidth="3xl"
+      >
+        <div className="space-y-5 text-slate-700 dark:text-slate-300 text-xs sm:text-sm">
+          {/* Header info bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-ubi-50/70 border border-ubi-200 dark:bg-ubi-950/40 dark:border-ubi-800 rounded-xl">
+            <div>
+              <span className="text-[10px] uppercase font-bold text-ubi-800 dark:text-ubi-400 tracking-wider block">
+                Assessment
+              </span>
+              <span className="font-bold text-slate-900 dark:text-white text-base">
+                {exam.title}
+              </span>
+            </div>
+            <div className="flex items-center gap-4 text-xs font-semibold">
+              <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                <Clock size={15} className="text-ubi-700 dark:text-ubi-400" />
+                {exam.duration_minutes} Minutes
+              </span>
+              <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                <FileCode2 size={15} className="text-ubi-700 dark:text-ubi-400" />
+                3 Assigned Questions
+              </span>
+            </div>
+          </div>
+
+          {/* Instruction Items List */}
+          <div className="space-y-3 max-h-[48vh] overflow-y-auto pr-1">
+            {/* 1. Visible vs Hidden Test Cases */}
+            <div className="p-3 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1">
+              <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
+                <Eye size={15} className="text-ubi-700 dark:text-ubi-400" />
+                <span>1. Visible vs. Hidden Test Cases</span>
+              </div>
+              <p className="text-slate-600 dark:text-slate-400 leading-relaxed pl-6 text-xs">
+                • <strong>Run Code (Visible Cases):</strong> Executes your code against visible sample test cases without penalty.<br />
+                • <strong>Submit Solution (Hidden Cases):</strong> Evaluates against comprehensive hidden test cases, edge cases, and performance limits.
+              </p>
+            </div>
+
+            {/* 2. Partial Marking System */}
+            <div className="p-3 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1">
+              <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
+                <Scale size={15} className="text-emerald-600 dark:text-emerald-400" />
+                <span>2. Proportional Partial Marking System</span>
+              </div>
+              <p className="text-slate-600 dark:text-slate-400 leading-relaxed pl-6 text-xs">
+                • Marks are awarded proportionally to the number of test cases passed on your submitted solution.
+              </p>
+            </div>
+
+            {/* 3. Timer & Auto-Submit */}
+            <div className="p-3 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1">
+              <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
+                <Clock size={15} className="text-amber-600 dark:text-amber-400" />
+                <span>3. Server-Synchronized Timer</span>
+              </div>
+              <p className="text-slate-600 dark:text-slate-400 leading-relaxed pl-6 text-xs">
+                • The countdown timer starts immediately upon entering the workspace and runs on server time.<br />
+                • When the timer reaches 00:00:00, your assessment automatically concludes and submits your latest code.
+              </p>
+            </div>
+
+            {/* 4. Strict Tab-Switch & Proctoring */}
+            <div className="p-3 bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 rounded-xl space-y-1">
+              <div className="flex items-center gap-2 font-bold text-rose-800 dark:text-rose-300">
+                <ShieldAlert size={15} className="text-rose-600 dark:text-rose-400" />
+                <span>4. Anti-Cheat Monitoring: Mandatory Full Screen</span>
+              </div>
+              <p className="text-rose-700 dark:text-rose-300/90 leading-relaxed pl-6 text-xs">
+                • Navigating away from the workspace, pressing the Windows key, minimizing, or switching windows will be flagged and recorded on your audit log.<br />
+                • Copying and cutting your own code within the editor is allowed; pasting external code is blocked and flagged.
+              </p>
+            </div>
+          </div>
+
+          {/* Acknowledgment Checkbox */}
+          <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl flex items-start gap-3 shadow-sm">
+            <input
+              id="ack-rules-waiting-room"
+              type="checkbox"
+              checked={agreedToTerms}
+              onChange={(e) => setAgreedToTerms(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-ubi-700 focus:ring-ubi-500 cursor-pointer"
+            />
+            <label htmlFor="ack-rules-waiting-room" className="text-xs text-slate-800 dark:text-slate-200 cursor-pointer font-medium select-none">
+              I have carefully read the assessment instructions above. I agree to adhere to all exam rules and understand that focus departures, tab switching, and external paste attempts are actively monitored.
+            </label>
+          </div>
+
+          {/* Modal Actions */}
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsGuidelinesModalOpen(false)}
+              disabled={isStarting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleStartConfirmed}
+              disabled={!agreedToTerms || isStarting}
+              isLoading={isStarting}
+              className="font-semibold gap-1.5"
+            >
+              <ShieldCheck size={16} />
+              <span>Proceed to Assessment</span>
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

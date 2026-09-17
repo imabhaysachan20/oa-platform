@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
+import { EditorView } from '@codemirror/view';
 import { python } from '@codemirror/lang-python';
 import { cpp } from '@codemirror/lang-cpp';
 import { java } from '@codemirror/lang-java';
@@ -17,6 +18,7 @@ interface CodeEditorProps {
   starterCode?: string;
   onReset?: () => void;
   readOnly?: boolean;
+  onPasteAttempt?: () => void;
 }
 
 export const CodeEditor: React.FC<CodeEditorProps> = ({
@@ -27,28 +29,82 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   starterCode,
   onReset,
   readOnly = false,
+  onPasteAttempt,
 }) => {
   const { theme } = useThemeStore();
+  // Keep track of code snippets copied/cut from inside the editor
+  const internalSnippetsRef = useRef<Set<string>>(new Set());
 
   const extensions = useMemo(() => {
-    switch (language.toLowerCase()) {
-      case 'python':
-      case 'python3':
-      case 'py':
-        return [python()];
-      case 'cpp':
-      case 'c++':
-        return [cpp()];
-      case 'java':
-        return [java()];
-      case 'javascript':
-      case 'js':
-      case 'node':
-        return [javascript()];
-      default:
-        return [python()];
-    }
-  }, [language]);
+    const langExt = (() => {
+      switch (language.toLowerCase()) {
+        case 'python':
+        case 'python3':
+        case 'py':
+          return [python()];
+        case 'cpp':
+        case 'c++':
+          return [cpp()];
+        case 'java':
+          return [java()];
+        case 'javascript':
+        case 'js':
+        case 'node':
+          return [javascript()];
+        default:
+          return [python()];
+      }
+    })();
+
+    const securityExt = EditorView.domEventHandlers({
+      copy: (_event, view) => {
+        // Record copied snippet from inside editor
+        const selection = view.state.sliceDoc(
+          view.state.selection.main.from,
+          view.state.selection.main.to
+        );
+        if (selection && selection.trim()) {
+          internalSnippetsRef.current.add(selection.trim());
+          try {
+            _event.clipboardData?.setData('application/x-ubicode-internal', 'true');
+          } catch {}
+        }
+      },
+      cut: (_event, view) => {
+        // Record cut snippet from inside editor
+        const selection = view.state.sliceDoc(
+          view.state.selection.main.from,
+          view.state.selection.main.to
+        );
+        if (selection && selection.trim()) {
+          internalSnippetsRef.current.add(selection.trim());
+          try {
+            _event.clipboardData?.setData('application/x-ubicode-internal', 'true');
+          } catch {}
+        }
+      },
+      paste: (event, view) => {
+        const pastedText = event.clipboardData?.getData('text/plain') || '';
+        const isTaggedInternal = event.clipboardData?.getData('application/x-ubicode-internal') === 'true';
+        const isKnownInternal = internalSnippetsRef.current.has(pastedText.trim());
+
+        // Check if pasted snippet already exists in the document (duplicating existing code)
+        const currentDoc = view.state.doc.toString();
+        const existsInDoc = pastedText.length > 0 && currentDoc.includes(pastedText);
+
+        if (isTaggedInternal || isKnownInternal || existsInDoc) {
+          // Internal paste: allowed
+          return;
+        }
+
+        // External paste from outside the editor: block and notify
+        event.preventDefault();
+        onPasteAttempt?.();
+      },
+    });
+
+    return [...langExt, securityExt];
+  }, [language, onPasteAttempt]);
 
   const handleResetToDefault = () => {
     if (window.confirm('Reset code editor to starter template? Your current changes will be lost.')) {

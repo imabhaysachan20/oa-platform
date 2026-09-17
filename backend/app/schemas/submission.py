@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 
 
@@ -21,6 +21,12 @@ class AdminPlaygroundRunRequest(BaseModel):
     time_limit_ms: int
     memory_limit_kb: int
     test_cases: List[PlaygroundTestCase]
+    title: Optional[str] = None
+    question_id: Optional[int] = None
+    function_name: Optional[str] = None
+    parameters: Optional[List[Dict[str, Any]]] = None
+    return_type: Optional[str] = None
+    driver_code: Optional[Dict[str, str]] = None
 
 
 class TestCaseRunResult(BaseModel):

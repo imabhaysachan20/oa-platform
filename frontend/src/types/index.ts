@@ -19,6 +19,11 @@ export interface TestCase {
   weight: number;
 }
 
+export interface ParameterDef {
+  name: string;
+  type: string;
+}
+
 export interface Question {
   id: number;
   title: string;
@@ -29,6 +34,12 @@ export interface Question {
   sample_input?: string;
   sample_output?: string;
   input_format?: string;
+  function_name?: string;
+  function_signature?: string;
+  parameters?: ParameterDef[];
+  return_type?: string;
+  starter_code?: Record<string, string>;
+  driver_code?: Record<string, string>;
   test_cases?: TestCase[];
 }
 

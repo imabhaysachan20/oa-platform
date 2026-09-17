@@ -308,8 +308,8 @@ async def _get_assigned_question_views(db: AsyncSession, assignment_id: int) -> 
             order_index=assigned_q.order_index,
             last_code=latest_sub.code if latest_sub else None,
             last_language=latest_sub.language if latest_sub else None,
-            starter_code=get_question_starter_templates(q.title),
-            function_signature=get_question_signature(q.title),
+            starter_code=get_question_starter_templates(q.title, question=q),
+            function_signature=get_question_signature(q.title, question=q),
             status=latest_sub.status if latest_sub else "unattempted"
         ))
     return views

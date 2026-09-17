@@ -112,13 +112,28 @@ export const adminApi = {
     return res.data;
   },
 
-  // Playground
+  // Playground & Templates
+  generateTemplates: async (payload: {
+    function_name: string;
+    parameters: Array<{ name: string; type: string }>;
+    return_type: string;
+  }): Promise<{ function_signature: string; starter: Record<string, string> }> => {
+    const res = await api.post('/admin/questions/generate-templates', payload);
+    return res.data;
+  },
+
   runPlaygroundCode: async (payload: {
     code: string;
     language: string;
     time_limit_ms: number;
     memory_limit_kb: number;
     test_cases: { id?: number; input: string; expected_output: string }[];
+    title?: string;
+    question_id?: number;
+    function_name?: string;
+    parameters?: Array<{ name: string; type: string }>;
+    return_type?: string;
+    driver_code?: Record<string, string>;
   }) => {
     const res = await api.post('/admin/playground/run', payload);
     return res.data;

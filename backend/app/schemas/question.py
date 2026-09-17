@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 from backend.app.models.question import QuestionDifficulty
 
@@ -31,6 +31,12 @@ class QuestionBase(BaseModel):
     sample_input: Optional[str] = None
     sample_output: Optional[str] = None
     input_format: Optional[str] = None
+    function_name: Optional[str] = None
+    function_signature: Optional[str] = None
+    parameters: Optional[List[Dict[str, Any]]] = None
+    return_type: Optional[str] = None
+    starter_code: Optional[Dict[str, str]] = None
+    driver_code: Optional[Dict[str, str]] = None
 
 
 class QuestionCreate(QuestionBase):
@@ -46,6 +52,12 @@ class QuestionUpdate(BaseModel):
     sample_input: Optional[str] = None
     sample_output: Optional[str] = None
     input_format: Optional[str] = None
+    function_name: Optional[str] = None
+    function_signature: Optional[str] = None
+    parameters: Optional[List[Dict[str, Any]]] = None
+    return_type: Optional[str] = None
+    starter_code: Optional[Dict[str, str]] = None
+    driver_code: Optional[Dict[str, str]] = None
 
 
 class QuestionResponse(QuestionBase):

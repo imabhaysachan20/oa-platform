@@ -2,12 +2,42 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../api/admin';
-import { QuestionDifficulty, TestCase } from '../types';
+import { QuestionDifficulty, TestCase, ParameterDef } from '../types';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { RichTextEditor } from '../components/ui/RichTextEditor';
-import { AdminPlaygroundModal, QuestionFormData } from '../components/AdminPlaygroundModal';
-import { ArrowLeft, Code2, Sparkles, Clock, HardDrive, ListChecks, Plus, Trash2, Eye, EyeOff, Pencil, AlertTriangle, X } from 'lucide-react';
+import { AdminPlaygroundModal, QuestionFormData, TestCaseItem } from '../components/AdminPlaygroundModal';
+import { 
+  ArrowLeft, 
+  Code2, 
+  Sparkles, 
+  Clock, 
+  HardDrive, 
+  ListChecks, 
+  Plus, 
+  Trash2, 
+  Eye, 
+  EyeOff, 
+  Layers, 
+  FileCode2, 
+  CheckCircle2, 
+  AlertTriangle 
+} from 'lucide-react';
+
+const COMMON_DATA_TYPES = [
+  { value: 'int', label: 'int (Integer)' },
+  { value: 'float', label: 'float (Decimal Number)' },
+  { value: 'string', label: 'string (Text)' },
+  { value: 'bool', label: 'bool (Boolean true/false)' },
+  { value: 'int[]', label: 'int[] (1D Array of Integers)' },
+  { value: 'float[]', label: 'float[] (1D Array of Floats)' },
+  { value: 'string[]', label: 'string[] (1D Array of Strings)' },
+  { value: 'int[][]', label: 'int[][] (2D Matrix of Integers)' },
+  { value: 'string[][]', label: 'string[][] (2D Matrix of Strings)' },
+  { value: 'ListNode', label: 'ListNode (Singly-Linked List)' },
+  { value: 'TreeNode', label: 'TreeNode (Binary Tree)' },
+  { value: 'void', label: 'void (In-place Mutation)' },
+];
 
 export const AdminCreateQuestionPage: React.FC = () => {
   const { questionId } = useParams<{ questionId?: string }>();
@@ -17,7 +47,10 @@ export const AdminCreateQuestionPage: React.FC = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  // Form State
+  // Mode: LeetCode style function vs Standard CP program
+  const [questionMode, setQuestionMode] = useState<'leetcode' | 'standard'>('leetcode');
+
+  // Basic Details
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [inputFormat, setInputFormat] = useState('');
@@ -26,9 +59,23 @@ export const AdminCreateQuestionPage: React.FC = () => {
   const [memoryLimitKb, setMemoryLimitKb] = useState(128000);
   const [sampleInput, setSampleInput] = useState('');
   const [sampleOutput, setSampleOutput] = useState('');
+
+  // LeetCode Signature Fields
+  const [functionName, setFunctionName] = useState('');
+  const [returnType, setReturnType] = useState('int[]');
+  const [parameters, setParameters] = useState<ParameterDef[]>([
+    { name: 'nums', type: 'int[]' },
+    { name: 'target', type: 'int' },
+  ]);
+  const [starterCode, setStarterCode] = useState<Record<string, string>>({});
+  const [activeLangTab, setActiveLangTab] = useState<'python' | 'javascript' | 'cpp' | 'java'>('python');
+  const [isGeneratingStarters, setIsGeneratingStarters] = useState(false);
+
+  // Playground Modal State
   const [isPlaygroundModalOpen, setIsPlaygroundModalOpen] = useState(false);
 
-  // Test Case Form State (for Edit Mode)
+  // Test Case Management (Supports both Create and Edit mode)
+  const [localTestCases, setLocalTestCases] = useState<TestCaseItem[]>([]);
   const [tcInput, setTcInput] = useState('');
   const [tcExpected, setTcExpected] = useState('');
   const [tcIsHidden, setTcIsHidden] = useState(false);
@@ -53,6 +100,23 @@ export const AdminCreateQuestionPage: React.FC = () => {
       setMemoryLimitKb(existingQuestion.memory_limit_kb || 128000);
       setSampleInput(existingQuestion.sample_input || '');
       setSampleOutput(existingQuestion.sample_output || '');
+
+      if (existingQuestion.function_name) {
+        setQuestionMode('leetcode');
+        setFunctionName(existingQuestion.function_name);
+        setParameters(existingQuestion.parameters || []);
+        setReturnType(existingQuestion.return_type || 'void');
+      } else {
+        setQuestionMode('standard');
+      }
+
+      if (existingQuestion.starter_code) {
+        setStarterCode(existingQuestion.starter_code);
+      }
+
+      if (existingQuestion.test_cases && existingQuestion.test_cases.length > 0) {
+        setLocalTestCases(existingQuestion.test_cases);
+      }
     }
   }, [existingQuestion]);
 
@@ -107,6 +171,83 @@ export const AdminCreateQuestionPage: React.FC = () => {
     },
   });
 
+  // Add Parameter Handler
+  const handleAddParameter = () => {
+    setParameters([...parameters, { name: `arg${parameters.length + 1}`, type: 'int' }]);
+  };
+
+  const handleRemoveParameter = (idx: number) => {
+    setParameters(parameters.filter((_, i) => i !== idx));
+  };
+
+  const handleParameterChange = (idx: number, field: 'name' | 'type', value: string) => {
+    const updated = [...parameters];
+    updated[idx] = { ...updated[idx], [field]: value };
+    setParameters(updated);
+  };
+
+  // Generate Templates Handler
+  const handleGenerateStarters = async () => {
+    if (!functionName.trim()) {
+      setValidationError('Please enter a function name before generating templates.');
+      return;
+    }
+    setValidationError(null);
+    setIsGeneratingStarters(true);
+    try {
+      const res = await adminApi.generateTemplates({
+        function_name: functionName.trim(),
+        parameters,
+        return_type: returnType,
+      });
+      setStarterCode(res.starter);
+    } catch (err: any) {
+      setValidationError(err.response?.data?.detail || 'Failed to generate templates.');
+    } finally {
+      setIsGeneratingStarters(false);
+    }
+  };
+
+  // Add Test Case Handler
+  const handleAddTestCase = () => {
+    if (!tcInput.trim() && !tcExpected.trim()) {
+      setValidationError('Please enter at least an input or expected output for the test case.');
+      return;
+    }
+    setValidationError(null);
+
+    if (isEditMode && numericId) {
+      addTestCaseMutation.mutate({
+        question_id: numericId,
+        input: tcInput,
+        expected_output: tcExpected,
+        is_hidden: tcIsHidden,
+        weight: 1.0,
+      });
+    } else {
+      // Local state for Create mode
+      const newCase: TestCaseItem = {
+        id: Date.now(),
+        input: tcInput,
+        expected_output: tcExpected,
+        is_hidden: tcIsHidden,
+        weight: 1.0,
+      };
+      setLocalTestCases([...localTestCases, newCase]);
+      setTcInput('');
+      setTcExpected('');
+      setTcIsHidden(false);
+    }
+  };
+
+  const handleDeleteTestCase = (tc: TestCaseItem, idx: number) => {
+    if (isEditMode && tc.id && numericId) {
+      deleteTestCaseMutation.mutate(tc.id);
+    } else {
+      setLocalTestCases(localTestCases.filter((_, i) => i !== idx));
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError(null);
@@ -118,8 +259,12 @@ export const AdminCreateQuestionPage: React.FC = () => {
       setValidationError('Please enter a Problem Description.');
       return;
     }
+    if (questionMode === 'leetcode' && !functionName.trim()) {
+      setValidationError('Please enter a function name for the LeetCode signature.');
+      return;
+    }
 
-    saveQuestionMutation.mutate({
+    const payload: any = {
       title,
       description,
       difficulty,
@@ -128,219 +273,371 @@ export const AdminCreateQuestionPage: React.FC = () => {
       sample_input: sampleInput,
       sample_output: sampleOutput,
       input_format: inputFormat,
-    });
-  };
+    };
 
-  const handleSaveFromPlayground = (formData: QuestionFormData) => {
-    saveQuestionMutation.mutate({
-      title: formData.title,
-      description: formData.description,
-      difficulty: formData.difficulty,
-      time_limit_ms: formData.timeLimitMs,
-      memory_limit_kb: formData.memoryLimitKb,
-      sample_input: formData.sampleInput,
-      sample_output: formData.sampleOutput,
-      input_format: formData.inputFormat,
-    });
+    if (questionMode === 'leetcode') {
+      payload.function_name = functionName.trim();
+      payload.parameters = parameters;
+      payload.return_type = returnType;
+      payload.starter_code = Object.keys(starterCode).length > 0 ? starterCode : undefined;
+    } else {
+      payload.function_name = null;
+      payload.parameters = null;
+      payload.return_type = null;
+      payload.starter_code = null;
+    }
+
+    if (!isEditMode && localTestCases.length > 0) {
+      payload.test_cases = localTestCases.map(tc => ({
+        input: tc.input,
+        expected_output: tc.expected_output,
+        is_hidden: tc.is_hidden || false,
+        weight: tc.weight || 1.0,
+      }));
+    }
+
+    saveQuestionMutation.mutate(payload);
   };
 
   const handleOpenPlayground = () => {
-    setValidationError(null);
-    if (!title.trim() && !description.trim()) {
-      setValidationError('Please fill in both Question Title and Description before launching Playground.');
-      return;
-    }
     if (!title.trim()) {
       setValidationError('Please enter a Question Title before launching Playground.');
       return;
     }
-    if (!description.trim()) {
-      setValidationError('Please enter a Problem Description before launching Playground.');
-      return;
-    }
+    setValidationError(null);
     setIsPlaygroundModalOpen(true);
   };
 
-  const handleAddTestCase = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!numericId) return;
-    if (!tcInput.trim() && !tcExpected.trim()) {
-      setValidationError('Please provide input or expected output for the test case');
-      return;
-    }
-    setValidationError(null);
-    addTestCaseMutation.mutate({
-      question_id: numericId,
-      input: tcInput,
-      expected_output: tcExpected,
-      is_hidden: tcIsHidden,
-      weight: 1.0,
-    });
-  };
-
-  if (isEditMode && isFetchingQuestion) {
-    return (
-      <div className="py-24 flex justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-ubi-800 dark:border-ubi-400"></div>
-      </div>
-    );
-  }
+  const activeTestCases = isEditMode && existingQuestion?.test_cases 
+    ? existingQuestion.test_cases 
+    : localTestCases;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6 space-y-4 animate-fadeIn">
+    <div className="max-w-4xl mx-auto space-y-4 pb-12">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
           <Link
             to="/admin/questions"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800/90 hover:bg-ubi-800 hover:text-white dark:hover:bg-ubi-600 dark:hover:text-white px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 shadow-2xs transition-all mb-2 group"
+            className="p-1.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
           >
-            <ArrowLeft size={14} className="transition-transform group-hover:-translate-x-0.5" />
-            <span>Back to Question Bank</span>
+            <ArrowLeft size={18} />
           </Link>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            {isEditMode ? (
-              <Pencil className="text-amber-600 dark:text-amber-400" size={20} />
-            ) : (
-              <Code2 className="text-ubi-800 dark:text-ubi-400" size={20} />
-            )}
-            <span>{isEditMode ? `Edit Question: ${title || 'Coding Problem'}` : 'Add New Coding Question'}</span>
-          </h1>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-            {isEditMode
-              ? 'Modify coding problem statement, difficulty, runtime constraints, sample I/O format, and test cases.'
-              : 'Configure coding problem statement, difficulty, runtime constraints, and sample I/O format.'}
-          </p>
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+              {isEditMode ? 'Edit Question' : 'Create Question'}
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Configure question details, LeetCode signature, and test cases.
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Main Form Container */}
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Validation Error UI Banner */}
-        {validationError && (
-          <div className="flex items-center justify-between p-3.5 bg-rose-50 dark:bg-rose-950/80 border border-rose-200 dark:border-rose-800/80 rounded-xl text-rose-800 dark:text-rose-200 text-xs shadow-xs animate-fadeIn">
-            <div className="flex items-center gap-2.5">
-              <AlertTriangle size={16} className="text-rose-600 dark:text-rose-400 shrink-0" />
-              <span className="font-semibold">{validationError}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setValidationError(null)}
-              className="p-1 rounded-md text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition"
-              title="Dismiss error"
-            >
-              <X size={14} />
-            </button>
+      {/* Validation Error Alert */}
+      {validationError && (
+        <div className="p-3 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 rounded-lg flex items-center justify-between text-xs text-rose-700 dark:text-rose-300">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={15} className="text-rose-500 shrink-0" />
+            <span>{validationError}</span>
           </div>
-        )}
+          <button type="button" onClick={() => setValidationError(null)} className="text-rose-400 hover:text-rose-600">
+            &times;
+          </button>
+        </div>
+      )}
 
-        <Card className="p-5 sm:p-6 space-y-6 divide-y divide-slate-200 dark:divide-slate-800/80 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs bg-white dark:bg-slate-900">
-          {/* 1. Problem Identity & Limits */}
-          <div className="space-y-3.5">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Card className="p-4 sm:p-5 space-y-5">
+          {/* Question Mode Toggle */}
+          <div className="space-y-2">
+            <label className="block font-bold text-slate-800 dark:text-slate-200 text-xs uppercase tracking-wider">
+              Execution Architecture
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div
+                onClick={() => setQuestionMode('leetcode')}
+                className={`p-3 rounded-xl border cursor-pointer transition flex items-start gap-3 ${
+                  questionMode === 'leetcode'
+                    ? 'border-ubi-800 bg-ubi-50/60 dark:bg-ubi-950/40 dark:border-ubi-700 shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
+                }`}
+              >
+                <div className={`p-2 rounded-lg ${questionMode === 'leetcode' ? 'bg-ubi-800 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600'}`}>
+                  <Sparkles size={16} />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <span>LeetCode Style (Function)</span>
+                    <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.2 rounded-full font-bold">Recommended</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
+                    Candidate completes a typed function. System automatically injects test harnesses for all 4 languages.
+                  </div>
+                </div>
+              </div>
+
+              <div
+                onClick={() => setQuestionMode('standard')}
+                className={`p-3 rounded-xl border cursor-pointer transition flex items-start gap-3 ${
+                  questionMode === 'standard'
+                    ? 'border-ubi-800 bg-ubi-50/60 dark:bg-ubi-950/40 dark:border-ubi-700 shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
+                }`}
+              >
+                <div className={`p-2 rounded-lg ${questionMode === 'standard' ? 'bg-ubi-800 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600'}`}>
+                  <Code2 size={16} />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-slate-900 dark:text-white">
+                    Standard Program (stdin/stdout)
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
+                    Classic competitive programming. Candidate writes full standalone program reading stdin and printing to stdout.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 1. Basic Problem Information */}
+          <div className="space-y-3.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
             <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
               <span className="flex items-center justify-center w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold border border-slate-200 dark:border-slate-700">1</span>
-              <span>Problem Identity & Limits</span>
+              <span>Problem Information</span>
             </h2>
 
             <div>
               <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                Question Title <span className="text-rose-500">*</span>
+                Question Title *
               </label>
               <input
                 type="text"
-                required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Reverse Linked List"
-                className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-ubi-800 focus:border-ubi-800 focus:outline-none transition"
+                placeholder="e.g. Two Sum, Valid Anagram, Reverse Linked List"
+                className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-ubi-800 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
+                Problem Description (Markdown / Rich Text) *
+              </label>
+              <RichTextEditor
+                value={description}
+                onChange={setDescription}
+                rows={5}
               />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                  Difficulty <span className="text-rose-500">*</span>
+                  Difficulty Level
                 </label>
                 <select
                   value={difficulty}
                   onChange={(e) => setDifficulty(e.target.value as QuestionDifficulty)}
-                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-xs font-medium focus:ring-1 focus:ring-ubi-800 focus:outline-none transition"
+                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-ubi-800 focus:outline-none"
                 >
-                  <option value="easy">Easy</option>
-                  <option value="medium">Medium</option>
-                  <option value="hard">Hard</option>
+                  <option value="easy">Easy (Weight 1.0)</option>
+                  <option value="medium">Medium (Weight 2.0)</option>
+                  <option value="hard">Hard (Weight 3.0)</option>
                 </select>
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1 flex items-center gap-1">
-                  <Clock size={12} className="text-ubi-800 dark:text-ubi-400" />
-                  <span>Time Limit (ms)</span>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
+                  Time Limit (ms)
                 </label>
                 <input
                   type="number"
                   value={timeLimitMs}
                   onChange={(e) => setTimeLimitMs(Number(e.target.value))}
-                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-ubi-800 focus:outline-none transition"
+                  step={500}
+                  min={500}
+                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-ubi-800 focus:outline-none font-mono"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1 flex items-center gap-1">
-                  <HardDrive size={12} className="text-ubi-800 dark:text-ubi-400" />
-                  <span>Memory Limit (KB)</span>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
+                  Memory Limit (KB)
                 </label>
                 <input
                   type="number"
                   value={memoryLimitKb}
                   onChange={(e) => setMemoryLimitKb(Number(e.target.value))}
-                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-ubi-800 focus:outline-none transition"
+                  step={16000}
+                  min={16000}
+                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-ubi-800 focus:outline-none font-mono"
                 />
               </div>
             </div>
           </div>
 
-          {/* 2. Problem Description & Input Specifications */}
-          <div className="pt-6 space-y-3.5">
+          {/* 2. LeetCode Signature Builder (Shown only in LeetCode mode) */}
+          {questionMode === 'leetcode' && (
+            <div className="space-y-3.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                  <span className="flex items-center justify-center w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold border border-slate-200 dark:border-slate-700">2</span>
+                  <Layers size={14} className="text-ubi-800 dark:text-ubi-400" />
+                  <span>LeetCode Function Signature</span>
+                </h2>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={handleGenerateStarters}
+                  isLoading={isGeneratingStarters}
+                  className="gap-1 text-[11px] font-semibold"
+                >
+                  <Sparkles size={12} className="text-amber-500" />
+                  <span>Auto-Generate Templates</span>
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
+                    Function Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={functionName}
+                    onChange={(e) => setFunctionName(e.target.value)}
+                    placeholder="e.g. twoSum, isPalindrome, reverseList"
+                    className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-xs font-mono focus:ring-1 focus:ring-ubi-800 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
+                    Return Type
+                  </label>
+                  <select
+                    value={returnType}
+                    onChange={(e) => setReturnType(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-xs font-mono focus:ring-1 focus:ring-ubi-800 focus:outline-none"
+                  >
+                    {COMMON_DATA_TYPES.map((dt) => (
+                      <option key={dt.value} value={dt.value}>
+                        {dt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Parameters List */}
+              <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                    Input Parameters ({parameters.length})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAddParameter}
+                    className="text-[11px] font-semibold text-ubi-700 dark:text-ubi-400 hover:text-ubi-900 flex items-center gap-1"
+                  >
+                    <Plus size={12} />
+                    <span>Add Parameter</span>
+                  </button>
+                </div>
+
+                {parameters.map((p, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono text-slate-400 w-4">#{idx + 1}</span>
+                    <input
+                      type="text"
+                      value={p.name}
+                      onChange={(e) => handleParameterChange(idx, 'name', e.target.value)}
+                      placeholder="Param name (e.g. nums)"
+                      className="flex-1 px-2.5 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-xs font-mono focus:ring-1 focus:ring-ubi-800"
+                    />
+                    <select
+                      value={p.type}
+                      onChange={(e) => handleParameterChange(idx, 'type', e.target.value)}
+                      className="flex-1 px-2.5 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-xs font-mono focus:ring-1 focus:ring-ubi-800"
+                    >
+                      {COMMON_DATA_TYPES.filter(t => t.value !== 'void').map((dt) => (
+                        <option key={dt.value} value={dt.value}>
+                          {dt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveParameter(idx)}
+                      className="text-slate-400 hover:text-rose-600 p-1"
+                      title="Remove parameter"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Starter Templates Preview Tabs */}
+              {Object.keys(starterCode).length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                    <span className="flex items-center gap-1">
+                      <FileCode2 size={13} />
+                      <span>Starter Code Templates (Auto-Generated)</span>
+                    </span>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-semibold lowercase">
+                      <CheckCircle2 size={11} /> 4 languages ready
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg border border-slate-200 dark:border-slate-800">
+                    {(['python', 'javascript', 'cpp', 'java'] as const).map((lang) => (
+                      <button
+                        key={lang}
+                        type="button"
+                        onClick={() => setActiveLangTab(lang)}
+                        className={`px-3 py-1 rounded text-xs font-mono font-bold capitalize transition ${
+                          activeLangTab === lang
+                            ? 'bg-white dark:bg-slate-800 text-ubi-900 dark:text-white shadow-xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                        }`}
+                      >
+                        {lang === 'cpp' ? 'C++' : lang}
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    rows={6}
+                    value={starterCode[activeLangTab] || ''}
+                    onChange={(e) => setStarterCode({ ...starterCode, [activeLangTab]: e.target.value })}
+                    className="w-full p-2.5 bg-slate-950 text-slate-200 rounded-lg text-xs font-mono focus:ring-1 focus:ring-ubi-800"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 3. Sample Input & Output */}
+          <div className="space-y-3.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
             <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
-              <span className="flex items-center justify-center w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold border border-slate-200 dark:border-slate-700">2</span>
-              <span>Problem Description & Input Specifications</span>
+              <span className="flex items-center justify-center w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold border border-slate-200 dark:border-slate-700">
+                {questionMode === 'leetcode' ? '3' : '2'}
+              </span>
+              <span>Sample Input & Format</span>
             </h2>
 
             <div>
               <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                Description & Constraints (Rich Text) <span className="text-rose-500">*</span>
-              </label>
-              <RichTextEditor
-                value={description}
-                onChange={setDescription}
-                placeholder="State problem statement, constraints, notes... Supports bold, lists, and code blocks."
-                rows={12}
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                Input Format <span className="text-rose-500">*</span>
+                Input Format Explanation
               </label>
               <textarea
-                required
                 rows={2}
                 value={inputFormat}
                 onChange={(e) => setInputFormat(e.target.value)}
-                placeholder="e.g. First line contains N integers representing nums. Second line contains target integer."
-                className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-ubi-800 focus:outline-none transition"
+                placeholder={questionMode === 'leetcode' ? 'e.g. Line 1: nums (array), Line 2: target (integer)' : 'e.g. First line contains N. Second line contains space-separated integers.'}
+                className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-[11px] focus:ring-1 focus:ring-ubi-800 focus:outline-none"
               />
-            </div>
-
-            <div className="p-2.5 bg-ubi-50/50 dark:bg-ubi-950/20 border border-ubi-200/80 dark:border-ubi-800/50 rounded-lg space-y-0.5 text-xs">
-              <h4 className="text-ubi-900 dark:text-ubi-300 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1">
-                <Sparkles size={12} /> Format Guidelines
-              </h4>
-              <ul className="list-disc list-inside text-slate-600 dark:text-slate-400 text-[11px] space-y-0.5">
-                <li><strong>Strings:</strong> Provide raw strings without quotes.</li>
-                <li><strong>Arrays / Lists:</strong> Use space-separated values (e.g. <code>1 2 3</code>). Avoid brackets like <code>[1, 2, 3]</code>.</li>
-              </ul>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -349,163 +646,163 @@ export const AdminCreateQuestionPage: React.FC = () => {
                   Sample Input
                 </label>
                 <textarea
-                  rows={2.5}
+                  rows={3}
                   value={sampleInput}
                   onChange={(e) => setSampleInput(e.target.value)}
-                  placeholder="e.g. 5\n1 2 3 4 5"
+                  placeholder={questionMode === 'leetcode' ? '[2,7,11,15]\n9' : '5\n1 2 3 4 5'}
                   className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-[11px] font-mono focus:ring-1 focus:ring-ubi-800 focus:outline-none"
                 />
               </div>
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                  Sample Output
+                  Sample Expected Output
                 </label>
                 <textarea
-                  rows={2.5}
+                  rows={3}
                   value={sampleOutput}
                   onChange={(e) => setSampleOutput(e.target.value)}
-                  placeholder="e.g. 15"
+                  placeholder={questionMode === 'leetcode' ? '[0,1]' : '15'}
                   className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-[11px] font-mono focus:ring-1 focus:ring-ubi-800 focus:outline-none"
                 />
               </div>
             </div>
           </div>
 
-          {/* 3. Test Cases Management (If Edit Mode) */}
-          {isEditMode && existingQuestion && (
-            <div className="pt-6 space-y-3.5">
+          {/* 4. Test Cases Management (ALWAYS visible for both Create and Edit) */}
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-3.5">
+            <div className="flex items-center justify-between">
               <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
-                <span className="flex items-center justify-center w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold border border-slate-200 dark:border-slate-700">3</span>
+                <span className="flex items-center justify-center w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold border border-slate-200 dark:border-slate-700">
+                  {questionMode === 'leetcode' ? '4' : '3'}
+                </span>
                 <ListChecks size={14} className="text-ubi-800 dark:text-ubi-400" />
-                <span>Test Cases Management ({existingQuestion.test_cases?.length || 0})</span>
+                <span>Test Cases Management ({activeTestCases.length})</span>
               </h2>
+              <span className="text-[10px] text-slate-500 font-medium">
+                Add evaluation and hidden cases right here
+              </span>
+            </div>
 
-              {/* Add New Test Case Form */}
-              <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg space-y-2.5">
-                <h3 className="text-[11px] font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
-                  Add New Test Case
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[10px] uppercase tracking-wider mb-1">
-                      Input Data
-                    </label>
-                    <textarea
-                      rows={1.5}
-                      value={tcInput}
-                      onChange={(e) => setTcInput(e.target.value)}
-                      placeholder="Raw input data..."
-                      className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-md text-[11px] font-mono focus:ring-1 focus:ring-ubi-800 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[10px] uppercase tracking-wider mb-1">
-                      Expected Output
-                    </label>
-                    <textarea
-                      rows={1.5}
-                      value={tcExpected}
-                      onChange={(e) => setTcExpected(e.target.value)}
-                      placeholder="Expected output..."
-                      className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-md text-[11px] font-mono focus:ring-1 focus:ring-ubi-800 focus:outline-none"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between pt-0.5">
-                  <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-700 dark:text-slate-300">
-                    <input
-                      type="checkbox"
-                      checked={tcIsHidden}
-                      onChange={(e) => setTcIsHidden(e.target.checked)}
-                      className="rounded border-slate-300 dark:border-slate-700 text-ubi-800 focus:ring-0"
-                    />
-                    <span>Hidden Case (Used for evaluation only)</span>
+            {/* Add New Test Case Form */}
+            <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg space-y-2.5">
+              <h3 className="text-[11px] font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
+                Add New Test Case
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[10px] uppercase tracking-wider mb-1">
+                    Input Data
                   </label>
-                  <Button
-                    type="button"
-                    size="xs"
-                    onClick={handleAddTestCase}
-                    isLoading={addTestCaseMutation.isPending}
-                    className="gap-1 font-semibold px-3 py-1"
-                  >
-                    <Plus size={13} />
-                    <span>Add Case</span>
-                  </Button>
+                  <textarea
+                    rows={2}
+                    value={tcInput}
+                    onChange={(e) => setTcInput(e.target.value)}
+                    placeholder={questionMode === 'leetcode' ? '[3,2,4]\n6' : '10\n1 2 3...'}
+                    className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-md text-[11px] font-mono focus:ring-1 focus:ring-ubi-800 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[10px] uppercase tracking-wider mb-1">
+                    Expected Output
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={tcExpected}
+                    onChange={(e) => setTcExpected(e.target.value)}
+                    placeholder={questionMode === 'leetcode' ? '[1,2]' : '55'}
+                    className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-md text-[11px] font-mono focus:ring-1 focus:ring-ubi-800 focus:outline-none"
+                  />
                 </div>
               </div>
+              <div className="flex items-center justify-between pt-0.5">
+                <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={tcIsHidden}
+                    onChange={(e) => setTcIsHidden(e.target.checked)}
+                    className="rounded border-slate-300 dark:border-slate-700 text-ubi-800 focus:ring-0"
+                  />
+                  <span>Hidden Case (Used for evaluation only)</span>
+                </label>
+                <Button
+                  type="button"
+                  size="xs"
+                  onClick={handleAddTestCase}
+                  isLoading={addTestCaseMutation.isPending}
+                  className="gap-1 font-semibold px-3 py-1"
+                >
+                  <Plus size={13} />
+                  <span>Add Case</span>
+                </Button>
+              </div>
+            </div>
 
-              {/* Existing Test Cases List */}
-              <div className="space-y-1.5">
-                <h3 className="text-[11px] font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
-                  Existing Test Cases ({existingQuestion.test_cases?.length || 0})
-                </h3>
-                {existingQuestion.test_cases && existingQuestion.test_cases.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-64 overflow-y-auto pr-1">
-                    {existingQuestion.test_cases.map((tc: TestCase, idx: number) => (
-                      <div
-                        key={tc.id}
-                        className="p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg flex items-start justify-between gap-2.5 text-xs"
-                      >
-                        <div className="space-y-0.5 flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-800 dark:text-slate-300 font-mono text-[10px]">Case #{idx + 1}</span>
-                            {tc.is_hidden ? (
-                              <span className="flex items-center gap-1 text-[9px] text-amber-700 bg-amber-50 dark:text-amber-400 dark:bg-amber-950 px-1.5 py-0.2 rounded border border-amber-200 dark:border-amber-800 font-semibold">
-                                <EyeOff size={10} /> Hidden
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1 text-[9px] text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950 px-1.5 py-0.2 rounded border border-emerald-200 dark:border-emerald-800 font-semibold">
-                                <Eye size={10} /> Sample
-                              </span>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 pt-0.5 font-mono text-[10px]">
-                            <div>
-                              <span className="text-slate-400 block text-[9px] uppercase font-bold">Input:</span>
-                              <div className="p-1 bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-800 truncate">
-                                {tc.input || <span className="italic text-slate-400">Empty</span>}
-                              </div>
+            {/* Test Cases List */}
+            <div className="space-y-1.5">
+              {activeTestCases && activeTestCases.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-64 overflow-y-auto pr-1">
+                  {activeTestCases.map((tc: TestCaseItem, idx: number) => (
+                    <div
+                      key={tc.id || idx}
+                      className="p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg flex items-start justify-between gap-2.5 text-xs"
+                    >
+                      <div className="space-y-0.5 flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-800 dark:text-slate-300 font-mono text-[10px]">Case #{idx + 1}</span>
+                          {tc.is_hidden ? (
+                            <span className="flex items-center gap-1 text-[9px] text-amber-700 bg-amber-50 dark:text-amber-400 dark:bg-amber-950 px-1.5 py-0.2 rounded border border-amber-200 dark:border-amber-800 font-semibold">
+                              <EyeOff size={10} /> Hidden
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 text-[9px] text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950 px-1.5 py-0.2 rounded border border-emerald-200 dark:border-emerald-800 font-semibold">
+                              <Eye size={10} /> Sample
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 pt-0.5 font-mono text-[10px]">
+                          <div>
+                            <span className="text-slate-400 block text-[9px] uppercase font-bold">Input:</span>
+                            <div className="p-1 bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-800 truncate">
+                              {tc.input || <span className="italic text-slate-400">Empty</span>}
                             </div>
-                            <div>
-                              <span className="text-slate-400 block text-[9px] uppercase font-bold">Expected:</span>
-                              <div className="p-1 bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-800 truncate">
-                                {tc.expected_output || <span className="italic text-slate-400">Empty</span>}
-                              </div>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[9px] uppercase font-bold">Expected:</span>
+                            <div className="p-1 bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-800 truncate">
+                              {tc.expected_output || <span className="italic text-slate-400">Empty</span>}
                             </div>
                           </div>
                         </div>
-
-                        <button
-                          type="button"
-                          onClick={() => deleteTestCaseMutation.mutate(tc.id)}
-                          className="text-rose-600 dark:text-rose-400 hover:text-rose-700 p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-500/10 transition"
-                          title="Delete Test Case"
-                        >
-                          <Trash2 size={13} />
-                        </button>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-4 text-slate-500 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg">
-                    No test cases added yet.
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
-          {/* Bottom Action Bar inside card */}
-          <div className="pt-4 flex items-center justify-between gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/admin/questions')}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTestCase(tc, idx)}
+                        disabled={deleteTestCaseMutation.isPending}
+                        className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1 transition"
+                        title="Delete test case"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-4 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-950 rounded-lg border border-dashed border-slate-300 dark:border-slate-800">
+                  No additional test cases added yet. Add sample and hidden evaluation test cases above.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
+            <Link
+              to="/admin/questions"
+              className="text-xs font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
             >
               Cancel
-            </Button>
-
+            </Link>
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -534,6 +831,7 @@ export const AdminCreateQuestionPage: React.FC = () => {
           isOpen={isPlaygroundModalOpen}
           onClose={() => setIsPlaygroundModalOpen(false)}
           questionData={{
+            id: numericId || undefined,
             title,
             description,
             difficulty,
@@ -542,6 +840,11 @@ export const AdminCreateQuestionPage: React.FC = () => {
             sampleInput,
             sampleOutput,
             inputFormat,
+            functionName: questionMode === 'leetcode' ? functionName : undefined,
+            parameters: questionMode === 'leetcode' ? parameters : undefined,
+            returnType: questionMode === 'leetcode' ? returnType : undefined,
+            starterCode,
+            testCases: activeTestCases,
           }}
           onChangeQuestionData={(updated) => {
             setTitle(updated.title);
@@ -552,8 +855,11 @@ export const AdminCreateQuestionPage: React.FC = () => {
             setSampleInput(updated.sampleInput);
             setSampleOutput(updated.sampleOutput);
             setInputFormat(updated.inputFormat || '');
+            if (updated.testCases) {
+              setLocalTestCases(updated.testCases);
+            }
           }}
-          onSaveQuestion={handleSaveFromPlayground}
+          onSaveQuestion={() => {}}
           isSaving={saveQuestionMutation.isPending}
           isEditMode={isEditMode}
         />

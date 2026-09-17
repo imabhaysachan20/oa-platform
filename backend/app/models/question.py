@@ -1,5 +1,6 @@
+from typing import Optional, List, Dict, Any
 import enum
-from sqlalchemy import String, Text, Integer, Float, Boolean, ForeignKey, Enum
+from sqlalchemy import String, Text, Integer, Float, Boolean, ForeignKey, Enum, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.models.base import Base, TimestampMixin
 
@@ -26,6 +27,14 @@ class Question(Base, TimestampMixin):
     sample_input: Mapped[str] = mapped_column(Text, nullable=True)
     sample_output: Mapped[str] = mapped_column(Text, nullable=True)
     input_format: Mapped[str] = mapped_column(Text, nullable=True)
+
+    # LeetCode Signature & Code Execution Engine Fields
+    function_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    function_signature: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    parameters: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(JSON, nullable=True)
+    return_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    starter_code: Mapped[Optional[Dict[str, str]]] = mapped_column(JSON, nullable=True)
+    driver_code: Mapped[Optional[Dict[str, str]]] = mapped_column(JSON, nullable=True)
 
     # Relationships
     test_cases = relationship("TestCase", back_populates="question", cascade="all, delete-orphan")

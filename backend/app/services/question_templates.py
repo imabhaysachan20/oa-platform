@@ -1,5 +1,5 @@
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 # Question registry with starter templates and hidden execution drivers for LeetCode style solving
 QUESTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
@@ -1088,10 +1088,26 @@ class Solution {
 }
 
 
-def get_question_starter_templates(title: str) -> Dict[str, str]:
+from backend.app.services.universal_driver_service import (
+    generate_all_templates,
+    generate_universal_driver,
+)
+
+
+def get_question_starter_templates(title: str, question: Optional[Any] = None) -> Dict[str, str]:
     """
     Returns starter code templates for all supported languages for a question.
+    Prioritizes question.starter_code if set in database or generated from signature.
     """
+    if question is not None:
+        if getattr(question, "starter_code", None):
+            return question.starter_code
+        fn = getattr(question, "function_name", None)
+        params = getattr(question, "parameters", None)
+        ret = getattr(question, "return_type", "void")
+        if fn and params is not None:
+            return generate_all_templates(fn, params, ret)["starter"]
+
     clean_title = title.strip()
     if clean_title in QUESTION_TEMPLATES:
         return QUESTION_TEMPLATES[clean_title]["starter"]
@@ -1104,7 +1120,18 @@ def get_question_starter_templates(title: str) -> Dict[str, str]:
     return GENERIC_STARTER
 
 
-def get_question_signature(title: str) -> Optional[str]:
+def get_question_signature(title: str, question: Optional[Any] = None) -> Optional[str]:
+    """Returns the question signature string, prioritizing question model if present."""
+    if question is not None:
+        sig = getattr(question, "function_signature", None)
+        if sig:
+            return sig
+        fn = getattr(question, "function_name", None)
+        params = getattr(question, "parameters", None)
+        ret = getattr(question, "return_type", "void")
+        if fn and params is not None:
+            return generate_all_templates(fn, params, ret)["function_signature"]
+
     clean_title = title.strip()
     if clean_title in QUESTION_TEMPLATES:
         return QUESTION_TEMPLATES[clean_title].get("description_signature")
@@ -1114,15 +1141,82 @@ def get_question_signature(title: str) -> Optional[str]:
     return None
 
 
-def wrap_code_with_driver(title: str, code: str, language: str) -> str:
+def wrap_code_with_driver(
+    title: str,
+    code: str,
+    language: str,
+    question: Optional[Any] = None,
+    function_name: Optional[str] = None,
+    parameters: Optional[List[Dict[str, Any]]] = None,
+    return_type: Optional[str] = None,
+    driver_code: Optional[Dict[str, str]] = None,
+) -> str:
     """
     Merges student code with the hidden test driver script before sending to Judge0.
-    If the candidate already wrote a standalone program with main / __main__, returns as-is.
+    1. If candidate wrote standalone entry point (main/__main__), returns code as-is.
+    2. If question has custom driver_code in database or parameter, injects that driver.
+    3. If question has function_name & parameters, generates universal driver.
+    4. Falls back to legacy QUESTION_TEMPLATES or raw code.
     """
     lang_clean = language.lower().strip()
     clean_title = title.strip()
 
-    # Determine matched question
+    # 1. Check if student explicitly wrote a standalone main entry point
+    if lang_clean in ["python", "python3", "py"]:
+        if '__name__ == "__main__"' in code or "__name__ == '__main__'" in code:
+            return code
+    elif lang_clean in ["javascript", "js", "node"]:
+        if "fs.readFileSync" in code and "console.log" in code:
+            return code
+    elif lang_clean in ["cpp", "c++"]:
+        if "int main(" in code or "int main ()" in code:
+            return code
+    elif lang_clean in ["java"]:
+        if "public static void main" in code:
+            return code
+
+    # 2. Check for custom driver_code override
+    driver_map = driver_code
+    if not driver_map and question is not None:
+        driver_map = getattr(question, "driver_code", None)
+
+    if driver_map and isinstance(driver_map, dict):
+        custom_driver = driver_map.get(lang_clean) or driver_map.get(language)
+        if custom_driver:
+            if lang_clean in ["python", "python3", "py"]:
+                py_headers = "from __future__ import annotations\nfrom typing import List, Dict, Tuple, Optional, Any, Set\n\n"
+                return f"{py_headers}{code}\n\n{custom_driver}"
+            elif lang_clean in ["cpp", "c++"]:
+                cpp_headers = "#include <iostream>\n#include <sstream>\n#include <iomanip>\n#include <vector>\n#include <string>\n#include <algorithm>\n#include <climits>\n#include <cmath>\n#include <stack>\n#include <queue>\n#include <unordered_map>\n#include <unordered_set>\n"
+                return f"{cpp_headers}{code}\n\n{custom_driver}"
+            else:
+                return f"{code}\n\n{custom_driver}"
+
+    # 3. Check for dynamic LeetCode signature engine
+    fn = function_name
+    params = parameters
+    ret = return_type
+    if question is not None:
+        if not fn:
+            fn = getattr(question, "function_name", None)
+        if params is None:
+            params = getattr(question, "parameters", None)
+        if not ret:
+            ret = getattr(question, "return_type", "void")
+
+    if fn and params is not None:
+        univ_driver = generate_universal_driver(fn, params, ret or "void", lang_clean)
+        if univ_driver:
+            if lang_clean in ["python", "python3", "py"]:
+                py_headers = "from __future__ import annotations\nfrom typing import List, Dict, Tuple, Optional, Any, Set\n\n"
+                return f"{py_headers}{code}\n\n{univ_driver}"
+            elif lang_clean in ["cpp", "c++"]:
+                cpp_headers = "#include <iostream>\n#include <sstream>\n#include <iomanip>\n#include <vector>\n#include <string>\n#include <algorithm>\n#include <climits>\n#include <cmath>\n#include <stack>\n#include <queue>\n#include <unordered_map>\n#include <unordered_set>\n"
+                return f"{cpp_headers}{code}\n\n{univ_driver}"
+            else:
+                return f"{code}\n\n{univ_driver}"
+
+    # 4. Fallback to legacy static QUESTION_TEMPLATES
     matched_q = None
     if clean_title in QUESTION_TEMPLATES:
         matched_q = QUESTION_TEMPLATES[clean_title]
@@ -1132,34 +1226,24 @@ def wrap_code_with_driver(title: str, code: str, language: str) -> str:
                 matched_q = q_data
                 break
 
-    # If no driver registered for this question, run raw code as-is
     if not matched_q or "drivers" not in matched_q:
         return code
 
-    # Check if student explicitly wrote a standalone main entry point
     if lang_clean in ["python", "python3", "py"]:
-        if '__name__ == "__main__"' in code or "__name__ == '__main__'" in code:
-            return code
         driver = matched_q["drivers"].get("python", "")
         py_headers = "from __future__ import annotations\nfrom typing import List, Dict, Tuple, Optional, Any, Set\n\n"
         return f"{py_headers}{code}\n\n{driver}"
 
     elif lang_clean in ["javascript", "js", "node"]:
-        if "fs.readFileSync" in code and "console.log" in code:
-            return code
         driver = matched_q["drivers"].get("javascript", "")
         return f"{code}\n\n{driver}"
 
     elif lang_clean in ["cpp", "c++"]:
-        if "int main(" in code or "int main ()" in code:
-            return code
         driver = matched_q["drivers"].get("cpp", "")
         cpp_driver_headers = "#include <iostream>\n#include <sstream>\n#include <iomanip>\n#include <vector>\n#include <string>\n#include <algorithm>\n#include <climits>\n#include <cmath>\n#include <stack>\n#include <queue>\n#include <unordered_map>\n#include <unordered_set>\n"
         return f"{cpp_driver_headers}\n{code}\n\n{driver}"
 
     elif lang_clean in ["java"]:
-        if "public static void main" in code:
-            return code
         driver = matched_q["drivers"].get("java", "")
         return f"{code}\n\n{driver}"
 

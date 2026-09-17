@@ -1,7 +1,8 @@
 import csv
 import io
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from pydantic import BaseModel
 from sqlalchemy import select, func, delete
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,8 +32,16 @@ from backend.app.schemas.submission import AdminPlaygroundRunRequest, RunCodeRes
 from backend.app.schemas.auth import UserResponse
 from backend.app.services.exam_service import get_live_exam_monitoring, get_candidate_dossier
 from backend.app.services.submission_service import execute_judge0_test_cases
+from backend.app.services.universal_driver_service import generate_all_templates
+from backend.app.services.question_templates import wrap_code_with_driver
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+class TemplateGenerateRequest(BaseModel):
+    function_name: str
+    parameters: List[Dict[str, Any]]
+    return_type: str = "void"
 
 
 # ==================== EXAMS ====================
@@ -249,19 +258,41 @@ async def run_playground_code(
 ):
     """
     Execute code against arbitrary test cases provided in the request body.
-    Used for testing new questions before they are saved to the database.
+    Supports dynamic driver wrapping for LeetCode-style questions.
     """
     cpu_limit = float(body.time_limit_ms) / 1000.0
     mem_limit = body.memory_limit_kb
 
+    code_to_run = wrap_code_with_driver(
+        title=body.title or "",
+        code=body.code,
+        language=body.language,
+        function_name=body.function_name,
+        parameters=body.parameters,
+        return_type=body.return_type,
+        driver_code=body.driver_code
+    )
+
     return await execute_judge0_test_cases(
         test_cases=body.test_cases,
-        code=body.code,
+        code=code_to_run,
         language=body.language,
         cpu_limit=cpu_limit,
         mem_limit=mem_limit,
-        question_id=0
+        question_id=body.question_id or 0
     )
+
+
+@router.post("/questions/generate-templates")
+async def generate_templates_endpoint(
+    body: TemplateGenerateRequest,
+    current_admin: User = Depends(get_current_admin),
+):
+    """
+    Auto-generates clean starter code for all 4 languages (Python, JS, C++, Java)
+    and formats the LeetCode description signature based on function name & parameter types.
+    """
+    return generate_all_templates(body.function_name, body.parameters, body.return_type)
 
 
 # ==================== QUESTIONS ====================
@@ -282,6 +313,13 @@ async def create_question(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
+    starters = body.starter_code
+    sig = body.function_signature
+    if body.function_name and body.parameters is not None and not starters:
+        gen = generate_all_templates(body.function_name, body.parameters, body.return_type or "void")
+        starters = gen["starter"]
+        sig = sig or gen["function_signature"]
+
     q = Question(
         title=body.title,
         description=body.description,
@@ -291,6 +329,12 @@ async def create_question(
         sample_input=body.sample_input,
         sample_output=body.sample_output,
         input_format=body.input_format,
+        function_name=body.function_name,
+        function_signature=sig,
+        parameters=body.parameters,
+        return_type=body.return_type,
+        starter_code=starters,
+        driver_code=body.driver_code,
     )
     db.add(q)
     await db.flush()
@@ -354,6 +398,18 @@ async def update_question(
         q.sample_output = body.sample_output
     if body.input_format is not None:
         q.input_format = body.input_format
+    if body.function_name is not None:
+        q.function_name = body.function_name
+    if body.function_signature is not None:
+        q.function_signature = body.function_signature
+    if body.parameters is not None:
+        q.parameters = body.parameters
+    if body.return_type is not None:
+        q.return_type = body.return_type
+    if body.starter_code is not None:
+        q.starter_code = body.starter_code
+    if body.driver_code is not None:
+        q.driver_code = body.driver_code
 
     await db.commit()
 

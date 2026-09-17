@@ -169,7 +169,7 @@ async def run_code_samples(
     cpu_limit = float(question.time_limit_ms) / 1000.0
     mem_limit = question.memory_limit_kb
 
-    code_to_run = wrap_code_with_driver(question.title, code, language)
+    code_to_run = wrap_code_with_driver(question.title, code, language, question=question)
 
     return await execute_judge0_test_cases(
         test_cases=test_cases,
@@ -244,7 +244,7 @@ async def submit_code_solution(
     cpu_limit = float(question.time_limit_ms) / 1000.0
     mem_limit = question.memory_limit_kb
 
-    code_to_run = wrap_code_with_driver(question.title, code, language)
+    code_to_run = wrap_code_with_driver(question.title, code, language, question=question)
 
     passed_count = 0
     total_test_cases = len(test_cases)

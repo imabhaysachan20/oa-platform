@@ -8,7 +8,8 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { MarkdownRenderer } from '../components/ui/RichTextEditor';
-import { Plus, Trash2, ListChecks, Eye, EyeOff, Pencil, Clock, HardDrive, AlignLeft } from 'lucide-react';
+import { AdminPlaygroundModal } from '../components/AdminPlaygroundModal';
+import { Plus, Trash2, ListChecks, Eye, EyeOff, Pencil, Clock, HardDrive, AlignLeft, Play } from 'lucide-react';
 
 export const AdminQuestionsPage: React.FC = () => {
   const queryClient = useQueryClient();
@@ -17,6 +18,7 @@ export const AdminQuestionsPage: React.FC = () => {
   const [selectedQuestionForTestCases, setSelectedQuestionForTestCases] = useState<Question | null>(null);
   const [deletingQuestion, setDeletingQuestion] = useState<Question | null>(null);
   const [viewingQuestion, setViewingQuestion] = useState<Question | null>(null);
+  const [playgroundQuestion, setPlaygroundQuestion] = useState<Question | null>(null);
 
   // Test Case Form State
   const [tcInput, setTcInput] = useState('');
@@ -133,6 +135,18 @@ export const AdminQuestionsPage: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap self-start sm:self-start flex-shrink-0 pt-0.5 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPlaygroundQuestion(q);
+                  }}
+                  className="font-medium text-ubi-800 dark:text-ubi-400 hover:text-ubi-900 dark:hover:text-ubi-300"
+                >
+                  <Play size={12} />
+                  <span>Playground</span>
+                </Button>
                 <Button
                   variant="outline"
                   size="xs"
@@ -474,6 +488,38 @@ export const AdminQuestionsPage: React.FC = () => {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* Admin Playground Modal */}
+      {playgroundQuestion && (
+        <AdminPlaygroundModal
+          isOpen={!!playgroundQuestion}
+          onClose={() => setPlaygroundQuestion(null)}
+          questionData={{
+            id: playgroundQuestion.id,
+            title: playgroundQuestion.title,
+            description: playgroundQuestion.description,
+            difficulty: playgroundQuestion.difficulty,
+            timeLimitMs: playgroundQuestion.time_limit_ms,
+            memoryLimitKb: playgroundQuestion.memory_limit_kb,
+            sampleInput: playgroundQuestion.sample_input || '',
+            sampleOutput: playgroundQuestion.sample_output || '',
+            inputFormat: playgroundQuestion.input_format,
+            functionName: playgroundQuestion.function_name,
+            functionSignature: playgroundQuestion.function_signature,
+            parameters: playgroundQuestion.parameters,
+            returnType: playgroundQuestion.return_type,
+            starterCode: playgroundQuestion.starter_code,
+            driverCode: playgroundQuestion.driver_code,
+            testCases: playgroundQuestion.test_cases?.map((tc) => ({
+              id: tc.id,
+              input: tc.input,
+              expected_output: tc.expected_output,
+              is_hidden: tc.is_hidden,
+              weight: tc.weight,
+            })),
+          }}
+        />
       )}
     </div>
   );

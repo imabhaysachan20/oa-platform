@@ -841,6 +841,7 @@ export const AdminCreateQuestionPage: React.FC = () => {
             sampleOutput,
             inputFormat,
             functionName: questionMode === 'leetcode' ? functionName : undefined,
+            functionSignature: questionMode === 'leetcode' ? existingQuestion?.function_signature : undefined,
             parameters: questionMode === 'leetcode' ? parameters : undefined,
             returnType: questionMode === 'leetcode' ? returnType : undefined,
             starterCode,

@@ -16,8 +16,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column("questions", sa.Column("input_format", sa.Text(), nullable=True))
+    op.execute("ALTER TABLE questions ADD COLUMN IF NOT EXISTS input_format TEXT")
 
 
 def downgrade() -> None:
-    op.drop_column("questions", "input_format")
+    op.execute("ALTER TABLE questions DROP COLUMN IF EXISTS input_format")

@@ -19,6 +19,7 @@ interface CodeEditorProps {
   onReset?: () => void;
   readOnly?: boolean;
   onPasteAttempt?: () => void;
+  allowPaste?: boolean;
 }
 
 export const CodeEditor: React.FC<CodeEditorProps> = ({
@@ -30,6 +31,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   onReset,
   readOnly = false,
   onPasteAttempt,
+  allowPaste = false,
 }) => {
   const { theme } = useThemeStore();
   // Keep track of code snippets copied/cut from inside the editor
@@ -55,6 +57,10 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           return [python()];
       }
     })();
+
+    if (allowPaste) {
+      return langExt;
+    }
 
     const securityExt = EditorView.domEventHandlers({
       copy: (_event, view) => {
@@ -104,7 +110,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     });
 
     return [...langExt, securityExt];
-  }, [language, onPasteAttempt]);
+  }, [language, onPasteAttempt, allowPaste]);
 
   const handleResetToDefault = () => {
     if (window.confirm('Reset code editor to starter template? Your current changes will be lost.')) {

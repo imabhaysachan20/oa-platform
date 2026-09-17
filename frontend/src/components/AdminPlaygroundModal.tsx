@@ -121,6 +121,7 @@ export const AdminPlaygroundModal: React.FC<AdminPlaygroundModalProps> = ({
               onChange={setCode}
               language={language}
               onLanguageChange={setLanguage}
+              allowPaste={true}
             />
           </div>
           <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-2.5 rounded-xl shrink-0 shadow-xs">

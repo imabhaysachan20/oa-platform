@@ -11,7 +11,7 @@ import { OutputConsole } from '../components/OutputConsole';
 import { Timer } from '../components/ui/Timer';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { Play, Send, CheckCircle, AlertTriangle, ArrowLeft, Sun, Moon, ShieldAlert, ShieldCheck, Maximize2, Minimize2 } from 'lucide-react';
+import { Play, Send, CheckCircle, AlertTriangle, Sun, Moon, ShieldAlert, ShieldCheck, Maximize2, Minimize2 } from 'lucide-react';
 import { useExamSecurity } from '../hooks/useExamSecurity';
 
 export const StudentExamWorkspacePage: React.FC = () => {
@@ -110,6 +110,55 @@ export const StudentExamWorkspacePage: React.FC = () => {
     };
   }, []);
 
+  // Lock user on exam workspace: trap browser back/forward buttons and mouse back keys
+  useEffect(() => {
+    window.history.pushState(null, '', window.location.href);
+
+    const handlePopState = (e: PopStateEvent) => {
+      // Re-push state immediately to stay locked on current exam page
+      window.history.pushState(null, '', window.location.href);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
+  // Block keyboard back navigation (Alt+ArrowLeft, Alt+ArrowRight, Backspace outside input fields)
+  useEffect(() => {
+    const handleKeyNavigation = (e: KeyboardEvent) => {
+      // Block Alt + ArrowLeft (Browser Back) and Alt + ArrowRight (Browser Forward)
+      if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
+      // Block Backspace outside text input/editor fields
+      if (e.key === 'Backspace') {
+        const activeEl = document.activeElement as HTMLElement | null;
+        const isEditable =
+          activeEl &&
+          (activeEl.tagName === 'INPUT' ||
+            activeEl.tagName === 'TEXTAREA' ||
+            activeEl.isContentEditable ||
+            activeEl.closest('.cm-editor') ||
+            activeEl.closest('.cm-content') ||
+            activeEl.closest('.monaco-editor'));
+        if (!isEditable) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyNavigation, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyNavigation, true);
+    };
+  }, []);
+
   const currentQ = questions[activeQuestionIndex];
   const currentLang = currentQ ? selectedLanguage[currentQ.id] || 'python' : 'python';
   const currentStarter = currentQ?.starter_code?.[currentLang] || STARTER_CODE[currentLang] || '';
@@ -197,16 +246,8 @@ export const StudentExamWorkspacePage: React.FC = () => {
       {/* Workspace Top Navigation Bar */}
       <div className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between shadow-sm shrink-0">
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/')}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800 transition border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
-            title="Leave workspace (progress is saved)"
-          >
-            <ArrowLeft size={18} />
-          </button>
-
           {/* UsefulBI Logo */}
-          <div className="hidden sm:flex items-center">
+          <div className="flex items-center">
             <img
               src="/UsefulBI_Logo_Main.webp"
               alt="UsefulBI"

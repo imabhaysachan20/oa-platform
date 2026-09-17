@@ -5,6 +5,7 @@ import {
   User,
   MonitoringStudentView,
   CandidateDossierResponse,
+  CandidateImportResponse,
 } from '../types';
 
 export const adminApi = {
@@ -86,19 +87,38 @@ export const adminApi = {
     return res.data;
   },
 
-  // Students & Bulk CSV
-  listStudents: async (): Promise<User[]> => {
-    const res = await api.get<User[]>('/admin/students');
+  // Students & Bulk CSV / Excel
+  listStudents: async (params?: { group?: string; college?: string }): Promise<User[]> => {
+    const res = await api.get<User[]>('/admin/students', { params });
     return res.data;
   },
 
-  importStudentsCsv: async (file: File) => {
+  listStudentGroups: async (): Promise<{ groups: string[]; colleges: string[] }> => {
+    const res = await api.get<{ groups: string[]; colleges: string[] }>('/admin/students/groups');
+    return res.data;
+  },
+
+  importStudents: async (payload: {
+    file: File;
+    candidate_group?: string;
+    default_college?: string;
+  }): Promise<CandidateImportResponse> => {
     const formData = new FormData();
-    formData.append('file', file);
-    const res = await api.post('/admin/students/import-csv', formData, {
+    formData.append('file', payload.file);
+    if (payload.candidate_group) {
+      formData.append('candidate_group', payload.candidate_group);
+    }
+    if (payload.default_college) {
+      formData.append('default_college', payload.default_college);
+    }
+    const res = await api.post<CandidateImportResponse>('/admin/students/import', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     return res.data;
+  },
+
+  importStudentsCsv: async (file: File): Promise<CandidateImportResponse> => {
+    return adminApi.importStudents({ file });
   },
 
   // Monitoring & Candidate Dossier

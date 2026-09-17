@@ -1,3 +1,4 @@
+from typing import Optional
 import enum
 from sqlalchemy import String, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -22,6 +23,9 @@ class User(Base, TimestampMixin):
         default=UserRole.STUDENT,
         nullable=False
     )
+    college: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    candidate_group: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    temp_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     # Relationships
     assignments = relationship("ExamAssignment", back_populates="user", cascade="all, delete-orphan")

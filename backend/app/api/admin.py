@@ -1,7 +1,7 @@
 import csv
 import io
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from pydantic import BaseModel
 from sqlalchemy import select, func, delete
 from sqlalchemy.orm import selectinload
@@ -29,11 +29,16 @@ from backend.app.schemas.question import (
     TestCaseResponse
 )
 from backend.app.schemas.submission import AdminPlaygroundRunRequest, RunCodeResponse
-from backend.app.schemas.auth import UserResponse
+from backend.app.schemas.auth import UserResponse, CandidateImportResponse, ImportedCandidateCredential
 from backend.app.services.exam_service import get_live_exam_monitoring, get_candidate_dossier
 from backend.app.services.submission_service import execute_judge0_test_cases
 from backend.app.services.universal_driver_service import generate_all_templates
 from backend.app.services.question_templates import wrap_code_with_driver
+from backend.app.services.credential_service import (
+    parse_candidates_file,
+    generate_unique_roll_number,
+    generate_readable_password
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -479,82 +484,141 @@ async def delete_test_case(
     return {"message": f"Test case {test_case_id} deleted successfully"}
 
 
-# ==================== BULK STUDENT IMPORT ====================
+# ==================== BULK CANDIDATE IMPORT & GROUPS ====================
 
-@router.post("/students/import-csv")
-async def bulk_student_import_csv(
+@router.post("/students/import", response_model=CandidateImportResponse)
+@router.post("/students/import-csv", response_model=CandidateImportResponse)
+async def bulk_candidate_import(
     file: UploadFile = File(...),
+    candidate_group: Optional[str] = Form(None),
+    default_college: Optional[str] = Form(None),
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Accepts CSV with columns: name, email, roll_no, password
-    Creates student users with hashed passwords, skipping duplicates gracefully.
+    Accepts .csv or .xlsx spreadsheets with columns: name, email, college (optional roll_no, password).
+    Dynamically generates unique roll numbers and passwords when omitted.
+    Assigns candidates to the designated college and candidate_group.
+    Returns generated credentials for download and stores them for future email pipelines.
     """
     contents = await file.read()
-    try:
-        decoded = contents.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        decoded = contents.decode("latin-1")
+    records = parse_candidates_file(contents, file.filename or "candidates.csv")
 
-    reader = csv.DictReader(io.StringIO(decoded))
+    # Fetch existing roll numbers and emails to avoid collisions
+    existing_rolls_stmt = select(User.roll_no).where(User.roll_no != None)
+    existing_rolls = set((await db.execute(existing_rolls_stmt)).scalars().all())
+
+    existing_emails_stmt = select(User.email)
+    existing_emails = set((await db.execute(existing_emails_stmt)).scalars().all())
+
     created_count = 0
     skipped_count = 0
-    errors = []
+    errors: List[str] = []
+    credentials: List[ImportedCandidateCredential] = []
 
-    for row_idx, row in enumerate(reader, start=2):
+    group_tag = candidate_group.strip() if candidate_group and candidate_group.strip() else None
+    college_default = default_college.strip() if default_college and default_college.strip() else None
+
+    for row_idx, row in enumerate(records, start=2):
         name = row.get("name", "").strip()
         email = row.get("email", "").strip().lower()
-        roll_no = row.get("roll_no", "").strip() or None
-        password = row.get("password", "").strip()
 
-        if not name or not email or not password:
-            errors.append(f"Row {row_idx}: Missing required fields (name, email, password)")
+        if not name or not email:
+            errors.append(f"Row {row_idx}: Missing name or email")
             skipped_count += 1
             continue
 
-        # Check existing email
-        stmt = select(User).where(User.email == email)
-        exists = (await db.execute(stmt)).scalar_one_or_none()
-        if exists:
+        if email in existing_emails:
             skipped_count += 1
             continue
 
-        # Check roll_no if provided
-        if roll_no:
-            stmt_r = select(User).where(User.roll_no == roll_no)
-            exists_r = (await db.execute(stmt_r)).scalar_one_or_none()
-            if exists_r:
-                skipped_count += 1
-                continue
+        # College and Group
+        row_college = row.get("college", "").strip() or college_default or group_tag or None
+        row_group = row.get("candidate_group", "").strip() or group_tag or row_college or None
 
-        hashed = get_password_hash(password)
+        # Dynamic Roll No generation
+        roll_no = row.get("roll_no", "").strip()
+        if not roll_no or roll_no in existing_rolls:
+            roll_no = generate_unique_roll_number(row_college, row_group, existing_rolls)
+        existing_rolls.add(roll_no)
+
+        # Dynamic Password generation
+        plain_password = row.get("password", "").strip() or generate_readable_password()
+        hashed = get_password_hash(plain_password)
+
         new_user = User(
             name=name,
             email=email,
             roll_no=roll_no,
             password_hash=hashed,
-            role=UserRole.STUDENT
+            role=UserRole.STUDENT,
+            college=row_college,
+            candidate_group=row_group,
+            temp_password=plain_password,
         )
         db.add(new_user)
+        existing_emails.add(email)
         created_count += 1
 
+        credentials.append(ImportedCandidateCredential(
+            name=name,
+            email=email,
+            college=row_college,
+            candidate_group=row_group,
+            roll_no=roll_no,
+            password=plain_password
+        ))
+
     await db.commit()
-    return {
-        "created_count": created_count,
-        "skipped_count": skipped_count,
-        "errors": errors
-    }
+    return CandidateImportResponse(
+        created_count=created_count,
+        skipped_count=skipped_count,
+        errors=errors,
+        credentials=credentials
+    )
 
 
 @router.get("/students", response_model=List[UserResponse])
 async def list_students(
+    group: Optional[str] = None,
+    college: Optional[str] = None,
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    stmt = select(User).where(User.role == UserRole.STUDENT).order_by(User.id.asc())
+    """Lists registered students with optional group or college filters."""
+    stmt = select(User).where(User.role == UserRole.STUDENT)
+    if group:
+        stmt = stmt.where(User.candidate_group == group.strip())
+    if college:
+        stmt = stmt.where(User.college == college.strip())
+    stmt = stmt.order_by(User.id.asc())
     students = (await db.execute(stmt)).scalars().all()
     return [UserResponse.model_validate(s) for s in students]
+
+
+@router.get("/students/groups")
+async def list_student_groups(
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns distinct candidate groups and colleges enrolled in the platform."""
+    groups_stmt = select(User.candidate_group).where(
+        User.role == UserRole.STUDENT,
+        User.candidate_group != None,
+        User.candidate_group != ""
+    ).distinct()
+    colleges_stmt = select(User.college).where(
+        User.role == UserRole.STUDENT,
+        User.college != None,
+        User.college != ""
+    ).distinct()
+
+    groups = (await db.execute(groups_stmt)).scalars().all()
+    colleges = (await db.execute(colleges_stmt)).scalars().all()
+    return {
+        "groups": sorted([g for g in groups if g]),
+        "colleges": sorted([c for c in colleges if c])
+    }
 
 
 # ==================== LIVE EXAM MONITORING ====================

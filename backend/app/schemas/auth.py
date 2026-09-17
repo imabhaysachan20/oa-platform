@@ -20,9 +20,28 @@ class UserResponse(BaseModel):
     email: EmailStr
     roll_no: Optional[str] = None
     role: UserRole
+    college: Optional[str] = None
+    candidate_group: Optional[str] = None
+    temp_password: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class ImportedCandidateCredential(BaseModel):
+    name: str
+    email: str
+    college: Optional[str] = None
+    candidate_group: Optional[str] = None
+    roll_no: str
+    password: str
+
+
+class CandidateImportResponse(BaseModel):
+    created_count: int
+    skipped_count: int
+    errors: list[str] = []
+    credentials: list[ImportedCandidateCredential] = []
 
 
 TokenResponse.model_rebuild()

@@ -6,6 +6,25 @@ export interface User {
   email: string;
   roll_no?: string;
   role: UserRole;
+  college?: string;
+  candidate_group?: string;
+  temp_password?: string;
+}
+
+export interface ImportedCandidateCredential {
+  name: string;
+  email: string;
+  college?: string;
+  candidate_group?: string;
+  roll_no: string;
+  password: string;
+}
+
+export interface CandidateImportResponse {
+  created_count: number;
+  skipped_count: number;
+  errors: string[];
+  credentials: ImportedCandidateCredential[];
 }
 
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';

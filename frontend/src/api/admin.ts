@@ -52,6 +52,11 @@ export const adminApi = {
     return res.data;
   },
 
+  getQuestion: async (id: number): Promise<Question> => {
+    const res = await api.get<Question>(`/admin/questions/${id}`);
+    return res.data;
+  },
+
   createQuestion: async (questionData: Partial<Question>): Promise<Question> => {
     const res = await api.post<Question>('/admin/questions', questionData);
     return res.data;

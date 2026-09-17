@@ -226,6 +226,7 @@ async def seed_database():
                     memory_limit_kb=q_data["memory_limit_kb"],
                     sample_input=q_data["sample_input"],
                     sample_output=q_data["sample_output"],
+                    input_format=q_data.get("input_format"),
                 )
                 db.add(q)
                 await db.flush()

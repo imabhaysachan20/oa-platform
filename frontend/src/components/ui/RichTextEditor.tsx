@@ -368,10 +368,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
           onChange={(e) => onChange(e.target.value)}
           rows={rows}
           placeholder={placeholder}
-          className="w-full p-3 bg-transparent text-slate-900 dark:text-slate-100 text-xs sm:text-sm font-sans focus:outline-none resize-y min-h-[140px] leading-relaxed"
+          className="w-full p-3 bg-transparent text-slate-900 dark:text-slate-100 text-xs font-sans focus:outline-none resize-y min-h-[220px] leading-relaxed"
         />
       ) : (
-        <div className="p-3 bg-slate-50/50 dark:bg-slate-950 min-h-[140px] overflow-y-auto max-h-[300px]">
+        <div className="p-3 bg-slate-50/50 dark:bg-slate-950 min-h-[220px] overflow-y-auto max-h-[450px]">
           <MarkdownRenderer content={value} />
         </div>
       )}

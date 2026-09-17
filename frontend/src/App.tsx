@@ -12,7 +12,9 @@ import { StudentResultPage } from './pages/StudentResultPage';
 import { ExamWaitingRoomPage } from './pages/ExamWaitingRoomPage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
 import { AdminExamsPage } from './pages/AdminExamsPage';
+import { AdminCreateExamPage } from './pages/AdminCreateExamPage';
 import { AdminQuestionsPage } from './pages/AdminQuestionsPage';
+import { AdminCreateQuestionPage } from './pages/AdminCreateQuestionPage';
 import { AdminStudentsPage } from './pages/AdminStudentsPage';
 import { AdminMonitoringPage } from './pages/AdminMonitoringPage';
 
@@ -106,10 +108,34 @@ const AppContent: React.FC = () => {
             }
           />
           <Route
+            path="/admin/exams/create"
+            element={
+              <ProtectedRoute adminOnly>
+                <AdminCreateExamPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/admin/questions"
             element={
               <ProtectedRoute adminOnly>
                 <AdminQuestionsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/questions/create"
+            element={
+              <ProtectedRoute adminOnly>
+                <AdminCreateQuestionPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/questions/edit/:questionId"
+            element={
+              <ProtectedRoute adminOnly>
+                <AdminCreateQuestionPage />
               </ProtectedRoute>
             }
           />

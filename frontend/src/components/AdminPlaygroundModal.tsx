@@ -83,7 +83,23 @@ export const AdminPlaygroundModal: React.FC<AdminPlaygroundModalProps> = ({
       const res = await adminApi.runPlaygroundCode(payload);
       setRunOutput(res);
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to run code');
+      setRunOutput({
+        question_id: formData.id || 0,
+        all_passed: false,
+        passed_count: 0,
+        total_count: 1,
+        results: [
+          {
+            test_case_id: 0,
+            input: formData.sampleInput || '',
+            expected_output: formData.sampleOutput || '',
+            actual_output: '',
+            stderr: err.response?.data?.detail || 'Failed to run code in playground.',
+            passed: false,
+            status: 'Runtime Error',
+          },
+        ],
+      });
     } finally {
       setIsRunning(false);
     }
@@ -94,9 +110,9 @@ export const AdminPlaygroundModal: React.FC<AdminPlaygroundModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title={`Playground: ${formData.title || 'Untitled Problem'} ${isEditMode ? '(Editing)' : ''}`}
-      maxWidth="5xl"
+      maxWidth="7xl"
     >
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[640px] overflow-hidden">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[80vh] min-h-[560px] max-h-[780px] overflow-hidden">
         {/* Left Side: Code Editor (7 columns) */}
         <div className="lg:col-span-7 flex flex-col h-full gap-2.5 overflow-hidden">
           <div className="flex-1 overflow-hidden">

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../api/admin';
 import { Exam } from '../types';
@@ -14,23 +14,17 @@ import {
   CheckSquare,
   Square,
   Calendar,
-  Pencil
+  Pencil,
+  Search,
+  AlertTriangle
 } from 'lucide-react';
 
 export const AdminExamsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  // Create Modal state
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [title, setTitle] = useState('');
-  const [durationMinutes, setDurationMinutes] = useState(60);
-  const [easyWeight, setEasyWeight] = useState(10);
-  const [mediumWeight, setMediumWeight] = useState(20);
-  const [hardWeight, setHardWeight] = useState(30);
-  const [selectedQuestionIds, setSelectedQuestionIds] = useState<number[]>([]);
-  const [startTime, setStartTime] = useState('');
-  const [endTime, setEndTime] = useState('');
+  // Delete Modal state
+  const [deletingExam, setDeletingExam] = useState<Exam | null>(null);
 
   // Edit Modal state
   const [editingExam, setEditingExam] = useState<Exam | null>(null);
@@ -42,6 +36,7 @@ export const AdminExamsPage: React.FC = () => {
   const [editSelectedQuestionIds, setEditSelectedQuestionIds] = useState<number[]>([]);
   const [editStartTime, setEditStartTime] = useState('');
   const [editEndTime, setEditEndTime] = useState('');
+  const [editSearchQuery, setEditSearchQuery] = useState('');
 
   // Fetch exams
   const { data: exams, isLoading } = useQuery({
@@ -54,6 +49,11 @@ export const AdminExamsPage: React.FC = () => {
     queryKey: ['adminQuestions'],
     queryFn: adminApi.listQuestions,
   });
+
+  const filteredEditQuestions = questions?.filter((q) =>
+    q.title.toLowerCase().includes(editSearchQuery.toLowerCase()) ||
+    q.difficulty.toLowerCase().includes(editSearchQuery.toLowerCase())
+  );
 
   // Helper: Convert UTC ISO string to local datetime-local format (YYYY-MM-DDTHH:mm)
   const toLocalDatetimeInput = (isoStr?: string) => {
@@ -83,20 +83,6 @@ export const AdminExamsPage: React.FC = () => {
     }).format(date) + ' IST';
   };
 
-  // Auto-calculate end time when start time or duration changes in Create Modal
-  const handleStartTimeChange = (newStartTime: string, duration: number = durationMinutes) => {
-    setStartTime(newStartTime);
-    if (newStartTime && duration > 0) {
-      const startMs = new Date(newStartTime).getTime();
-      if (!isNaN(startMs)) {
-        const endMs = startMs + duration * 60000;
-        const endDate = new Date(endMs);
-        const pad = (n: number) => String(n).padStart(2, '0');
-        setEndTime(`${endDate.getFullYear()}-${pad(endDate.getMonth() + 1)}-${pad(endDate.getDate())}T${pad(endDate.getHours())}:${pad(endDate.getMinutes())}`);
-      }
-    }
-  };
-
   // Auto-calculate end time when start time or duration changes in Edit Modal
   const handleEditStartTimeChange = (newStartTime: string, duration: number = editDurationMinutes) => {
     setEditStartTime(newStartTime);
@@ -110,19 +96,6 @@ export const AdminExamsPage: React.FC = () => {
       }
     }
   };
-
-  // Create Exam Mutation
-  const createExamMutation = useMutation({
-    mutationFn: adminApi.createExam,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['adminExams'] });
-      setIsCreateModalOpen(false);
-      resetForm();
-    },
-    onError: (err: any) => {
-      alert(err.response?.data?.detail || 'Failed to create exam');
-    },
-  });
 
   // Update Exam Mutation
   const updateExamMutation = useMutation({
@@ -142,19 +115,12 @@ export const AdminExamsPage: React.FC = () => {
     mutationFn: adminApi.deleteExam,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['adminExams'] });
+      setDeletingExam(null);
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.detail || 'Failed to delete assessment');
     },
   });
-
-  const resetForm = () => {
-    setTitle('');
-    setDurationMinutes(60);
-    setEasyWeight(10);
-    setMediumWeight(20);
-    setHardWeight(30);
-    setSelectedQuestionIds([]);
-    setStartTime('');
-    setEndTime('');
-  };
 
   const handleOpenEdit = async (exam: Exam) => {
     setEditingExam(exam);
@@ -165,6 +131,7 @@ export const AdminExamsPage: React.FC = () => {
     setEditHardWeight(exam.hard_weight);
     setEditStartTime(toLocalDatetimeInput(exam.start_time));
     setEditEndTime(toLocalDatetimeInput(exam.end_time));
+    setEditSearchQuery('');
 
     try {
       const pool = await adminApi.getExamPool(exam.id);
@@ -174,25 +141,10 @@ export const AdminExamsPage: React.FC = () => {
     }
   };
 
-  const handleToggleQuestion = (id: number) => {
-    setSelectedQuestionIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
-  };
-
   const handleToggleEditQuestion = (id: number) => {
     setEditSelectedQuestionIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
-  };
-
-  const handleSelectAllQuestions = () => {
-    if (!questions) return;
-    if (selectedQuestionIds.length === questions.length) {
-      setSelectedQuestionIds([]);
-    } else {
-      setSelectedQuestionIds(questions.map((q) => q.id));
-    }
   };
 
   const handleSelectAllEditQuestions = () => {
@@ -202,23 +154,6 @@ export const AdminExamsPage: React.FC = () => {
     } else {
       setEditSelectedQuestionIds(questions.map((q) => q.id));
     }
-  };
-
-  const handleCreateExamSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-
-    createExamMutation.mutate({
-      title,
-      duration_minutes: durationMinutes,
-      easy_weight: easyWeight,
-      medium_weight: mediumWeight,
-      hard_weight: hardWeight,
-      is_published: true,
-      question_ids: selectedQuestionIds,
-      start_time: toISO(startTime),
-      end_time: toISO(endTime),
-    });
   };
 
   const handleUpdateExamSubmit = (e: React.FormEvent) => {
@@ -253,10 +188,12 @@ export const AdminExamsPage: React.FC = () => {
             Create scheduled assessments, configure question pools, and launch live monitoring.
           </p>
         </div>
-        <Button onClick={() => setIsCreateModalOpen(true)} className="gap-2 self-start font-semibold">
-          <Plus size={16} />
-          <span>Create New Assessment</span>
-        </Button>
+        <Link to="/admin/exams/create">
+          <Button className="gap-2 self-start font-semibold">
+            <Plus size={16} />
+            <span>Create New Assessment</span>
+          </Button>
+        </Link>
       </div>
 
       {/* Exam List */}
@@ -343,12 +280,9 @@ export const AdminExamsPage: React.FC = () => {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => {
-                      if (window.confirm(`Delete assessment "${exam.title}"?`)) {
-                        deleteExamMutation.mutate(exam.id);
-                      }
-                    }}
+                    onClick={() => setDeletingExam(exam)}
                     className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:text-rose-300 dark:hover:bg-rose-500/10"
+                    title="Delete Assessment"
                   >
                     <Trash2 size={14} />
                   </Button>
@@ -363,196 +297,7 @@ export const AdminExamsPage: React.FC = () => {
         </Card>
       )}
 
-      {/* Create Exam Modal */}
-      <Modal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        title="Create New Scheduled Assessment"
-        maxWidth="lg"
-      >
-        <form onSubmit={handleCreateExamSubmit} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-              Assessment Title
-            </label>
-            <input
-              type="text"
-              required
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. UsefulBI Senior Software Engineer Assessment"
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-            />
-          </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                Duration (min)
-              </label>
-              <input
-                type="number"
-                min={5}
-                required
-                value={durationMinutes}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  setDurationMinutes(val);
-                  if (startTime) handleStartTimeChange(startTime, val);
-                }}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                Easy Weight
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={easyWeight}
-                onChange={(e) => setEasyWeight(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                Medium Weight
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={mediumWeight}
-                onChange={(e) => setMediumWeight(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                Hard Weight
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={hardWeight}
-                onChange={(e) => setHardWeight(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-              />
-            </div>
-          </div>
-
-          {/* Schedule Window Config */}
-          <div className="p-3.5 bg-ubi-50/60 dark:bg-ubi-950/30 border border-ubi-200 dark:border-ubi-800/60 rounded-xl space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-ubi-900 dark:text-ubi-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Calendar size={14} className="text-ubi-700 dark:text-ubi-400" />
-                Scheduled Access Window (Local / IST)
-              </span>
-              <span className="text-[10px] text-slate-500 font-medium">Optional</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Start Date & Time
-                </label>
-                <input
-                  type="datetime-local"
-                  value={startTime}
-                  onChange={(e) => handleStartTimeChange(e.target.value)}
-                  className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  End Date & Time
-                </label>
-                <input
-                  type="datetime-local"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                  className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {startTime && endTime && (
-              <p className="text-[11px] text-ubi-800 dark:text-ubi-300 font-medium">
-                Candidates can only access this test between {formatIST(new Date(startTime).toISOString())} and {formatIST(new Date(endTime).toISOString())}.
-              </p>
-            )}
-          </div>
-
-          {/* Question Pool Selector */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                Select Questions for Pool ({selectedQuestionIds.length} selected)
-              </label>
-              <button
-                type="button"
-                onClick={handleSelectAllQuestions}
-                className="text-ubi-800 dark:text-ubi-400 hover:underline text-xs font-bold"
-              >
-                Toggle All
-              </button>
-            </div>
-
-            <div className="max-h-48 overflow-y-auto bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg p-2 space-y-1">
-              {questions && questions.length > 0 ? (
-                questions.map((q) => {
-                  const isChecked = selectedQuestionIds.includes(q.id);
-                  return (
-                    <div
-                      key={q.id}
-                      onClick={() => handleToggleQuestion(q.id)}
-                      className="flex items-center justify-between p-2 rounded hover:bg-slate-200/60 dark:hover:bg-slate-900 cursor-pointer transition text-xs"
-                    >
-                      <div className="flex items-center gap-2">
-                        {isChecked ? (
-                          <CheckSquare size={16} className="text-ubi-800 dark:text-ubi-400" />
-                        ) : (
-                          <Square size={16} className="text-slate-400 dark:text-slate-600" />
-                        )}
-                        <span className="text-slate-900 dark:text-slate-200 font-semibold">{q.title}</span>
-                      </div>
-                      <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400">
-                        {q.difficulty}
-                      </span>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="text-center py-4 text-slate-500">
-                  No questions in question bank yet.
-                </div>
-              )}
-            </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-              At exam start, 1 Easy + 2 Medium questions will be randomly sampled from this pool per student.
-            </p>
-          </div>
-
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsCreateModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              size="sm"
-              isLoading={createExamMutation.isPending}
-              className="font-semibold"
-            >
-              Save Assessment
-            </Button>
-          </div>
-        </form>
-      </Modal>
 
       {/* Edit Exam Modal */}
       {editingExam && (
@@ -560,167 +305,195 @@ export const AdminExamsPage: React.FC = () => {
           isOpen={!!editingExam}
           onClose={() => setEditingExam(null)}
           title={`Edit Assessment: ${editingExam.title}`}
-          maxWidth="lg"
+          maxWidth="4xl"
         >
           <form onSubmit={handleUpdateExamSubmit} className="space-y-4 text-xs">
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                Assessment Title
-              </label>
-              <input
-                type="text"
-                required
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                  Duration (min)
-                </label>
-                <input
-                  type="number"
-                  min={5}
-                  required
-                  value={editDurationMinutes}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    setEditDurationMinutes(val);
-                    if (editStartTime) handleEditStartTimeChange(editStartTime, val);
-                  }}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-                />
-              </div>
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                  Easy Weight
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={editEasyWeight}
-                  onChange={(e) => setEditEasyWeight(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-                />
-              </div>
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                  Medium Weight
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={editMediumWeight}
-                  onChange={(e) => setEditMediumWeight(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-                />
-              </div>
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                  Hard Weight
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={editHardWeight}
-                  onChange={(e) => setEditHardWeight(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-                />
-              </div>
-            </div>
-
-            {/* Schedule Window Config */}
-            <div className="p-3.5 bg-ubi-50/60 dark:bg-ubi-950/30 border border-ubi-200 dark:border-ubi-800/60 rounded-xl space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-ubi-900 dark:text-ubi-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <Calendar size={14} className="text-ubi-700 dark:text-ubi-400" />
-                  Scheduled Access Window (Local / IST)
-                </span>
-                <span className="text-[10px] text-slate-500 font-medium">Leave empty for flexible test</span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+              {/* LEFT COLUMN: Title, Duration/Weights, Schedule */}
+              <div className="space-y-3.5">
+                {/* Title */}
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Start Date & Time
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1 text-[11px]">
+                    Assessment Title <span className="text-rose-500">*</span>
                   </label>
                   <input
-                    type="datetime-local"
-                    value={editStartTime}
-                    onChange={(e) => handleEditStartTimeChange(e.target.value)}
-                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none"
+                    type="text"
+                    required
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
                   />
                 </div>
+
+                {/* Duration & Weights */}
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    End Date & Time
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1 text-[11px]">
+                    Duration & Question Weights
                   </label>
-                  <input
-                    type="datetime-local"
-                    value={editEndTime}
-                    onChange={(e) => setEditEndTime(e.target.value)}
-                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {editStartTime && editEndTime && (
-                <p className="text-[11px] text-ubi-800 dark:text-ubi-300 font-medium">
-                  Candidates can only access this test between {formatIST(new Date(editStartTime).toISOString())} and {formatIST(new Date(editEndTime).toISOString())}.
-                </p>
-              )}
-            </div>
-
-            {/* Question Pool Selector */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                  Select Questions for Pool ({editSelectedQuestionIds.length} selected)
-                </label>
-                <button
-                  type="button"
-                  onClick={handleSelectAllEditQuestions}
-                  className="text-ubi-800 dark:text-ubi-400 hover:underline text-xs font-bold"
-                >
-                  Toggle All
-                </button>
-              </div>
-
-              <div className="max-h-48 overflow-y-auto bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg p-2 space-y-1">
-                {questions && questions.length > 0 ? (
-                  questions.map((q) => {
-                    const isChecked = editSelectedQuestionIds.includes(q.id);
-                    return (
-                      <div
-                        key={q.id}
-                        onClick={() => handleToggleEditQuestion(q.id)}
-                        className="flex items-center justify-between p-2 rounded hover:bg-slate-200/60 dark:hover:bg-slate-900 cursor-pointer transition text-xs"
-                      >
-                        <div className="flex items-center gap-2">
-                          {isChecked ? (
-                            <CheckSquare size={16} className="text-ubi-800 dark:text-ubi-400" />
-                          ) : (
-                            <Square size={16} className="text-slate-400 dark:text-slate-600" />
-                          )}
-                          <span className="text-slate-900 dark:text-slate-200 font-semibold">{q.title}</span>
-                        </div>
-                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400">
-                          {q.difficulty}
-                        </span>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="text-center py-4 text-slate-500">
-                    No questions in question bank yet.
+                  <div className="grid grid-cols-4 gap-2">
+                    <div>
+                      <span className="block text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">Duration (m)</span>
+                      <input
+                        type="number"
+                        min={5}
+                        required
+                        value={editDurationMinutes}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setEditDurationMinutes(val);
+                          if (editStartTime) handleEditStartTimeChange(editStartTime, val);
+                        }}
+                        className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
+                      />
+                    </div>
+                    <div>
+                      <span className="block text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">Easy Wt</span>
+                      <input
+                        type="number"
+                        step="any"
+                        value={editEasyWeight}
+                        onChange={(e) => setEditEasyWeight(Number(e.target.value))}
+                        className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
+                      />
+                    </div>
+                    <div>
+                      <span className="block text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">Med Wt</span>
+                      <input
+                        type="number"
+                        step="any"
+                        value={editMediumWeight}
+                        onChange={(e) => setEditMediumWeight(Number(e.target.value))}
+                        className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
+                      />
+                    </div>
+                    <div>
+                      <span className="block text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">Hard Wt</span>
+                      <input
+                        type="number"
+                        step="any"
+                        value={editHardWeight}
+                        onChange={(e) => setEditHardWeight(Number(e.target.value))}
+                        className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
+                      />
+                    </div>
                   </div>
-                )}
+                </div>
+
+                {/* Schedule Window Config */}
+                <div className="p-3 bg-ubi-50/60 dark:bg-ubi-950/30 border border-ubi-200 dark:border-ubi-800/60 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-ubi-900 dark:text-ubi-300 uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
+                      <Calendar size={13} className="text-ubi-700 dark:text-ubi-400" />
+                      Schedule Access Window (IST)
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-medium">Optional</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[10px] mb-0.5">
+                        Start Time
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={editStartTime}
+                        onChange={(e) => handleEditStartTimeChange(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 text-[11px] focus:ring-2 focus:ring-ubi-800 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[10px] mb-0.5">
+                        End Time
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={editEndTime}
+                        onChange={(e) => setEditEndTime(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 text-[11px] focus:ring-2 focus:ring-ubi-800 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {editStartTime && editEndTime && (
+                    <p className="text-[10px] text-ubi-800 dark:text-ubi-300 font-medium leading-tight">
+                      Access: {formatIST(new Date(editStartTime).toISOString())} – {formatIST(new Date(editEndTime).toISOString())}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* RIGHT COLUMN: Question Pool Selection */}
+              <div className="space-y-2 flex flex-col h-full">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider text-[11px]">
+                    Select Questions ({editSelectedQuestionIds.length} selected)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleSelectAllEditQuestions}
+                    className="text-ubi-800 dark:text-ubi-400 hover:underline text-[11px] font-bold"
+                  >
+                    Toggle All
+                  </button>
+                </div>
+
+                {/* Search input */}
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2 text-slate-400" size={13} />
+                  <input
+                    type="text"
+                    placeholder="Search questions..."
+                    value={editSearchQuery}
+                    onChange={(e) => setEditSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-[11px] focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
+                  />
+                </div>
+
+                {/* Question List */}
+                <div className="max-h-[220px] overflow-y-auto bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg p-1.5 space-y-1">
+                  {filteredEditQuestions && filteredEditQuestions.length > 0 ? (
+                    filteredEditQuestions.map((q) => {
+                      const isChecked = editSelectedQuestionIds.includes(q.id);
+                      return (
+                        <div
+                          key={q.id}
+                          onClick={() => handleToggleEditQuestion(q.id)}
+                          className="flex items-center justify-between p-2 rounded-md hover:bg-slate-200/60 dark:hover:bg-slate-900 cursor-pointer transition text-xs"
+                        >
+                          <div className="flex items-center gap-2 min-w-0 pr-2">
+                            {isChecked ? (
+                              <CheckSquare size={16} className="text-ubi-800 dark:text-ubi-400 flex-shrink-0" />
+                            ) : (
+                              <Square size={16} className="text-slate-400 dark:text-slate-600 flex-shrink-0" />
+                            )}
+                            <span className="text-slate-900 dark:text-slate-200 font-semibold truncate" title={q.title}>
+                              {q.title}
+                            </span>
+                          </div>
+                          <span
+                            className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border flex-shrink-0 ${
+                              q.difficulty === 'easy'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                                : q.difficulty === 'medium'
+                                ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+                                : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
+                            }`}
+                          >
+                            {q.difficulty}
+                          </span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-8 text-slate-500 text-xs">
+                      No questions found.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
+            {/* Bottom Actions */}
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
               <Button
                 type="button"
@@ -734,12 +507,57 @@ export const AdminExamsPage: React.FC = () => {
                 type="submit"
                 size="sm"
                 isLoading={updateExamMutation.isPending}
-                className="font-semibold"
+                className="font-semibold px-5"
               >
                 Update Assessment
               </Button>
             </div>
           </form>
+        </Modal>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingExam && (
+        <Modal
+          isOpen={!!deletingExam}
+          onClose={() => setDeletingExam(null)}
+          title="Delete Assessment"
+          maxWidth="md"
+        >
+          <div className="space-y-5 text-slate-700 dark:text-slate-300">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 flex items-center justify-center flex-shrink-0">
+                <Trash2 size={20} />
+              </div>
+              <div className="space-y-1 pt-0.5">
+                <h4 className="font-semibold text-slate-900 dark:text-white text-sm">
+                  Delete "{deletingExam.title}"?
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Are you sure you want to delete this assessment? All candidate attempts and associated data will be permanently removed.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeletingExam(null)}
+                className="text-xs font-medium"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                isLoading={deleteExamMutation.isPending}
+                onClick={() => deleteExamMutation.mutate(deletingExam.id)}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs px-4"
+              >
+                Delete Assessment
+              </Button>
+            </div>
+          </div>
         </Modal>
       )}
     </div>

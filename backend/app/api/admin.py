@@ -10,7 +10,9 @@ from backend.app.core.database import get_db
 from backend.app.core.security import get_current_admin, get_password_hash
 from backend.app.models.user import User, UserRole
 from backend.app.models.question import Question, TestCase, QuestionDifficulty
-from backend.app.models.exam import Exam, ExamQuestionPool
+from backend.app.models.exam import Exam, ExamQuestionPool, AssignedQuestion
+from backend.app.models.submission import Submission
+from backend.app.models.result import QuestionScore
 from backend.app.schemas.exam import (
     ExamCreate,
     ExamUpdate,
@@ -368,6 +370,13 @@ async def delete_question(
     q = (await db.execute(select(Question).where(Question.id == question_id))).scalar_one_or_none()
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
+
+    await db.execute(delete(ExamQuestionPool).where(ExamQuestionPool.question_id == question_id))
+    await db.execute(delete(AssignedQuestion).where(AssignedQuestion.question_id == question_id))
+    await db.execute(delete(QuestionScore).where(QuestionScore.question_id == question_id))
+    await db.execute(delete(Submission).where(Submission.question_id == question_id))
+    await db.execute(delete(TestCase).where(TestCase.question_id == question_id))
+
     await db.delete(q)
     await db.commit()
     return {"message": f"Question {question_id} deleted successfully"}

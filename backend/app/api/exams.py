@@ -8,12 +8,14 @@ from backend.app.core.database import get_db
 from backend.app.core.security import get_current_user, get_current_admin
 from backend.app.models.user import User, UserRole
 from backend.app.models.exam import Exam, ExamAssignment, AssignmentStatus
+from backend.app.models.proctoring import ExamProctoringLog
 from backend.app.schemas.exam import (
     ExamResponse,
     ExamStartResponse,
     MyQuestionsResponse,
     LeaderboardEntry,
-    ExamResultDetail
+    ExamResultDetail,
+    BatchProctoringLogRequest
 )
 from backend.app.services.exam_service import (
     start_exam_for_student,
@@ -208,3 +210,46 @@ async def get_all_results_admin(
     Admin only: fetch all results and rankings for the exam.
     """
     return await get_exam_leaderboard(db, exam_id)
+
+
+@router.post("/{exam_id}/proctoring-logs")
+async def batch_save_proctoring_logs(
+    exam_id: int,
+    body: BatchProctoringLogRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    High-throughput batch ingestion for proctoring logs & flags from candidate's browser.
+    Validates assignment ownership and inserts logs in a single batch.
+    """
+    if not body.logs:
+        return {"saved": 0}
+
+    stmt = (
+        select(ExamAssignment)
+        .where(
+            ExamAssignment.id == body.assignment_id,
+            ExamAssignment.user_id == current_user.id,
+            ExamAssignment.exam_id == exam_id
+        )
+    )
+    assignment = (await db.execute(stmt)).scalar_one_or_none()
+    if not assignment:
+        raise HTTPException(status_code=403, detail="Invalid assignment for proctoring logs")
+
+    log_records = [
+        ExamProctoringLog(
+            assignment_id=assignment.id,
+            event_type=item.event_type[:50],
+            title=item.title[:150],
+            description=item.description,
+            occurred_at=item.occurred_at,
+            meta_data=item.meta_data
+        )
+        for item in body.logs
+    ]
+    db.add_all(log_records)
+    await db.commit()
+    return {"saved": len(log_records)}
+

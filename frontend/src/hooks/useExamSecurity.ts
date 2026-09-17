@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { examsApi } from '../api/exams';
 
 export type InfractionType =
   | 'TAB_SWITCH'
@@ -26,6 +27,8 @@ interface UseExamSecurityOptions {
   requireFullscreen?: boolean;
   onMaxStrikesReached?: (records: InfractionRecord[]) => void;
   onInfraction?: (record: InfractionRecord) => void;
+  examId?: number;
+  assignmentId?: number;
 }
 
 const INFRACTION_INFO: Record<InfractionType, { title: string; description: string }> = {
@@ -77,6 +80,8 @@ export function useExamSecurity({
   requireFullscreen = true,
   onMaxStrikesReached,
   onInfraction,
+  examId,
+  assignmentId,
 }: UseExamSecurityOptions = {}) {
   const [infractions, setInfractions] = useState<InfractionRecord[]>([]);
   const [activeWarning, setActiveWarning] = useState<InfractionRecord | null>(null);
@@ -90,6 +95,17 @@ export function useExamSecurity({
   const requireFullscreenRef = useRef(requireFullscreen);
   const onMaxStrikesReachedRef = useRef(onMaxStrikesReached);
   const onInfractionRef = useRef(onInfraction);
+  const examIdRef = useRef(examId);
+  const assignmentIdRef = useRef(assignmentId);
+
+  // In-memory queue of logs pending synchronization with backend
+  const pendingLogsRef = useRef<{
+    event_type: string;
+    title: string;
+    description: string;
+    occurred_at: string;
+    meta_data?: string;
+  }[]>([]);
 
   useEffect(() => {
     enabledRef.current = enabled;
@@ -97,7 +113,86 @@ export function useExamSecurity({
     requireFullscreenRef.current = requireFullscreen;
     onMaxStrikesReachedRef.current = onMaxStrikesReached;
     onInfractionRef.current = onInfraction;
-  }, [enabled, maxStrikes, requireFullscreen, onMaxStrikesReached, onInfraction]);
+    examIdRef.current = examId;
+    assignmentIdRef.current = assignmentId;
+  }, [enabled, maxStrikes, requireFullscreen, onMaxStrikesReached, onInfraction, examId, assignmentId]);
+
+  // Load any unsynced logs from localStorage on mount
+  useEffect(() => {
+    if (!assignmentId) return;
+    try {
+      const stored = localStorage.getItem(`pending_proctoring_logs_${assignmentId}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          pendingLogsRef.current = parsed;
+        }
+      }
+    } catch {}
+  }, [assignmentId]);
+
+  // Flush pending proctoring logs to backend in a single batch
+  const flushLogs = useCallback(async (useBeacon = false) => {
+    const currentExamId = examIdRef.current;
+    const currentAssignId = assignmentIdRef.current;
+    const logsToFlush = [...pendingLogsRef.current];
+
+    if (!currentExamId || !currentAssignId || logsToFlush.length === 0) {
+      return;
+    }
+
+    if (useBeacon && typeof navigator !== 'undefined' && navigator.sendBeacon) {
+      try {
+        const payload = JSON.stringify({
+          assignment_id: currentAssignId,
+          logs: logsToFlush,
+        });
+        const blob = new Blob([payload], { type: 'application/json' });
+        navigator.sendBeacon(`/api/exams/${currentExamId}/proctoring-logs`, blob);
+        pendingLogsRef.current = [];
+        localStorage.removeItem(`pending_proctoring_logs_${currentAssignId}`);
+        return;
+      } catch (err) {
+        console.warn('sendBeacon failed, falling back to standard API', err);
+      }
+    }
+
+    try {
+      await examsApi.saveProctoringLogs(currentExamId, currentAssignId, logsToFlush);
+      // Remove successfully sent items from queue
+      pendingLogsRef.current = pendingLogsRef.current.slice(logsToFlush.length);
+      if (pendingLogsRef.current.length === 0) {
+        localStorage.removeItem(`pending_proctoring_logs_${currentAssignId}`);
+      } else {
+        localStorage.setItem(
+          `pending_proctoring_logs_${currentAssignId}`,
+          JSON.stringify(pendingLogsRef.current)
+        );
+      }
+    } catch (err) {
+      console.warn('Failed to flush proctoring logs (will retry in next interval):', err);
+    }
+  }, []);
+
+  // Periodic batch sync every 45 seconds
+  useEffect(() => {
+    if (!enabled || !assignmentId || !examId) return;
+
+    const interval = setInterval(() => {
+      flushLogs(false);
+    }, 45000);
+
+    const handleBeforeUnload = () => {
+      flushLogs(true);
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [enabled, assignmentId, examId, flushLogs]);
 
   // Track infraction timestamps to throttle rapid triggers across all mouse and window events
   const lastInfractionTimesRef = useRef<Map<InfractionType, number>>(new Map());
@@ -121,13 +216,31 @@ export function useExamSecurity({
     lastGlobalInfractionTimeRef.current = now;
 
     const baseInfo = INFRACTION_INFO[type];
+    const timestamp = new Date();
     const record: InfractionRecord = {
       id: `${type}-${now}-${Math.random().toString(36).substring(2, 7)}`,
       type,
       title: baseInfo.title,
       description: customDescription || baseInfo.description,
-      timestamp: new Date(),
+      timestamp,
     };
+
+    // Add to pending batch queue and mirror to localStorage
+    const logItem = {
+      event_type: type,
+      title: record.title,
+      description: record.description,
+      occurred_at: timestamp.toISOString(),
+    };
+    pendingLogsRef.current.push(logItem);
+    if (assignmentIdRef.current) {
+      try {
+        localStorage.setItem(
+          `pending_proctoring_logs_${assignmentIdRef.current}`,
+          JSON.stringify(pendingLogsRef.current)
+        );
+      } catch {}
+    }
 
     setInfractions((prev) => {
       const next = [...prev, record];
@@ -354,5 +467,6 @@ export function useExamSecurity({
     enterFullscreen,
     logInfraction,
     dismissActiveWarning,
+    flushLogs,
   };
 }

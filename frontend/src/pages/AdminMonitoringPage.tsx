@@ -1,15 +1,17 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../api/admin';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Activity, ArrowLeft, RefreshCw, Trophy } from 'lucide-react';
+import { Activity, ArrowLeft, RefreshCw, Trophy, FileText, ShieldAlert, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { CandidateDossierModal } from '../components/CandidateDossierModal';
 
 export const AdminMonitoringPage: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
   const id = Number(examId);
   const navigate = useNavigate();
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<number | null>(null);
 
   const { data: monitoring, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['adminMonitoring', id],
@@ -87,7 +89,9 @@ export const AdminMonitoringPage: React.FC = () => {
                   <th className="py-3.5 px-4 font-bold">Time Remaining</th>
                   <th className="py-3.5 px-4 font-bold">Submissions</th>
                   <th className="py-3.5 px-4 font-bold">Current Score</th>
+                  <th className="py-3.5 px-4 font-bold">Integrity Flags</th>
                   <th className="py-3.5 px-4 font-bold">Started At</th>
+                  <th className="py-3.5 px-4 font-bold text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800/60 font-mono text-xs">
@@ -130,8 +134,34 @@ export const AdminMonitoringPage: React.FC = () => {
                         ? row.current_score.toFixed(1)
                         : '—'}
                     </td>
+                    <td className="py-3.5 px-4 font-sans">
+                      {(!row.flags_count || row.flags_count === 0) ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                          <ShieldCheck size={12} /> Clean (0)
+                        </span>
+                      ) : row.flags_count <= 2 ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                          <AlertTriangle size={12} /> {row.flags_count} Flags
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200 dark:border-rose-800 animate-pulse">
+                          <ShieldAlert size={12} /> {row.flags_count} Flags (High)
+                        </span>
+                      )}
+                    </td>
                     <td className="py-3.5 px-4 text-slate-500 dark:text-slate-400">
                       {row.started_at ? new Date(row.started_at).toLocaleTimeString() : '—'}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-sans">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedAssignmentId(row.assignment_id)}
+                        className="gap-1.5 text-xs font-semibold"
+                      >
+                        <FileText size={13} className="text-ubi-800 dark:text-ubi-400" />
+                        <span>View Dossier</span>
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -144,6 +174,16 @@ export const AdminMonitoringPage: React.FC = () => {
           </div>
         )}
       </Card>
+
+      {/* Candidate Detailed Dossier Modal */}
+      {selectedAssignmentId && (
+        <CandidateDossierModal
+          isOpen={!!selectedAssignmentId}
+          onClose={() => setSelectedAssignmentId(null)}
+          examId={id}
+          assignmentId={selectedAssignmentId}
+        />
+      )}
     </div>
   );
 };

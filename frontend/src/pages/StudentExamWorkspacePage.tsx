@@ -92,10 +92,13 @@ export const StudentExamWorkspacePage: React.FC = () => {
     enterFullscreen,
     logInfraction,
     dismissActiveWarning,
+    flushLogs,
   } = useExamSecurity({
     enabled: !!examData && examData.status === 'in_progress',
     maxStrikes: 3,
     requireFullscreen: true,
+    examId: id,
+    assignmentId: examData?.assignment_id,
   });
 
   // Warn on accidental tab/window close
@@ -209,6 +212,9 @@ export const StudentExamWorkspacePage: React.FC = () => {
   const handleFinishExam = async () => {
     setIsSubmittingExam(true);
     try {
+      if (flushLogs) {
+        await flushLogs();
+      }
       await examsApi.finish(id);
       setIsFinishModalOpen(false);
       resetExamState();
@@ -221,7 +227,12 @@ export const StudentExamWorkspacePage: React.FC = () => {
   };
 
   // Auto-submit callback triggered when Timer hits 00:00:00
-  const handleTimeoutExpire = () => {
+  const handleTimeoutExpire = async () => {
+    if (flushLogs) {
+      try {
+        await flushLogs();
+      } catch {}
+    }
     alert('Time limit reached! Your assessment has been automatically submitted.');
     resetExamState();
     navigate(`/exam/${id}/result`);

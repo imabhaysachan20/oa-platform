@@ -4,6 +4,7 @@ import {
   Question,
   User,
   MonitoringStudentView,
+  CandidateDossierResponse,
 } from '../types';
 
 export const adminApi = {
@@ -100,9 +101,14 @@ export const adminApi = {
     return res.data;
   },
 
-  // Monitoring
+  // Monitoring & Candidate Dossier
   getMonitoring: async (examId: number): Promise<MonitoringStudentView[]> => {
     const res = await api.get<MonitoringStudentView[]>(`/admin/exams/${examId}/monitoring`);
+    return res.data;
+  },
+
+  getCandidateDossier: async (examId: number, assignmentId: number): Promise<CandidateDossierResponse> => {
+    const res = await api.get<CandidateDossierResponse>(`/admin/exams/${examId}/candidates/${assignmentId}/dossier`);
     return res.data;
   },
 

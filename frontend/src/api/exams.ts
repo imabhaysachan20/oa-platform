@@ -42,4 +42,12 @@ export const examsApi = {
     const res = await api.get<LeaderboardEntry[]>(`/exams/${id}/leaderboard`);
     return res.data;
   },
+
+  saveProctoringLogs: async (examId: number, assignmentId: number, logs: any[]): Promise<{ saved: number }> => {
+    const res = await api.post<{ saved: number }>(`/exams/${examId}/proctoring-logs`, {
+      assignment_id: assignmentId,
+      logs,
+    });
+    return res.data;
+  },
 };

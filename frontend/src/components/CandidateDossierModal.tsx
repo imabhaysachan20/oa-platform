@@ -1,0 +1,382 @@
+import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { adminApi } from '../api/admin';
+import { Modal } from './ui/Modal';
+import { Button } from './ui/Button';
+import { Badge } from './ui/Badge';
+import { CodeEditor } from './CodeEditor';
+import {
+  ShieldCheck,
+  ShieldAlert,
+  AlertTriangle,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  FileCode,
+  Award,
+  Terminal,
+  Activity,
+  User as UserIcon,
+} from 'lucide-react';
+
+interface CandidateDossierModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  examId: number;
+  assignmentId: number;
+}
+
+export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
+  isOpen,
+  onClose,
+  examId,
+  assignmentId,
+}) => {
+  const [activeTab, setActiveTab] = useState<'code' | 'proctoring' | 'scoring'>('code');
+  const [selectedQuestionIndex, setSelectedQuestionIndex] = useState(0);
+
+  const { data: dossier, isLoading } = useQuery({
+    queryKey: ['candidateDossier', examId, assignmentId],
+    queryFn: () => adminApi.getCandidateDossier(examId, assignmentId),
+    enabled: isOpen && !!examId && !!assignmentId,
+  });
+
+  const formatDuration = (seconds?: number | null) => {
+    if (seconds === undefined || seconds === null) return '—';
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}m ${s}s`;
+  };
+
+  const currentQuestion = dossier?.questions?.[selectedQuestionIndex];
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Candidate Assessment Dossier"
+      maxWidth="7xl"
+    >
+      {isLoading ? (
+        <div className="py-24 flex flex-col items-center justify-center gap-3">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-ubi-800 dark:border-ubi-400"></div>
+          <span className="text-xs text-slate-500 font-mono">Loading full candidate audit trail...</span>
+        </div>
+      ) : dossier ? (
+        <div className="flex flex-col h-[74vh] gap-3.5 overflow-hidden">
+          {/* Header Summary Banner */}
+          <div className="bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-full bg-ubi-100 dark:bg-ubi-900/60 border border-ubi-200 dark:border-ubi-800 flex items-center justify-center font-bold text-ubi-900 dark:text-ubi-200 shrink-0">
+                <UserIcon size={18} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
+                    {dossier.student_name}
+                  </h3>
+                  {dossier.roll_no && (
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold">
+                      {dossier.roll_no}
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                  {dossier.email} • Exam: {dossier.exam_title}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 text-xs">
+              {/* Score / Rank */}
+              <div className="bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Score</span>
+                <span className="text-sm font-extrabold text-ubi-800 dark:text-ubi-400 font-mono">
+                  {dossier.total_score !== null && dossier.total_score !== undefined
+                    ? `${dossier.total_score.toFixed(1)} pts`
+                    : 'Unscored'}
+                  {dossier.rank && <span className="text-xs text-slate-500 font-medium ml-1.5">(Rank #{dossier.rank})</span>}
+                </span>
+              </div>
+
+              {/* Time Taken */}
+              <div className="bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Time Taken</span>
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 font-mono flex items-center gap-1">
+                  <Clock size={12} className="text-slate-400" />
+                  {formatDuration(dossier.total_time_sec)}
+                </span>
+              </div>
+
+              {/* Integrity Status */}
+              <div className="bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center gap-2">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Integrity Rating</span>
+                  <span className="text-xs font-bold font-mono">
+                    {dossier.total_flags} flag{dossier.total_flags === 1 ? '' : 's'}
+                  </span>
+                </div>
+                {dossier.integrity_status === 'Clean' ? (
+                  <span className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                    <ShieldCheck size={13} /> Clean
+                  </span>
+                ) : dossier.integrity_status === 'Warning' ? (
+                  <span className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                    <AlertTriangle size={13} /> Review
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200 dark:border-rose-800 animate-pulse">
+                    <ShieldAlert size={13} /> High Risk
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation Tabs */}
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 shrink-0">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setActiveTab('code')}
+                className={`flex items-center gap-1.5 py-2 px-3 text-xs font-bold border-b-2 transition ${
+                  activeTab === 'code'
+                    ? 'border-ubi-800 text-ubi-900 dark:border-ubi-400 dark:text-white'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+                }`}
+              >
+                <FileCode size={14} />
+                <span>Code Submissions ({dossier.questions.filter((q) => q.has_submission).length}/{dossier.questions.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('proctoring')}
+                className={`flex items-center gap-1.5 py-2 px-3 text-xs font-bold border-b-2 transition ${
+                  activeTab === 'proctoring'
+                    ? 'border-ubi-800 text-ubi-900 dark:border-ubi-400 dark:text-white'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+                }`}
+              >
+                <Activity size={14} />
+                <span>Anti-Cheat Timeline ({dossier.total_flags} Events)</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('scoring')}
+                className={`flex items-center gap-1.5 py-2 px-3 text-xs font-bold border-b-2 transition ${
+                  activeTab === 'scoring'
+                    ? 'border-ubi-800 text-ubi-900 dark:border-ubi-400 dark:text-white'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+                }`}
+              >
+                <Award size={14} />
+                <span>Score Breakdown</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Tab 1: Code Submissions */}
+          {activeTab === 'code' && (
+            <div className="flex-1 grid grid-cols-12 gap-3 overflow-hidden min-h-0">
+              {/* Question Sidebar (4 cols) */}
+              <div className="col-span-4 flex flex-col gap-2 overflow-y-auto pr-1">
+                {dossier.questions.map((q, idx) => (
+                  <button
+                    key={q.question_id}
+                    onClick={() => setSelectedQuestionIndex(idx)}
+                    className={`p-3 rounded-xl border text-left transition flex flex-col gap-1.5 ${
+                      selectedQuestionIndex === idx
+                        ? 'bg-ubi-50/80 dark:bg-ubi-950/40 border-ubi-400 dark:border-ubi-700 shadow-xs'
+                        : 'bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                        Q{idx + 1}. {q.question_title}
+                      </span>
+                      <Badge variant={q.difficulty as any}>{q.difficulty}</Badge>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                      <span className="flex items-center gap-1">
+                        <Clock size={11} /> {formatDuration(q.time_taken_sec)}
+                      </span>
+                      <span className="font-bold text-ubi-800 dark:text-ubi-400">
+                        {q.final_score.toFixed(1)} / {q.difficulty_weight} pts
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-[10px] pt-0.5">
+                      {q.has_submission ? (
+                        q.status === 'Accepted' ? (
+                          <span className="text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                            <CheckCircle2 size={11} /> Passed ({q.test_cases_passed}/{q.total_test_cases})
+                          </span>
+                        ) : (
+                          <span className="text-rose-700 dark:text-rose-400 font-semibold flex items-center gap-1">
+                            <XCircle size={11} /> {q.status} ({q.test_cases_passed}/{q.total_test_cases})
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-slate-400 italic">Unattempted</span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {/* Code Viewer (8 cols) */}
+              <div className="col-span-8 flex flex-col gap-2 overflow-hidden min-h-0 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3">
+                {currentQuestion ? (
+                  currentQuestion.has_submission && currentQuestion.code ? (
+                    <div className="flex-1 flex flex-col gap-2 overflow-hidden min-h-0">
+                      <div className="flex items-center justify-between text-xs pb-1 border-b border-slate-200 dark:border-slate-800 shrink-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-900 dark:text-white">
+                            Candidate's Final Code ({currentQuestion.language || 'text'})
+                          </span>
+                          {currentQuestion.exec_time_ms && (
+                            <span className="text-[11px] text-slate-500 font-mono">
+                              ({currentQuestion.exec_time_ms.toFixed(0)}ms)
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          Submitted at: {currentQuestion.submitted_at ? new Date(currentQuestion.submitted_at).toLocaleTimeString() : '—'}
+                        </span>
+                      </div>
+                      <div className="flex-1 overflow-hidden">
+                        <CodeEditor
+                          value={currentQuestion.code}
+                          onChange={() => {}}
+                          language={currentQuestion.language || 'python'}
+                          onLanguageChange={() => {}}
+                          readOnly={true}
+                          allowPaste={true}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-2">
+                      <Terminal size={32} className="text-slate-300 dark:text-slate-700" />
+                      <p className="text-xs font-medium">No code was submitted for this question.</p>
+                    </div>
+                  )
+                ) : null}
+              </div>
+            </div>
+          )}
+
+          {/* Tab 2: Anti-Cheat & Proctoring Timeline */}
+          {activeTab === 'proctoring' && (
+            <div className="flex-1 overflow-y-auto pr-2 space-y-3 min-h-0">
+              {dossier.proctoring_logs.length > 0 ? (
+                <div className="relative pl-6 border-l-2 border-slate-200 dark:border-slate-800 space-y-4 my-2">
+                  {dossier.proctoring_logs.map((log) => (
+                    <div key={log.id} className="relative group">
+                      {/* Timeline dot */}
+                      <div className="absolute -left-[31px] top-1 w-3.5 h-3.5 rounded-full bg-rose-500 border-2 border-white dark:border-slate-900"></div>
+
+                      <div className="p-3 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200 dark:border-rose-800 font-bold">
+                              {log.event_type}
+                            </span>
+                            <span>{log.title}</span>
+                          </span>
+                          <span className="text-[11px] font-mono text-slate-500">
+                            {new Date(log.occurred_at).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 dark:text-slate-400">
+                          {log.description}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-3 py-16">
+                  <ShieldCheck size={44} className="text-emerald-500" />
+                  <div className="text-center">
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">Clean Assessment Session</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      No security or proctoring infractions were triggered by this candidate.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab 3: Score Breakdown */}
+          {activeTab === 'scoring' && (
+            <div className="flex-1 overflow-y-auto pr-1 min-h-0">
+              <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-950/80 text-[11px] font-bold uppercase text-slate-500 border-b border-slate-200 dark:border-slate-800 font-mono">
+                    <tr>
+                      <th className="py-3 px-4">Question</th>
+                      <th className="py-3 px-4">Difficulty</th>
+                      <th className="py-3 px-4">Time Taken</th>
+                      <th className="py-3 px-4">Correctness</th>
+                      <th className="py-3 px-4">Weight</th>
+                      <th className="py-3 px-4 text-right">Score</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-xs">
+                    {dossier.questions.map((q, idx) => (
+                      <tr key={q.question_id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition">
+                        <td className="py-3 px-4 font-sans font-semibold text-slate-900 dark:text-white">
+                          Q{idx + 1}. {q.question_title}
+                        </td>
+                        <td className="py-3 px-4 font-sans">
+                          <Badge variant={q.difficulty as any}>{q.difficulty}</Badge>
+                        </td>
+                        <td className="py-3 px-4 text-slate-600 dark:text-slate-400">
+                          {formatDuration(q.time_taken_sec)}
+                        </td>
+                        <td className="py-3 px-4">
+                          {(q.correctness * 100).toFixed(0)}% ({q.test_cases_passed}/{q.total_test_cases})
+                        </td>
+                        <td className="py-3 px-4 text-slate-500">
+                          {q.difficulty_weight} pts
+                        </td>
+                        <td className="py-3 px-4 text-right font-extrabold text-ubi-800 dark:text-ubi-400">
+                          {q.final_score.toFixed(1)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-slate-50 dark:bg-slate-950 font-bold border-t border-slate-200 dark:border-slate-800 font-mono">
+                    <tr>
+                      <td colSpan={5} className="py-3 px-4 text-right uppercase text-[11px] text-slate-500">
+                        Final Score (Out of 100):
+                      </td>
+                      <td className="py-3 px-4 text-right text-base text-ubi-900 dark:text-white font-extrabold">
+                        {dossier.total_score !== null && dossier.total_score !== undefined
+                          ? dossier.total_score.toFixed(1)
+                          : '0.0'}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Footer */}
+          <div className="flex items-center justify-end pt-2 border-t border-slate-200 dark:border-slate-800 shrink-0">
+            <Button variant="outline" size="sm" onClick={onClose} className="text-xs font-semibold">
+              Close Dossier
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="py-16 text-center text-slate-500 text-xs">
+          Candidate data could not be retrieved.
+        </div>
+      )}
+    </Modal>
+  );
+};

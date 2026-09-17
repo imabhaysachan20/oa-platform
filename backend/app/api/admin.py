@@ -17,7 +17,8 @@ from backend.app.schemas.exam import (
     ExamCreate,
     ExamUpdate,
     ExamResponse,
-    MonitoringStudentView
+    MonitoringStudentView,
+    CandidateDossierResponse
 )
 from backend.app.schemas.question import (
     QuestionCreate,
@@ -28,7 +29,7 @@ from backend.app.schemas.question import (
 )
 from backend.app.schemas.submission import AdminPlaygroundRunRequest, RunCodeResponse
 from backend.app.schemas.auth import UserResponse
-from backend.app.services.exam_service import get_live_exam_monitoring
+from backend.app.services.exam_service import get_live_exam_monitoring, get_candidate_dossier
 from backend.app.services.submission_service import execute_judge0_test_cases
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -510,6 +511,23 @@ async def monitor_exam(
 ):
     """
     Live exam monitoring: tracks student session states, remaining time,
-    number of submissions, and current scores in real time.
+    number of submissions, flags count, and current scores in real time.
     """
     return await get_live_exam_monitoring(db, exam_id)
+
+
+@router.get("/exams/{exam_id}/candidates/{assignment_id}/dossier", response_model=CandidateDossierResponse)
+async def get_candidate_dossier_detail(
+    exam_id: int,
+    assignment_id: int,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Candidate inspection dossier for admins:
+    - Integrity flags and full proctoring audit log
+    - Submitted code per question, language, status, execution time
+    - Time spent per question and score calculation
+    """
+    return await get_candidate_dossier(db, exam_id, assignment_id)
+

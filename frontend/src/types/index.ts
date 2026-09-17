@@ -172,4 +172,56 @@ export interface MonitoringStudentView {
   time_remaining_sec?: number;
   submissions_count: number;
   current_score?: number;
+  flags_count?: number;
 }
+
+export interface ProctoringLogItem {
+  id: number;
+  assignment_id: number;
+  event_type: string;
+  title: string;
+  description: string;
+  occurred_at: string;
+  meta_data?: string;
+}
+
+export interface CandidateQuestionSubmissionDossier {
+  question_id: number;
+  question_title: string;
+  difficulty: string;
+  order_index: number;
+  correctness: number;
+  difficulty_weight: number;
+  final_score: number;
+  time_taken_sec: number;
+  has_submission: boolean;
+  code?: string | null;
+  language?: string | null;
+  status?: string | null;
+  test_cases_passed: number;
+  total_test_cases: number;
+  exec_time_ms?: number | null;
+  submitted_at?: string | null;
+}
+
+export interface CandidateDossierResponse {
+  assignment_id: number;
+  exam_id: number;
+  exam_title: string;
+  user_id: number;
+  student_name: string;
+  email: string;
+  roll_no?: string | null;
+  status: string;
+  started_at?: string | null;
+  submitted_at?: string | null;
+  total_time_sec?: number | null;
+  total_score?: number | null;
+  rank?: number | null;
+  total_flags: number;
+  flag_counts_by_type: Record<string, number>;
+  integrity_status: 'Clean' | 'Warning' | 'High Risk';
+  proctoring_logs: ProctoringLogItem[];
+  questions: CandidateQuestionSubmissionDossier[];
+}
+

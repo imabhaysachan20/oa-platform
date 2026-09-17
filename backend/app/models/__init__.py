@@ -10,6 +10,7 @@ from backend.app.models.exam import (
 )
 from backend.app.models.submission import Submission
 from backend.app.models.result import QuestionScore, ExamResult
+from backend.app.models.proctoring import ExamProctoringLog
 
 __all__ = [
     "Base",
@@ -27,4 +28,5 @@ __all__ = [
     "Submission",
     "QuestionScore",
     "ExamResult",
+    "ExamProctoringLog",
 ]

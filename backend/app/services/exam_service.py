@@ -15,6 +15,7 @@ from backend.app.models.question import Question, QuestionDifficulty
 from backend.app.models.submission import Submission
 from backend.app.models.user import User
 from backend.app.models.result import ExamResult, QuestionScore
+from backend.app.models.proctoring import ExamProctoringLog
 from backend.app.schemas.question import StudentQuestionView
 from backend.app.schemas.exam import (
     ExamStartResponse,
@@ -22,7 +23,10 @@ from backend.app.schemas.exam import (
     LeaderboardEntry,
     ExamResultDetail,
     QuestionScoreBreakdown,
-    MonitoringStudentView
+    MonitoringStudentView,
+    CandidateDossierResponse,
+    CandidateQuestionSubmissionDossier,
+    ProctoringLogItem
 )
 from backend.app.services.scoring_service import compute_and_save_exam_scores
 from backend.app.services.question_templates import (
@@ -430,6 +434,13 @@ async def get_live_exam_monitoring(db: AsyncSession, exam_id: int) -> List[Monit
         )
         sub_count = (await db.execute(sub_count_stmt)).scalar() or 0
 
+        # Count proctoring flags / infractions
+        flags_count_stmt = (
+            select(func.count(ExamProctoringLog.id))
+            .where(ExamProctoringLog.assignment_id == assignment.id)
+        )
+        flags_count = (await db.execute(flags_count_stmt)).scalar() or 0
+
         time_remaining = None
         if assignment.status == AssignmentStatus.IN_PROGRESS and assignment.deadline_at:
             delta = (assignment.deadline_at - now).total_seconds()
@@ -447,7 +458,135 @@ async def get_live_exam_monitoring(db: AsyncSession, exam_id: int) -> List[Monit
             submitted_at=assignment.submitted_at,
             time_remaining_sec=time_remaining,
             submissions_count=sub_count,
-            current_score=result.total_score if result else None
+            current_score=result.total_score if result else None,
+            flags_count=flags_count
         ))
 
     return monitoring_list
+
+
+async def get_candidate_dossier(
+    db: AsyncSession,
+    exam_id: int,
+    assignment_id: int
+) -> CandidateDossierResponse:
+    """
+    Returns comprehensive candidate dossier for administrators:
+    - Candidate info, timings, total score, and rank
+    - Integrity rating and full proctoring audit log
+    - Assigned questions, submitted code, language, status, test results, and question score
+    """
+    stmt = (
+        select(ExamAssignment, User, Exam, ExamResult)
+        .join(User, ExamAssignment.user_id == User.id)
+        .join(Exam, ExamAssignment.exam_id == Exam.id)
+        .outerjoin(ExamResult, ExamResult.assignment_id == ExamAssignment.id)
+        .where(
+            ExamAssignment.id == assignment_id,
+            ExamAssignment.exam_id == exam_id
+        )
+    )
+    row = (await db.execute(stmt)).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Candidate assignment not found for this exam")
+
+    assignment, user, exam, result = row
+
+    total_time_sec = None
+    if assignment.started_at:
+        end_time = assignment.submitted_at or assignment.deadline_at or datetime.now(timezone.utc)
+        total_time_sec = max(0.0, (end_time - assignment.started_at).total_seconds())
+
+    # Proctoring logs
+    stmt_logs = (
+        select(ExamProctoringLog)
+        .where(ExamProctoringLog.assignment_id == assignment_id)
+        .order_by(ExamProctoringLog.occurred_at.asc())
+    )
+    log_rows = (await db.execute(stmt_logs)).scalars().all()
+
+    total_flags = len(log_rows)
+    flag_counts_by_type = {}
+    for l in log_rows:
+        flag_counts_by_type[l.event_type] = flag_counts_by_type.get(l.event_type, 0) + 1
+
+    if total_flags == 0:
+        integrity_status = "Clean"
+    elif total_flags <= 2:
+        integrity_status = "Warning"
+    else:
+        integrity_status = "High Risk"
+
+    # Assigned questions, scores, and submissions
+    stmt_assigned = (
+        select(AssignedQuestion, Question, QuestionScore)
+        .join(Question, AssignedQuestion.question_id == Question.id)
+        .outerjoin(
+            QuestionScore,
+            and_(
+                QuestionScore.assignment_id == assignment_id,
+                QuestionScore.question_id == Question.id
+            )
+        )
+        .where(AssignedQuestion.assignment_id == assignment_id)
+        .order_by(AssignedQuestion.order_index)
+    )
+    assigned_rows = (await db.execute(stmt_assigned)).all()
+
+    question_dossiers = []
+    for assigned_q, q, q_score in assigned_rows:
+        stmt_sub = (
+            select(Submission)
+            .where(
+                Submission.assignment_id == assignment_id,
+                Submission.question_id == q.id
+            )
+            .order_by(desc(Submission.is_final), desc(Submission.submitted_at))
+            .limit(1)
+        )
+        sub = (await db.execute(stmt_sub)).scalar_one_or_none()
+
+        time_taken = q_score.time_taken_sec if q_score else 0.0
+        if not time_taken and sub and assignment.started_at:
+            time_taken = max(0.0, (sub.submitted_at - assignment.started_at).total_seconds())
+
+        question_dossiers.append(CandidateQuestionSubmissionDossier(
+            question_id=q.id,
+            question_title=q.title,
+            difficulty=assigned_q.difficulty.value,
+            order_index=assigned_q.order_index,
+            correctness=q_score.correctness if q_score else (float(sub.test_cases_passed) / float(sub.total_test_cases) if sub and sub.total_test_cases else 0.0),
+            difficulty_weight=q_score.difficulty_weight if q_score else 10.0,
+            final_score=q_score.final_score if q_score else 0.0,
+            time_taken_sec=round(time_taken, 1),
+            has_submission=bool(sub),
+            code=sub.code if sub else None,
+            language=sub.language if sub else None,
+            status=sub.status if sub else "Unattempted",
+            test_cases_passed=sub.test_cases_passed if sub else 0,
+            total_test_cases=sub.total_test_cases if sub else 0,
+            exec_time_ms=sub.exec_time_ms if sub else None,
+            submitted_at=sub.submitted_at if sub else None
+        ))
+
+    return CandidateDossierResponse(
+        assignment_id=assignment.id,
+        exam_id=exam.id,
+        exam_title=exam.title,
+        user_id=user.id,
+        student_name=user.name,
+        email=user.email,
+        roll_no=user.roll_no,
+        status=assignment.status.value,
+        started_at=assignment.started_at,
+        submitted_at=assignment.submitted_at,
+        total_time_sec=round(total_time_sec, 1) if total_time_sec is not None else None,
+        total_score=result.total_score if result else None,
+        rank=result.rank if result else None,
+        total_flags=total_flags,
+        flag_counts_by_type=flag_counts_by_type,
+        integrity_status=integrity_status,
+        proctoring_logs=[ProctoringLogItem.model_validate(l) for l in log_rows],
+        questions=question_dossiers
+    )
+

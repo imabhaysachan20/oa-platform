@@ -114,3 +114,73 @@ class MonitoringStudentView(BaseModel):
     time_remaining_sec: Optional[float] = None
     submissions_count: int
     current_score: Optional[float] = None
+    flags_count: int = 0
+
+
+# ==================== PROCTORING & CANDIDATE DOSSIER SCHEMAS ====================
+
+class ProctoringLogCreate(BaseModel):
+    event_type: str
+    title: str
+    description: str
+    occurred_at: datetime
+    meta_data: Optional[str] = None
+
+
+class BatchProctoringLogRequest(BaseModel):
+    assignment_id: int
+    logs: List[ProctoringLogCreate]
+
+
+class ProctoringLogItem(BaseModel):
+    id: int
+    assignment_id: int
+    event_type: str
+    title: str
+    description: str
+    occurred_at: datetime
+    meta_data: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CandidateQuestionSubmissionDossier(BaseModel):
+    question_id: int
+    question_title: str
+    difficulty: str
+    order_index: int
+    correctness: float
+    difficulty_weight: float
+    final_score: float
+    time_taken_sec: float
+    has_submission: bool
+    code: Optional[str] = None
+    language: Optional[str] = None
+    status: Optional[str] = None
+    test_cases_passed: int = 0
+    total_test_cases: int = 0
+    exec_time_ms: Optional[float] = None
+    submitted_at: Optional[datetime] = None
+
+
+class CandidateDossierResponse(BaseModel):
+    assignment_id: int
+    exam_id: int
+    exam_title: str
+    user_id: int
+    student_name: str
+    email: str
+    roll_no: Optional[str] = None
+    status: str
+    started_at: Optional[datetime] = None
+    submitted_at: Optional[datetime] = None
+    total_time_sec: Optional[float] = None
+    total_score: Optional[float] = None
+    rank: Optional[int] = None
+    total_flags: int = 0
+    flag_counts_by_type: dict = {}
+    integrity_status: str = "Clean"
+    proctoring_logs: List[ProctoringLogItem] = []
+    questions: List[CandidateQuestionSubmissionDossier] = []
+

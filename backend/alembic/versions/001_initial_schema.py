@@ -44,6 +44,7 @@ def upgrade() -> None:
         sa.Column("memory_limit_kb", sa.Integer(), nullable=False, server_default="128000"),
         sa.Column("sample_input", sa.Text(), nullable=True),
         sa.Column("sample_output", sa.Text(), nullable=True),
+        sa.Column("input_format", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
     )

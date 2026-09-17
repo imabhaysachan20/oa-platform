@@ -1,32 +1,22 @@
 import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../api/admin';
-import { Question, QuestionDifficulty } from '../types';
+import { Question } from '../types';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
-import { AdminPlaygroundModal, QuestionFormData } from '../components/AdminPlaygroundModal';
-import { RichTextEditor } from '../components/ui/RichTextEditor';
-import { Plus, Trash2, Code2, ListChecks, Eye, EyeOff, Pencil } from 'lucide-react';
+import { MarkdownRenderer } from '../components/ui/RichTextEditor';
+import { Plus, Trash2, ListChecks, Eye, EyeOff, Pencil, Clock, HardDrive, AlignLeft } from 'lucide-react';
 
 export const AdminQuestionsPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isPlaygroundModalOpen, setIsPlaygroundModalOpen] = useState(false);
   const [selectedQuestionForTestCases, setSelectedQuestionForTestCases] = useState<Question | null>(null);
-
-  // Question Form State (supports both create and edit)
-  const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [inputFormat, setInputFormat] = useState('');
-  const [difficulty, setDifficulty] = useState<QuestionDifficulty>('easy');
-  const [timeLimitMs, setTimeLimitMs] = useState(2000);
-  const [memoryLimitKb, setMemoryLimitKb] = useState(128000);
-  const [sampleInput, setSampleInput] = useState('');
-  const [sampleOutput, setSampleOutput] = useState('');
+  const [deletingQuestion, setDeletingQuestion] = useState<Question | null>(null);
+  const [viewingQuestion, setViewingQuestion] = useState<Question | null>(null);
 
   // Test Case Form State
   const [tcInput, setTcInput] = useState('');
@@ -39,31 +29,14 @@ export const AdminQuestionsPage: React.FC = () => {
     queryFn: adminApi.listQuestions,
   });
 
-  const createQuestionMutation = useMutation({
-    mutationFn: adminApi.createQuestion,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['adminQuestions'] });
-      setIsCreateModalOpen(false);
-      setIsPlaygroundModalOpen(false);
-      resetQuestionForm();
-    },
-  });
-
-  const updateQuestionMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<Question> }) =>
-      adminApi.updateQuestion(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['adminQuestions'] });
-      setIsCreateModalOpen(false);
-      setIsPlaygroundModalOpen(false);
-      resetQuestionForm();
-    },
-  });
-
   const deleteQuestionMutation = useMutation({
     mutationFn: adminApi.deleteQuestion,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['adminQuestions'] });
+      setDeletingQuestion(null);
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.detail || 'Failed to delete question');
     },
   });
 
@@ -85,80 +58,12 @@ export const AdminQuestionsPage: React.FC = () => {
     },
   });
 
-  const resetQuestionForm = () => {
-    setEditingQuestionId(null);
-    setTitle('');
-    setDescription('');
-    setInputFormat('');
-    setDifficulty('easy');
-    setTimeLimitMs(2000);
-    setMemoryLimitKb(128000);
-    setSampleInput('');
-    setSampleOutput('');
-  };
-
-  const handleOpenCreateModal = () => {
-    resetQuestionForm();
-    setIsCreateModalOpen(true);
-  };
-
-  const handleOpenEditModal = (q: Question) => {
-    setEditingQuestionId(q.id);
-    setTitle(q.title);
-    setDescription(q.description);
-    setInputFormat(q.input_format || '');
-    setDifficulty(q.difficulty);
-    setTimeLimitMs(q.time_limit_ms);
-    setMemoryLimitKb(q.memory_limit_kb);
-    setSampleInput(q.sample_input || '');
-    setSampleOutput(q.sample_output || '');
-    setIsCreateModalOpen(true);
-  };
-
-  const handleSubmitQuestion = (e: React.FormEvent) => {
-    e.preventDefault();
-    const payload = {
-      title,
-      description,
-      difficulty,
-      time_limit_ms: timeLimitMs,
-      memory_limit_kb: memoryLimitKb,
-      sample_input: sampleInput,
-      sample_output: sampleOutput,
-      input_format: inputFormat,
-    };
-
-    if (editingQuestionId) {
-      updateQuestionMutation.mutate({ id: editingQuestionId, data: payload });
-    } else {
-      createQuestionMutation.mutate(payload);
-    }
-  };
-
-  const handleSaveFromPlayground = (formData: QuestionFormData) => {
-    const payload = {
-      title: formData.title,
-      description: formData.description,
-      difficulty: formData.difficulty,
-      time_limit_ms: formData.timeLimitMs,
-      memory_limit_kb: formData.memoryLimitKb,
-      sample_input: formData.sampleInput,
-      sample_output: formData.sampleOutput,
-      input_format: formData.inputFormat,
-    };
-
-    if (editingQuestionId) {
-      updateQuestionMutation.mutate({ id: editingQuestionId, data: payload });
-    } else {
-      createQuestionMutation.mutate(payload);
-    }
-  };
-
   const handleAddTestCase = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedQuestionForTestCases) return;
+    const qId = selectedQuestionForTestCases?.id;
+    if (!qId) return;
     addTestCaseMutation.mutate({
-      qId: selectedQuestionForTestCases.id,
+      qId,
       testCase: {
         input: tcInput,
         expected_output: tcExpected,
@@ -185,10 +90,12 @@ export const AdminQuestionsPage: React.FC = () => {
             Configure coding problems, descriptions, limits, and sample/hidden test cases.
           </p>
         </div>
-        <Button onClick={handleOpenCreateModal} className="gap-2 self-start font-semibold">
-          <Plus size={16} />
-          <span>Add New Question</span>
-        </Button>
+        <Link to="/admin/questions/create">
+          <Button className="gap-2 self-start font-semibold">
+            <Plus size={16} />
+            <span>Add New Question</span>
+          </Button>
+        </Link>
       </div>
 
       {/* Questions Grid */}
@@ -197,22 +104,27 @@ export const AdminQuestionsPage: React.FC = () => {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-ubi-800 dark:border-ubi-400"></div>
         </div>
       ) : questions && questions.length > 0 ? (
-        <div className="grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 gap-3">
           {questions.map((q) => (
-            <Card key={q.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-ubi-300 dark:hover:border-ubi-700">
-              <div className="space-y-1.5 flex-1">
-                <div className="flex items-center gap-2.5">
+            <Card key={q.id} className="p-4 flex flex-col sm:flex-row sm:items-start justify-between gap-4 hover:border-ubi-300 dark:hover:border-ubi-700 transition-all shadow-sm group">
+              <div
+                onClick={() => setViewingQuestion(q)}
+                className="space-y-1.5 flex-1 min-w-0 cursor-pointer"
+                title="Click to view full question details"
+              >
+                <div className="flex items-center gap-2.5 flex-wrap">
                   <Badge variant={q.difficulty}>{q.difficulty}</Badge>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">{q.title}</h3>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white group-hover:text-ubi-800 dark:group-hover:text-ubi-400 transition-colors truncate">
+                    {q.title}
+                  </h3>
                 </div>
-                <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-1">{q.description}</p>
-                {q.input_format && (
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">
-                    <strong className="text-slate-700 dark:text-slate-300">Format:</strong> {q.input_format}
+                {q.description && (
+                  <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-1">
+                    {q.description}
                   </p>
                 )}
                 <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                  <span className="font-semibold">{q.test_cases?.length || 0} Test Cases</span>
+                  <span>{q.test_cases?.length || 0} Test Cases</span>
                   <span>•</span>
                   <span>{q.time_limit_ms}ms</span>
                   <span>•</span>
@@ -220,36 +132,42 @@ export const AdminQuestionsPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap self-start sm:self-start flex-shrink-0 pt-0.5 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
                 <Button
                   variant="outline"
-                  size="sm"
-                  onClick={() => handleOpenEditModal(q)}
-                  className="gap-1.5 font-semibold text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                  size="xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/admin/questions/edit/${q.id}`);
+                  }}
+                  className="font-medium"
                 >
-                  <Pencil size={14} />
+                  <Pencil size={12} />
                   <span>Edit</span>
                 </Button>
                 <Button
                   variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedQuestionForTestCases(q)}
-                  className="gap-1.5 font-semibold"
+                  size="xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedQuestionForTestCases(q);
+                  }}
+                  className="font-medium"
                 >
-                  <ListChecks size={14} className="text-ubi-800 dark:text-ubi-400" />
+                  <ListChecks size={12} className="text-ubi-800 dark:text-ubi-400" />
                   <span>Test Cases ({q.test_cases?.length || 0})</span>
                 </Button>
                 <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    if (window.confirm(`Delete question "${q.title}"?`)) {
-                      deleteQuestionMutation.mutate(q.id);
-                    }
+                  variant="outline"
+                  size="xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeletingQuestion(q);
                   }}
-                  className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:text-rose-300 dark:hover:bg-rose-500/10"
+                  className="font-medium text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={12} />
+                  <span>Delete</span>
                 </Button>
               </div>
             </Card>
@@ -261,196 +179,7 @@ export const AdminQuestionsPage: React.FC = () => {
         </Card>
       )}
 
-      {/* Create / Edit Question Modal */}
-      <Modal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        title={editingQuestionId ? 'Edit Coding Question' : 'Add New Coding Question'}
-        maxWidth="2xl"
-      >
-        <form onSubmit={handleSubmitQuestion} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-              Title
-            </label>
-            <input
-              type="text"
-              required
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Reverse Linked List"
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-            />
-          </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                Difficulty
-              </label>
-              <select
-                value={difficulty}
-                onChange={(e) => setDifficulty(e.target.value as QuestionDifficulty)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm font-medium"
-              >
-                <option value="easy">Easy</option>
-                <option value="medium">Medium</option>
-                <option value="hard">Hard</option>
-              </select>
-            </div>
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                Time Limit (ms)
-              </label>
-              <input
-                type="number"
-                value={timeLimitMs}
-                onChange={(e) => setTimeLimitMs(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                Memory (KB)
-              </label>
-              <input
-                type="number"
-                value={memoryLimitKb}
-                onChange={(e) => setMemoryLimitKb(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-              Description & Constraints (Rich Text)
-            </label>
-            <RichTextEditor
-              value={description}
-              onChange={setDescription}
-              placeholder="State problem statement, constraints, notes... Supports bold, lists, and code blocks."
-              rows={5}
-            />
-          </div>
-
-          <div>
-            <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-              Input Format <span className="text-rose-500">*</span>
-            </label>
-            <textarea
-              required
-              rows={2}
-              value={inputFormat}
-              onChange={(e) => setInputFormat(e.target.value)}
-              placeholder="e.g. First line contains N integers representing nums. Second line contains target integer."
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none"
-            />
-          </div>
-
-          <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-3 text-xs">
-            <h4 className="text-indigo-400 font-semibold mb-1">Input & Output Format Guidelines</h4>
-            <ul className="list-disc list-inside text-indigo-300/80 space-y-1">
-              <li><strong>Strings:</strong> Provide raw strings (no surrounding quotes).</li>
-              <li><strong>Arrays & Vectors:</strong> Use space-separated values (e.g., <code>1 2 3</code>) or newline-separated values. Do not use brackets like <code>[1, 2, 3]</code>.</li>
-            </ul>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                Sample Input
-              </label>
-              <textarea
-                rows={2}
-                value={sampleInput}
-                onChange={(e) => setSampleInput(e.target.value)}
-                placeholder="e.g. 5\n1 2 3 4 5"
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs font-mono"
-              />
-            </div>
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                Sample Output
-              </label>
-              <textarea
-                rows={2}
-                value={sampleOutput}
-                onChange={(e) => setSampleOutput(e.target.value)}
-                placeholder="e.g. 15"
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs font-mono"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsCreateModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <div className="flex items-center gap-2">
-              <Button 
-                type="button" 
-                size="sm" 
-                variant="secondary"
-                onClick={() => {
-                  if (!title || !description) {
-                    alert('Please enter a title and description before testing.');
-                    return;
-                  }
-                  setIsPlaygroundModalOpen(true);
-                }}
-              >
-                Test in Playground
-              </Button>
-              <Button
-                type="submit"
-                size="sm"
-                isLoading={createQuestionMutation.isPending || updateQuestionMutation.isPending}
-                className="font-semibold"
-              >
-                {editingQuestionId ? 'Update Question' : 'Save Question'}
-              </Button>
-            </div>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Admin Playground Modal */}
-      {isPlaygroundModalOpen && (
-        <AdminPlaygroundModal
-          isOpen={isPlaygroundModalOpen}
-          onClose={() => setIsPlaygroundModalOpen(false)}
-          questionData={{
-            id: editingQuestionId ?? undefined,
-            title,
-            description,
-            difficulty,
-            timeLimitMs,
-            memoryLimitKb,
-            sampleInput,
-            sampleOutput,
-            inputFormat,
-          }}
-          onChangeQuestionData={(updated) => {
-            setTitle(updated.title);
-            setDescription(updated.description);
-            setDifficulty(updated.difficulty);
-            setTimeLimitMs(updated.timeLimitMs);
-            setMemoryLimitKb(updated.memoryLimitKb);
-            setSampleInput(updated.sampleInput);
-            setSampleOutput(updated.sampleOutput);
-            setInputFormat(updated.inputFormat || '');
-          }}
-          onSaveQuestion={handleSaveFromPlayground}
-          isSaving={createQuestionMutation.isPending || updateQuestionMutation.isPending}
-          isEditMode={!!editingQuestionId}
-        />
-      )}
 
       {/* Test Cases Manager Modal */}
       <Modal
@@ -459,90 +188,84 @@ export const AdminQuestionsPage: React.FC = () => {
         title={`Test Cases: ${currentActiveQuestion?.title || ''}`}
         maxWidth="xl"
       >
-        <div className="space-y-5 text-xs">
+        <div className="space-y-3.5 text-xs">
           {/* Add New Test Case Form */}
-          <form onSubmit={handleAddTestCase} className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-3">
+          <form onSubmit={handleAddTestCase} className="p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
             <div className="flex justify-between items-center">
-              <h4 className="font-bold text-slate-900 dark:text-slate-200">Add Test Case</h4>
+              <h4 className="font-bold text-[11px] uppercase tracking-wider text-slate-900 dark:text-slate-200">Add Test Case</h4>
             </div>
             
-            <div className="bg-indigo-500/10 border border-indigo-500/20 rounded p-2 text-indigo-300/80 text-[11px]">
-              <strong>Format Note:</strong> For arrays/vectors, use space-separated values (no brackets). For strings, provide raw text without quotes.
+            <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-md p-1.5 text-indigo-300/90 text-[10px] leading-tight">
+              <strong>Format Note:</strong> Space-separated values for vectors. Raw text without quotes for strings.
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">Input Data</label>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-0.5">Input Data</label>
                 <textarea
                   required
-                  rows={2}
+                  rows={1.5}
                   value={tcInput}
                   onChange={(e) => setTcInput(e.target.value)}
-                  className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded text-slate-900 dark:text-slate-200 font-mono text-xs"
+                  className="w-full p-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-200 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ubi-800"
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">Expected Output</label>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-0.5">Expected Output</label>
                 <textarea
                   required
-                  rows={2}
+                  rows={1.5}
                   value={tcExpected}
                   onChange={(e) => setTcExpected(e.target.value)}
-                  className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded text-slate-900 dark:text-slate-200 font-mono text-xs"
+                  className="w-full p-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-200 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ubi-800"
                 />
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-1">
-              <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
+            <div className="flex items-center justify-between pt-0.5">
+              <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-700 dark:text-slate-300">
                 <input
                   type="checkbox"
                   checked={tcIsHidden}
                   onChange={(e) => setTcIsHidden(e.target.checked)}
                   className="rounded border-slate-300 dark:border-slate-700 text-ubi-800 focus:ring-0"
                 />
-                <span>Hidden Test Case (Used for evaluation only, invisible to candidate)</span>
+                <span>Hidden Case (Used for evaluation only)</span>
               </label>
 
-              <Button type="submit" size="sm" isLoading={addTestCaseMutation.isPending} className="font-semibold">
+              <Button type="submit" size="xs" isLoading={addTestCaseMutation.isPending} className="font-semibold px-3 py-1">
                 Add Case
               </Button>
             </div>
           </form>
 
           {/* Test Case List */}
-          <div className="space-y-2">
-            <h4 className="font-bold text-slate-900 dark:text-slate-300">
+          <div className="space-y-1.5">
+            <h4 className="font-bold text-[11px] uppercase tracking-wider text-slate-900 dark:text-slate-300">
               Existing Test Cases ({currentActiveQuestion?.test_cases?.length || 0})
             </h4>
-            <div className="max-h-60 overflow-y-auto space-y-2">
+            <div className="max-h-44 overflow-y-auto space-y-1.5 pr-0.5">
               {currentActiveQuestion?.test_cases && currentActiveQuestion.test_cases.length > 0 ? (
                 currentActiveQuestion.test_cases.map((tc, idx) => (
                   <div
                     key={tc.id}
-                    className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg flex items-start justify-between gap-3 text-xs"
+                    className="p-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg flex items-start justify-between gap-2 text-xs"
                   >
-                    <div className="space-y-1 flex-1">
+                    <div className="space-y-0.5 flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-800 dark:text-slate-300 font-mono">Case #{idx + 1}</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-300 font-mono text-[10px]">Case #{idx + 1}</span>
                         {tc.is_hidden ? (
-                          <span className="flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 dark:text-amber-400 dark:bg-amber-500/10 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-500/20 font-semibold">
-                            <EyeOff size={11} /> Hidden Case
+                          <span className="flex items-center gap-0.5 text-[9px] text-amber-700 bg-amber-50 dark:text-amber-400 dark:bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-200 dark:border-amber-500/20 font-semibold">
+                            <EyeOff size={10} /> Hidden Case
                           </span>
                         ) : (
-                          <span className="flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-500/20 font-semibold">
-                            <Eye size={11} /> Visible Sample
+                          <span className="flex items-center gap-0.5 text-[9px] text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-200 dark:border-emerald-500/20 font-semibold">
+                            <Eye size={10} /> Visible Sample
                           </span>
                         )}
                       </div>
-                      <div className="grid grid-cols-2 gap-2 pt-1 font-mono text-[11px]">
-                        <div>
-                          <span className="text-slate-500 block text-[10px] uppercase font-bold">Input:</span>
-                          <span className="text-slate-800 dark:text-slate-300 truncate block">{tc.input}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-500 block text-[10px] uppercase font-bold">Expected:</span>
-                          <span className="text-slate-800 dark:text-slate-300 truncate block">{tc.expected_output}</span>
-                        </div>
+                      <div className="grid grid-cols-2 gap-2 pt-0.5 font-mono text-[10px]">
+                        <div className="truncate"><span className="text-slate-500 font-bold">Input:</span> {tc.input}</div>
+                        <div className="truncate"><span className="text-slate-500 font-bold">Expected:</span> {tc.expected_output}</div>
                       </div>
                     </div>
 
@@ -551,12 +274,12 @@ export const AdminQuestionsPage: React.FC = () => {
                       className="text-rose-600 dark:text-rose-400 hover:text-rose-700 p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-500/10 transition"
                       title="Delete Test Case"
                     >
-                      <Trash2 size={15} />
+                      <Trash2 size={13} />
                     </button>
                   </div>
                 ))
               ) : (
-                <div className="text-center py-6 text-slate-500">
+                <div className="text-center py-4 text-slate-500 text-xs">
                   No test cases added yet.
                 </div>
               )}
@@ -564,6 +287,194 @@ export const AdminQuestionsPage: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      {/* Delete Confirmation Modal */}
+      {deletingQuestion && (
+        <Modal
+          isOpen={!!deletingQuestion}
+          onClose={() => setDeletingQuestion(null)}
+          title="Delete Question"
+          maxWidth="md"
+        >
+          <div className="space-y-5 text-slate-700 dark:text-slate-300">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 flex items-center justify-center flex-shrink-0">
+                <Trash2 size={20} />
+              </div>
+              <div className="space-y-1 pt-0.5">
+                <h4 className="font-semibold text-slate-900 dark:text-white text-sm">
+                  Delete "{deletingQuestion.title}"?
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Are you sure you want to delete this question? This will permanently remove it from the question bank and cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeletingQuestion(null)}
+                className="text-xs font-medium"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                isLoading={deleteQuestionMutation.isPending}
+                onClick={() => deleteQuestionMutation.mutate(deletingQuestion.id)}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs px-4"
+              >
+                Delete Question
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* View Question Details Modal */}
+      {viewingQuestion && (
+        <Modal
+          isOpen={!!viewingQuestion}
+          onClose={() => setViewingQuestion(null)}
+          title={`Question: ${viewingQuestion.title}`}
+          maxWidth="4xl"
+        >
+          <div className="space-y-5 text-slate-800 dark:text-slate-200">
+            {/* Header Metadata Banner */}
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl">
+              <div className="flex items-center gap-3">
+                <Badge variant={viewingQuestion.difficulty}>{viewingQuestion.difficulty}</Badge>
+                <span className="text-xs text-slate-500 font-mono font-semibold">ID: #{viewingQuestion.id}</span>
+              </div>
+
+              <div className="flex items-center gap-3 text-xs font-mono text-slate-600 dark:text-slate-400">
+                <span className="flex items-center gap-1">
+                  <Clock size={13} className="text-slate-400" />
+                  {viewingQuestion.time_limit_ms}ms limit
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <HardDrive size={13} className="text-slate-400" />
+                  {Math.round(viewingQuestion.memory_limit_kb / 1024)}MB memory
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1 font-semibold text-ubi-800 dark:text-ubi-400">
+                  <ListChecks size={13} />
+                  {viewingQuestion.test_cases?.length || 0} Test Cases
+                </span>
+              </div>
+            </div>
+
+            {/* Main Problem Statement */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Problem Statement
+              </h4>
+              <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed">
+                <MarkdownRenderer content={viewingQuestion.description} />
+              </div>
+            </div>
+
+            {/* Input Format */}
+            {viewingQuestion.input_format && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                  <AlignLeft size={13} className="text-ubi-800 dark:text-ubi-400" />
+                  <span>Input Format</span>
+                </h4>
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                  <MarkdownRenderer content={viewingQuestion.input_format} />
+                </div>
+              </div>
+            )}
+
+            {/* Test Cases Summary */}
+            {viewingQuestion.test_cases && viewingQuestion.test_cases.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Test Cases ({viewingQuestion.test_cases.length})
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-1">
+                  {viewingQuestion.test_cases.map((tc, idx) => (
+                    <div
+                      key={tc.id || idx}
+                      className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2 text-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">
+                          Case {idx + 1} {tc.is_hidden ? '(Hidden)' : '(Sample)'}
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-400">
+                          Weight: {tc.weight}
+                        </span>
+                      </div>
+                      <div className="space-y-1 font-mono text-[11px]">
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold">Input:</span>
+                          <div className="p-1.5 bg-white dark:bg-slate-900 rounded border border-slate-200/80 dark:border-slate-800 truncate">
+                            {tc.input || <span className="italic text-slate-400">Empty</span>}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold">Expected Output:</span>
+                          <div className="p-1.5 bg-white dark:bg-slate-900 rounded border border-slate-200/80 dark:border-slate-800 truncate">
+                            {tc.expected_output || <span className="italic text-slate-400">Empty</span>}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Bottom Actions */}
+            <div className="sticky bottom-0 bg-white dark:bg-slate-900 pt-3.5 pb-0.5 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (viewingQuestion) {
+                      const qId = viewingQuestion.id;
+                      setViewingQuestion(null);
+                      navigate(`/admin/questions/edit/${qId}`);
+                    }
+                  }}
+                  className="gap-1.5 text-amber-700 border-amber-200 dark:text-amber-400 dark:border-amber-800/60 font-semibold text-xs"
+                >
+                  <Pencil size={14} />
+                  <span>Edit Question</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const qForTc = viewingQuestion;
+                    setViewingQuestion(null);
+                    setSelectedQuestionForTestCases(qForTc);
+                  }}
+                  className="gap-1.5 font-semibold text-xs"
+                >
+                  <ListChecks size={14} className="text-ubi-800 dark:text-ubi-400" />
+                  <span>Manage Test Cases</span>
+                </Button>
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setViewingQuestion(null)}
+                className="text-xs font-medium"
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

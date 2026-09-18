@@ -1,3 +1,5 @@
+import hashlib
+import random
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from sqlalchemy import select, func, desc, and_
@@ -11,12 +13,12 @@ from backend.app.models.exam import (
     AssignedQuestion,
     AssignmentStatus
 )
-from backend.app.models.question import Question, QuestionDifficulty
-from backend.app.models.submission import Submission
+from backend.app.models.question import Question, QuestionDifficulty, MCQOption
+from backend.app.models.submission import Submission, MCQResponse
 from backend.app.models.user import User
 from backend.app.models.result import ExamResult, QuestionScore
 from backend.app.models.proctoring import ExamProctoringLog
-from backend.app.schemas.question import StudentQuestionView
+from backend.app.schemas.question import StudentQuestionView, StudentMCQOptionView
 from backend.app.schemas.exam import (
     ExamStartResponse,
     MyQuestionsResponse,
@@ -43,8 +45,11 @@ async def start_exam_for_student(
     """
     Idempotently starts the exam for a student:
     - If already assigned, returns existing assignment and locked questions.
-    - If not assigned, randomly picks 1 easy + 2 medium from exam_question_pool,
-      sets started_at and deadline_at = started_at + duration_minutes.
+    - If not assigned:
+      - Randomly picks 1 easy + 2 medium coding questions (selection_mode='random')
+      - Fetches ALL fixed/MCQ questions (selection_mode='fixed') for this exam
+      - Every student gets all fixed MCQs in the pool + the random coding draw
+      - Sets started_at and deadline_at = started_at + duration_minutes.
     """
     now = datetime.now(timezone.utc)
 
@@ -110,48 +115,73 @@ async def start_exam_for_student(
             questions=assigned_views
         )
 
-    # 3. Create new assignment with random questions (1 easy + 2 medium)
-    # Easy question selection
+    # 3. Create new assignment
+    # A. Fetch fixed questions (All MCQs added to pool with selection_mode='fixed')
+    stmt_fixed = (
+        select(ExamQuestionPool.question_id)
+        .where(
+            ExamQuestionPool.exam_id == exam_id,
+            ExamQuestionPool.selection_mode == "fixed"
+        )
+        .order_by(ExamQuestionPool.id.asc())
+    )
+    fixed_q_ids = list((await db.execute(stmt_fixed)).scalars().all())
+
+    # B. Fetch random coding questions (1 easy + 2 medium with selection_mode='random')
     stmt_easy = (
         select(ExamQuestionPool.question_id)
         .where(
             ExamQuestionPool.exam_id == exam_id,
-            ExamQuestionPool.difficulty == QuestionDifficulty.EASY
+            ExamQuestionPool.difficulty == QuestionDifficulty.EASY,
+            ExamQuestionPool.selection_mode == "random"
         )
         .order_by(func.random())
         .limit(1)
     )
     easy_q_ids = (await db.execute(stmt_easy)).scalars().all()
 
-    # Medium question selection
     stmt_med = (
         select(ExamQuestionPool.question_id)
         .where(
             ExamQuestionPool.exam_id == exam_id,
-            ExamQuestionPool.difficulty == QuestionDifficulty.MEDIUM
+            ExamQuestionPool.difficulty == QuestionDifficulty.MEDIUM,
+            ExamQuestionPool.selection_mode == "random"
         )
         .order_by(func.random())
         .limit(2)
     )
     med_q_ids = (await db.execute(stmt_med)).scalars().all()
 
-    selected_ids = list(easy_q_ids) + list(med_q_ids)
+    coding_selected_ids = list(easy_q_ids) + list(med_q_ids)
 
-    # If the pool doesn't have enough easy/medium questions, pick remaining from any difficulty
-    if len(selected_ids) < 3:
+    # Check if there are any random pool questions available to fallback from
+    stmt_random_pool = (
+        select(ExamQuestionPool.question_id)
+        .where(
+            ExamQuestionPool.exam_id == exam_id,
+            ExamQuestionPool.selection_mode == "random"
+        )
+    )
+    all_random_count = len((await db.execute(stmt_random_pool)).scalars().all())
+
+    if all_random_count > 0 and len(coding_selected_ids) < 3:
         stmt_fallback = (
             select(ExamQuestionPool.question_id)
             .where(
                 ExamQuestionPool.exam_id == exam_id,
-                ExamQuestionPool.question_id.not_in(selected_ids) if selected_ids else True
+                ExamQuestionPool.selection_mode == "random",
+                ExamQuestionPool.question_id.not_in(coding_selected_ids) if coding_selected_ids else True
             )
             .order_by(func.random())
-            .limit(3 - len(selected_ids))
+            .limit(3 - len(coding_selected_ids))
         )
         fallback_ids = (await db.execute(stmt_fallback)).scalars().all()
-        selected_ids.extend(fallback_ids)
+        coding_selected_ids.extend(fallback_ids)
 
-    if not selected_ids:
+    # Total assigned questions: all fixed MCQs + selected coding questions
+    final_assigned_q_ids = fixed_q_ids + coding_selected_ids
+
+    if not final_assigned_q_ids:
         raise HTTPException(
             status_code=400,
             detail="No questions available in the exam pool. Please contact administrator."
@@ -171,8 +201,7 @@ async def start_exam_for_student(
     await db.flush()
 
     # Link questions to assignment with fixed order
-    for idx, q_id in enumerate(selected_ids):
-        # Fetch question difficulty
+    for idx, q_id in enumerate(final_assigned_q_ids):
         q_stmt = select(Question.difficulty).where(Question.id == q_id)
         q_diff = (await db.execute(q_stmt)).scalar_one_or_none() or QuestionDifficulty.EASY
 
@@ -197,6 +226,57 @@ async def start_exam_for_student(
         duration_minutes=exam.duration_minutes,
         questions=assigned_views
     )
+
+
+async def mark_question_viewed(
+    db: AsyncSession,
+    exam_id: int,
+    question_id: int,
+    user_id: int
+) -> Optional[datetime]:
+    """
+    Marks a question as viewed by the student:
+    - If assigned_questions.question_started_at is already set, does nothing (idempotent).
+    - If not yet set: sets question_started_at = now(). If question has mcq_time_limit_seconds,
+      computes and stores question_deadline_at = question_started_at + timedelta(seconds=mcq_time_limit_seconds).
+    - Returns question_deadline_at.
+    """
+    now = datetime.now(timezone.utc)
+
+    # 1. Fetch assignment
+    assign_stmt = select(ExamAssignment).where(
+        ExamAssignment.exam_id == exam_id,
+        ExamAssignment.user_id == user_id
+    )
+    assignment = (await db.execute(assign_stmt)).scalar_one_or_none()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Exam assignment not found")
+
+    # 2. Fetch assigned question and question
+    stmt = (
+        select(AssignedQuestion, Question)
+        .join(Question, AssignedQuestion.question_id == Question.id)
+        .where(
+            AssignedQuestion.assignment_id == assignment.id,
+            AssignedQuestion.question_id == question_id
+        )
+    )
+    row = (await db.execute(stmt)).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Question is not assigned to this exam")
+
+    assigned_q, q = row
+
+    if assigned_q.question_started_at is not None:
+        return assigned_q.question_deadline_at
+
+    assigned_q.question_started_at = now
+    if q.question_type == "mcq" and q.mcq_time_limit_seconds and q.mcq_time_limit_seconds > 0:
+        assigned_q.question_deadline_at = now + timedelta(seconds=q.mcq_time_limit_seconds)
+
+    await db.commit()
+    await db.refresh(assigned_q)
+    return assigned_q.question_deadline_at
 
 
 async def get_student_exam_questions(
@@ -268,7 +348,6 @@ async def finish_exam_for_student(
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     if assignment.status in [AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]:
-        # Already finalized
         return await get_exam_result_detail(db, assignment.id)
 
     assignment.status = AssignmentStatus.SUBMITTED
@@ -281,7 +360,13 @@ async def finish_exam_for_student(
 
 async def _get_assigned_question_views(db: AsyncSession, assignment_id: int) -> List[StudentQuestionView]:
     """
-    Loads the locked questions for an assignment and includes the latest code if available.
+    Loads the locked questions for an assignment.
+    For MCQ questions:
+      - Deterministically shuffles options per (assignment_id, question_id).
+      - Returns StudentMCQOptionView (strictly excludes is_correct).
+      - Includes previously selected_option_ids and lock status.
+    For coding questions:
+      - Includes the latest code draft/submission.
     """
     stmt = (
         select(AssignedQuestion, Question)
@@ -293,35 +378,112 @@ async def _get_assigned_question_views(db: AsyncSession, assignment_id: int) -> 
 
     views = []
     for assigned_q, q in rows:
-        # Find latest submission
-        stmt_sub = (
-            select(Submission)
-            .where(
-                Submission.assignment_id == assignment_id,
-                Submission.question_id == q.id
+        if q.question_type == "mcq":
+            # 1. Fetch options
+            opt_stmt = (
+                select(MCQOption)
+                .where(MCQOption.question_id == q.id)
+                .order_by(MCQOption.order_index.asc(), MCQOption.id.asc())
             )
-            .order_by(desc(Submission.submitted_at))
-            .limit(1)
-        )
-        latest_sub = (await db.execute(stmt_sub)).scalar_one_or_none()
+            raw_options = list((await db.execute(opt_stmt)).scalars().all())
 
-        views.append(StudentQuestionView(
-            id=q.id,
-            title=q.title,
-            description=q.description,
-            difficulty=q.difficulty,
-            time_limit_ms=q.time_limit_ms,
-            memory_limit_kb=q.memory_limit_kb,
-            sample_input=q.sample_input,
-            sample_output=q.sample_output,
-            input_format=q.input_format,
-            order_index=assigned_q.order_index,
-            last_code=latest_sub.code if latest_sub else None,
-            last_language=latest_sub.language if latest_sub else None,
-            starter_code=get_question_starter_templates(q.title, question=q),
-            function_signature=get_question_signature(q.title, question=q),
-            status=latest_sub.status if latest_sub else "unattempted"
-        ))
+            # 2. Deterministic shuffle based on hash of assignment_id and question_id
+            seed_material = f"{assignment_id}:{q.id}".encode("utf-8")
+            seed = int.from_bytes(hashlib.sha256(seed_material).digest()[:8], "big")
+            rng = random.Random(seed)
+            shuffled_options = list(raw_options)
+            rng.shuffle(shuffled_options)
+
+            student_options = [
+                StudentMCQOptionView(
+                    id=opt.id,
+                    option_text=opt.option_text,
+                    order_index=idx
+                )
+                for idx, opt in enumerate(shuffled_options)
+            ]
+
+            # 3. Check for previous response
+            resp_stmt = select(MCQResponse).where(
+                MCQResponse.assignment_id == assignment_id,
+                MCQResponse.question_id == q.id
+            )
+            mcq_resp = (await db.execute(resp_stmt)).scalar_one_or_none()
+
+            selected_ids = mcq_resp.selected_option_ids if mcq_resp else None
+            is_locked = mcq_resp.is_locked if mcq_resp else False
+
+            # Check if per-question deadline has passed
+            now = datetime.now(timezone.utc)
+            if assigned_q.question_deadline_at and now > assigned_q.question_deadline_at:
+                is_locked = True
+
+            views.append(StudentQuestionView(
+                id=q.id,
+                title=q.title,
+                description=q.description,
+                difficulty=q.difficulty,
+                time_limit_ms=q.time_limit_ms,
+                memory_limit_kb=q.memory_limit_kb,
+                sample_input=q.sample_input,
+                sample_output=q.sample_output,
+                input_format=q.input_format,
+                order_index=assigned_q.order_index,
+                last_code=None,
+                last_language=None,
+                starter_code=None,
+                function_signature=None,
+                status="submitted" if (selected_ids and len(selected_ids) > 0) else "unattempted",
+                question_type="mcq",
+                marks=q.marks,
+                mcq_time_limit_seconds=q.mcq_time_limit_seconds,
+                is_multi_select=q.is_multi_select,
+                question_started_at=assigned_q.question_started_at,
+                question_deadline_at=assigned_q.question_deadline_at,
+                mcq_options=student_options,
+                selected_option_ids=selected_ids,
+                is_mcq_locked=is_locked
+            ))
+
+        else:
+            # Coding question
+            stmt_sub = (
+                select(Submission)
+                .where(
+                    Submission.assignment_id == assignment_id,
+                    Submission.question_id == q.id
+                )
+                .order_by(desc(Submission.submitted_at))
+                .limit(1)
+            )
+            latest_sub = (await db.execute(stmt_sub)).scalar_one_or_none()
+
+            views.append(StudentQuestionView(
+                id=q.id,
+                title=q.title,
+                description=q.description,
+                difficulty=q.difficulty,
+                time_limit_ms=q.time_limit_ms,
+                memory_limit_kb=q.memory_limit_kb,
+                sample_input=q.sample_input,
+                sample_output=q.sample_output,
+                input_format=q.input_format,
+                order_index=assigned_q.order_index,
+                last_code=latest_sub.code if latest_sub else None,
+                last_language=latest_sub.language if latest_sub else None,
+                starter_code=get_question_starter_templates(q.title, question=q),
+                function_signature=get_question_signature(q.title, question=q),
+                status=latest_sub.status if latest_sub else "unattempted",
+                question_type="coding",
+                marks=None,
+                mcq_time_limit_seconds=None,
+                is_multi_select=False,
+                question_started_at=assigned_q.question_started_at,
+                question_deadline_at=assigned_q.question_deadline_at,
+                mcq_options=None,
+                selected_option_ids=None,
+                is_mcq_locked=False
+            ))
     return views
 
 
@@ -344,132 +506,124 @@ async def get_exam_result_detail(
     )
     row = (await db.execute(stmt)).first()
     if not row:
-        raise HTTPException(status_code=404, detail="Assignment result not found")
+        raise HTTPException(status_code=404, detail="Assignment not found")
 
     assignment, exam, user, result = row
 
-    if is_admin:
-        # Fetch question scores for admin only
-        stmt_scores = (
-            select(QuestionScore, Question)
-            .join(Question, QuestionScore.question_id == Question.id)
-            .where(QuestionScore.assignment_id == assignment_id)
+    if not is_admin:
+        return ExamResultDetail(
+            exam_id=exam.id,
+            exam_title=exam.title,
+            student_name="",
+            student_roll_no=None,
+            total_score=0.0,
+            rank=None,
+            duration_minutes=exam.duration_minutes,
+            submitted_at=assignment.submitted_at,
+            question_breakdown=[]
         )
-        score_rows = (await db.execute(stmt_scores)).all()
 
-        scores_breakdown = [
-            QuestionScoreBreakdown(
-                question_id=q.id,
-                question_title=q.title,
-                difficulty=q.difficulty.value,
-                correctness=qs.correctness,
-                time_taken_sec=qs.time_taken_sec,
-                difficulty_weight=qs.difficulty_weight,
-                time_bonus=qs.time_bonus,
-                final_score=qs.final_score,
-            )
-            for qs, q in score_rows
-        ]
-        total_score_val = result.total_score if result else 0.0
-        rank_val = result.rank if result else None
-    else:
-        # For students, all scores are withheld and fully controlled by admin
-        scores_breakdown = []
-        total_score_val = None
-        rank_val = None
+    # For Admins: include score breakdown
+    stmt_scores = (
+        select(QuestionScore, Question)
+        .join(Question, QuestionScore.question_id == Question.id)
+        .where(QuestionScore.assignment_id == assignment_id)
+        .order_by(QuestionScore.id)
+    )
+    score_rows = (await db.execute(stmt_scores)).all()
+
+    breakdown = []
+    for qs, q in score_rows:
+        breakdown.append(QuestionScoreBreakdown(
+            question_id=q.id,
+            question_title=q.title,
+            difficulty=q.difficulty,
+            difficulty_weight=qs.difficulty_weight,
+            correctness=qs.correctness,
+            time_taken_sec=qs.time_taken_sec,
+            final_score=qs.final_score
+        ))
 
     return ExamResultDetail(
-        assignment_id=assignment.id,
         exam_id=exam.id,
         exam_title=exam.title,
         student_name=user.name,
-        roll_no=user.roll_no,
-        status=assignment.status.value,
-        total_score=total_score_val,
-        rank=rank_val,
+        student_roll_no=user.roll_no,
+        total_score=result.total_score if result else 0.0,
+        rank=result.rank if result else None,
+        duration_minutes=exam.duration_minutes,
         submitted_at=assignment.submitted_at,
-        question_scores=scores_breakdown
+        question_breakdown=breakdown
     )
 
 
 async def get_exam_leaderboard(db: AsyncSession, exam_id: int) -> List[LeaderboardEntry]:
     """
-    Returns ranked leaderboard for an exam.
+    Returns leaderboard for an exam, ordered by rank ascending (admin only).
     """
     stmt = (
         select(ExamResult, ExamAssignment, User)
         .join(ExamAssignment, ExamResult.assignment_id == ExamAssignment.id)
         .join(User, ExamAssignment.user_id == User.id)
         .where(ExamAssignment.exam_id == exam_id)
-        .order_by(
-            desc(ExamResult.total_score),
-            ExamAssignment.submitted_at.asc().nulls_last()
-        )
+        .order_by(ExamResult.rank.asc().nullslast())
     )
     rows = (await db.execute(stmt)).all()
 
     leaderboard = []
-    for rank_idx, (res, assignment, user) in enumerate(rows, start=1):
+    for res_obj, assign, user in rows:
         leaderboard.append(LeaderboardEntry(
-            rank=res.rank or rank_idx,
+            rank=res_obj.rank or 9999,
             student_name=user.name,
             roll_no=user.roll_no,
-            total_score=res.total_score,
-            status=assignment.status.value,
-            submitted_at=assignment.submitted_at
+            total_score=res_obj.total_score,
+            submitted_at=assign.submitted_at
         ))
     return leaderboard
 
 
 async def get_live_exam_monitoring(db: AsyncSession, exam_id: int) -> List[MonitoringStudentView]:
     """
-    Admin endpoint to view real-time status of all students in an exam.
+    Fetches real-time status of all students for an exam.
     """
-    now = datetime.now(timezone.utc)
-    stmt = (
+    stmt_assigns = (
         select(ExamAssignment, User, ExamResult)
         .join(User, ExamAssignment.user_id == User.id)
         .outerjoin(ExamResult, ExamResult.assignment_id == ExamAssignment.id)
         .where(ExamAssignment.exam_id == exam_id)
-        .order_by(ExamAssignment.started_at.desc().nulls_last())
+        .order_by(ExamAssignment.id.desc())
     )
-    rows = (await db.execute(stmt)).all()
-
+    rows = (await db.execute(stmt_assigns)).all()
+    now = datetime.now(timezone.utc)
     monitoring_list = []
-    for assignment, user, result in rows:
-        # Count submissions
-        sub_count_stmt = (
-            select(func.count(Submission.id))
-            .where(Submission.assignment_id == assignment.id)
-        )
-        sub_count = (await db.execute(sub_count_stmt)).scalar() or 0
 
-        # Count proctoring flags / infractions
-        flags_count_stmt = (
-            select(func.count(ExamProctoringLog.id))
-            .where(ExamProctoringLog.assignment_id == assignment.id)
-        )
-        flags_count = (await db.execute(flags_count_stmt)).scalar() or 0
+    for assign, user, result in rows:
+        count_stmt = select(func.count(Submission.id)).where(Submission.assignment_id == assign.id)
+        submission_count = (await db.execute(count_stmt)).scalar() or 0
 
-        time_remaining = None
-        if assignment.status == AssignmentStatus.IN_PROGRESS and assignment.deadline_at:
-            delta = (assignment.deadline_at - now).total_seconds()
-            time_remaining = max(0.0, delta)
+        flags_stmt = select(func.count(ExamProctoringLog.id)).where(ExamProctoringLog.assignment_id == assign.id)
+        flags_count = (await db.execute(flags_stmt)).scalar() or 0
+
+        remaining_sec = None
+        if assign.status == AssignmentStatus.IN_PROGRESS and assign.deadline_at:
+            delta = (assign.deadline_at - now).total_seconds()
+            remaining_sec = max(0, int(delta))
 
         monitoring_list.append(MonitoringStudentView(
-            assignment_id=assignment.id,
+            assignment_id=assign.id,
             user_id=user.id,
             name=user.name,
             email=user.email,
             roll_no=user.roll_no,
-            status=assignment.status.value,
-            started_at=assignment.started_at,
-            deadline_at=assignment.deadline_at,
-            submitted_at=assignment.submitted_at,
-            time_remaining_sec=time_remaining,
-            submissions_count=sub_count,
-            current_score=result.total_score if result else None,
-            flags_count=flags_count
+            college=user.college,
+            candidate_group=user.candidate_group,
+            status=assign.status.value,
+            started_at=assign.started_at,
+            submitted_at=assign.submitted_at,
+            remaining_seconds=remaining_sec,
+            submission_count=submission_count,
+            flags_count=flags_count,
+            current_score=result.total_score if result else None
         ))
 
     return monitoring_list
@@ -481,10 +635,7 @@ async def get_candidate_dossier(
     assignment_id: int
 ) -> CandidateDossierResponse:
     """
-    Returns comprehensive candidate dossier for administrators:
-    - Candidate info, timings, total score, and rank
-    - Integrity rating and full proctoring audit log
-    - Assigned questions, submitted code, language, status, test results, and question score
+    Detailed inspector for admin: code submissions, MCQ answers, proctoring log.
     """
     stmt = (
         select(ExamAssignment, User, Exam, ExamResult)
@@ -545,39 +696,70 @@ async def get_candidate_dossier(
 
     question_dossiers = []
     for assigned_q, q, q_score in assigned_rows:
-        stmt_sub = (
-            select(Submission)
-            .where(
-                Submission.assignment_id == assignment_id,
-                Submission.question_id == q.id
+        if q.question_type == "mcq":
+            resp_stmt = select(MCQResponse).where(
+                MCQResponse.assignment_id == assignment_id,
+                MCQResponse.question_id == q.id
             )
-            .order_by(desc(Submission.is_final), desc(Submission.submitted_at))
-            .limit(1)
-        )
-        sub = (await db.execute(stmt_sub)).scalar_one_or_none()
+            mcq_resp = (await db.execute(resp_stmt)).scalar_one_or_none()
 
-        time_taken = q_score.time_taken_sec if q_score else 0.0
-        if not time_taken and sub and assignment.started_at:
-            time_taken = max(0.0, (sub.submitted_at - assignment.started_at).total_seconds())
+            time_taken = q_score.time_taken_sec if q_score else 0.0
+            if not time_taken and mcq_resp and mcq_resp.answered_at and assignment.started_at:
+                time_taken = max(0.0, (mcq_resp.answered_at - assignment.started_at).total_seconds())
 
-        question_dossiers.append(CandidateQuestionSubmissionDossier(
-            question_id=q.id,
-            question_title=q.title,
-            difficulty=assigned_q.difficulty.value,
-            order_index=assigned_q.order_index,
-            correctness=q_score.correctness if q_score else (float(sub.test_cases_passed) / float(sub.total_test_cases) if sub and sub.total_test_cases else 0.0),
-            difficulty_weight=q_score.difficulty_weight if q_score else 10.0,
-            final_score=q_score.final_score if q_score else 0.0,
-            time_taken_sec=round(time_taken, 1),
-            has_submission=bool(sub),
-            code=sub.code if sub else None,
-            language=sub.language if sub else None,
-            status=sub.status if sub else "Unattempted",
-            test_cases_passed=sub.test_cases_passed if sub else 0,
-            total_test_cases=sub.total_test_cases if sub else 0,
-            exec_time_ms=sub.exec_time_ms if sub else None,
-            submitted_at=sub.submitted_at if sub else None
-        ))
+            selected_opts_str = ", ".join(str(o) for o in (mcq_resp.selected_option_ids if mcq_resp else []))
+            question_dossiers.append(CandidateQuestionSubmissionDossier(
+                question_id=q.id,
+                question_title=f"[MCQ] {q.title}",
+                difficulty=assigned_q.difficulty.value,
+                order_index=assigned_q.order_index,
+                correctness=q_score.correctness if q_score else (1.0 if (mcq_resp and mcq_resp.is_correct) else 0.0),
+                difficulty_weight=q_score.difficulty_weight if q_score else (q.marks or 10.0),
+                final_score=q_score.final_score if q_score else (mcq_resp.marks_awarded if mcq_resp and mcq_resp.marks_awarded is not None else 0.0),
+                time_taken_sec=round(time_taken, 1),
+                has_submission=bool(mcq_resp and mcq_resp.selected_option_ids),
+                code=f"Selected Options: {selected_opts_str}" if selected_opts_str else "No option selected",
+                language="MCQ",
+                status="Correct" if (mcq_resp and mcq_resp.is_correct) else ("Wrong" if (mcq_resp and mcq_resp.selected_option_ids) else "Unattempted"),
+                test_cases_passed=1 if (mcq_resp and mcq_resp.is_correct) else 0,
+                total_test_cases=1,
+                exec_time_ms=None,
+                submitted_at=mcq_resp.answered_at if mcq_resp else None
+            ))
+        else:
+            stmt_sub = (
+                select(Submission)
+                .where(
+                    Submission.assignment_id == assignment_id,
+                    Submission.question_id == q.id
+                )
+                .order_by(desc(Submission.is_final), desc(Submission.submitted_at))
+                .limit(1)
+            )
+            sub = (await db.execute(stmt_sub)).scalar_one_or_none()
+
+            time_taken = q_score.time_taken_sec if q_score else 0.0
+            if not time_taken and sub and assignment.started_at:
+                time_taken = max(0.0, (sub.submitted_at - assignment.started_at).total_seconds())
+
+            question_dossiers.append(CandidateQuestionSubmissionDossier(
+                question_id=q.id,
+                question_title=q.title,
+                difficulty=assigned_q.difficulty.value,
+                order_index=assigned_q.order_index,
+                correctness=q_score.correctness if q_score else (float(sub.test_cases_passed) / float(sub.total_test_cases) if sub and sub.total_test_cases else 0.0),
+                difficulty_weight=q_score.difficulty_weight if q_score else 10.0,
+                final_score=q_score.final_score if q_score else 0.0,
+                time_taken_sec=round(time_taken, 1),
+                has_submission=bool(sub),
+                code=sub.code if sub else None,
+                language=sub.language if sub else None,
+                status=sub.status if sub else "Unattempted",
+                test_cases_passed=sub.test_cases_passed if sub else 0,
+                total_test_cases=sub.total_test_cases if sub else 0,
+                exec_time_ms=sub.exec_time_ms if sub else None,
+                submitted_at=sub.submitted_at if sub else None
+            ))
 
     return CandidateDossierResponse(
         assignment_id=assignment.id,
@@ -599,4 +781,3 @@ async def get_candidate_dossier(
         proctoring_logs=[ProctoringLogItem.model_validate(l) for l in log_rows],
         questions=question_dossiers
     )
-

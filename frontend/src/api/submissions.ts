@@ -1,5 +1,5 @@
 import api from './client';
-import { RunCodeResponse, SubmitCodeResponse } from '../types';
+import { RunCodeResponse, SubmitCodeResponse, SubmitMCQResponseResult } from '../types';
 
 export const submissionsApi = {
   run: async (questionId: number, code: string, language: string): Promise<RunCodeResponse> => {
@@ -28,6 +28,19 @@ export const submissionsApi = {
 
   getStatus: async (submissionId: number) => {
     const res = await api.get(`/submissions/${submissionId}/status`);
+    return res.data;
+  },
+
+  submitMCQ: async (
+    assignmentId: number,
+    questionId: number,
+    selectedOptionIds: string[]
+  ): Promise<SubmitMCQResponseResult> => {
+    const res = await api.post<SubmitMCQResponseResult>('/mcq-responses', {
+      assignment_id: assignmentId,
+      question_id: questionId,
+      selected_option_ids: selectedOptionIds,
+    });
     return res.data;
   },
 };

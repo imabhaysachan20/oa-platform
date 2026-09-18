@@ -115,6 +115,13 @@ export const AdminQuestionsPage: React.FC = () => {
                 title="Click to view full question details"
               >
                 <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase ${
+                    q.question_type === 'mcq'
+                      ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                      : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                  }`}>
+                    {q.question_type === 'mcq' ? 'MCQ' : 'Coding'}
+                  </span>
                   <Badge variant={q.difficulty}>{q.difficulty}</Badge>
                   <h3 className="text-base font-bold text-slate-900 dark:text-white group-hover:text-ubi-800 dark:group-hover:text-ubi-400 transition-colors truncate">
                     {q.title}
@@ -126,27 +133,46 @@ export const AdminQuestionsPage: React.FC = () => {
                   </p>
                 )}
                 <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                  <span>{q.test_cases?.length || 0} Test Cases</span>
-                  <span>•</span>
-                  <span>{q.time_limit_ms}ms</span>
-                  <span>•</span>
-                  <span>{Math.round(q.memory_limit_kb / 1024)}MB</span>
+                  {q.question_type === 'mcq' ? (
+                    <>
+                      <span>{q.mcq_options?.length || 0} Options</span>
+                      <span>•</span>
+                      <span>{q.marks || 10} Marks</span>
+                      {q.is_multi_select && <span>• <span className="text-purple-600 dark:text-purple-400 font-semibold">Multi-select</span></span>}
+                      {q.mcq_time_limit_seconds ? (
+                        <>
+                          <span>•</span>
+                          <span>{q.mcq_time_limit_seconds}s limit</span>
+                        </>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <span>{q.test_cases?.length || 0} Test Cases</span>
+                      <span>•</span>
+                      <span>{q.time_limit_ms}ms</span>
+                      <span>•</span>
+                      <span>{Math.round(q.memory_limit_kb / 1024)}MB</span>
+                    </>
+                  )}
                 </div>
               </div>
 
               <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap self-start sm:self-start flex-shrink-0 pt-0.5 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
-                <Button
-                  variant="outline"
-                  size="xs"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPlaygroundQuestion(q);
-                  }}
-                  className="font-medium text-ubi-800 dark:text-ubi-400 hover:text-ubi-900 dark:hover:text-ubi-300"
-                >
-                  <Play size={12} />
-                  <span>Playground</span>
-                </Button>
+                {q.question_type !== 'mcq' && (
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPlaygroundQuestion(q);
+                    }}
+                    className="font-medium text-ubi-800 dark:text-ubi-400 hover:text-ubi-900 dark:hover:text-ubi-300"
+                  >
+                    <Play size={12} />
+                    <span>Playground</span>
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="xs"
@@ -159,18 +185,20 @@ export const AdminQuestionsPage: React.FC = () => {
                   <Pencil size={12} />
                   <span>Edit</span>
                 </Button>
-                <Button
-                  variant="outline"
-                  size="xs"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedQuestionForTestCases(q);
-                  }}
-                  className="font-medium"
-                >
-                  <ListChecks size={12} className="text-ubi-800 dark:text-ubi-400" />
-                  <span>Test Cases ({q.test_cases?.length || 0})</span>
-                </Button>
+                {q.question_type !== 'mcq' && (
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedQuestionForTestCases(q);
+                    }}
+                    className="font-medium"
+                  >
+                    <ListChecks size={12} className="text-ubi-800 dark:text-ubi-400" />
+                    <span>Test Cases ({q.test_cases?.length || 0})</span>
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="xs"

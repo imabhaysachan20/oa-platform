@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
@@ -79,6 +80,23 @@ class SubmissionHistoryItem(BaseModel):
     exec_time_ms: Optional[float] = None
     is_final: bool
     submitted_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SubmitMCQResponseRequest(BaseModel):
+    assignment_id: int
+    question_id: int
+    selected_option_ids: List[uuid.UUID]
+
+
+class SubmitMCQResponseResponse(BaseModel):
+    assignment_id: int
+    question_id: int
+    selected_option_ids: List[uuid.UUID]
+    answered_at: Optional[datetime] = None
+    is_locked: bool = False
 
     class Config:
         from_attributes = True

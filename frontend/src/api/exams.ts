@@ -50,4 +50,9 @@ export const examsApi = {
     });
     return res.data;
   },
+
+  markQuestionViewed: async (examId: number, questionId: number): Promise<{ question_deadline_at?: string | null }> => {
+    const res = await api.post<{ question_deadline_at?: string | null }>(`/exams/${examId}/questions/${questionId}/view`);
+    return res.data;
+  },
 };

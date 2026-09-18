@@ -463,17 +463,25 @@ export const AdminCreateExamPage: React.FC = () => {
                       )}
                       <span className="text-slate-900 dark:text-slate-200 font-semibold">{q.title}</span>
                     </div>
-                    <span
-                      className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${
-                        q.difficulty === 'easy'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
-                          : q.difficulty === 'medium'
-                          ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
-                          : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
-                      }`}
-                    >
-                      {q.difficulty}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {q.question_type === 'mcq' ? (
+                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded border bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800">
+                          MCQ ({q.marks || 10}m)
+                        </span>
+                      ) : (
+                        <span
+                          className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${
+                            q.difficulty === 'easy'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                              : q.difficulty === 'medium'
+                              ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+                              : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
+                          }`}
+                        >
+                          Code ({q.difficulty})
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               })
@@ -484,9 +492,17 @@ export const AdminCreateExamPage: React.FC = () => {
             )}
           </div>
 
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-            Note: At exam start, questions will be randomly sampled from this pool per candidate.
-          </p>
+          <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-[11px] text-slate-600 dark:text-slate-400 space-y-1">
+            <p className="font-semibold text-slate-800 dark:text-slate-200">
+              📌 Assessment Assignment Rules:
+            </p>
+            <p>
+              • <strong>MCQ Questions:</strong> All selected MCQs are included for <strong>every student</strong> taking this exam (fixed assignment).
+            </p>
+            <p>
+              • <strong>Coding Questions:</strong> Sampled randomly per candidate (1 Easy + 2 Medium) from the coding questions in this pool.
+            </p>
+          </div>
         </Card>
 
         {/* Action Buttons */}

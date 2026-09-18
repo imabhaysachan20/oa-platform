@@ -46,6 +46,7 @@ class ExamQuestionPool(Base, TimestampMixin):
         Enum(QuestionDifficulty, values_callable=lambda x: [e.value for e in x]),
         nullable=False
     )
+    selection_mode: Mapped[str] = mapped_column(String(20), default="random", nullable=False)
 
     __table_args__ = (
         Index("ix_exam_question_pool_exam_id_difficulty", "exam_id", "difficulty"),
@@ -87,6 +88,7 @@ class ExamAssignment(Base, TimestampMixin):
         order_by="AssignedQuestion.order_index"
     )
     submissions = relationship("Submission", back_populates="assignment", cascade="all, delete-orphan")
+    mcq_responses = relationship("MCQResponse", back_populates="assignment", cascade="all, delete-orphan")
     question_scores = relationship("QuestionScore", back_populates="assignment", cascade="all, delete-orphan")
     result = relationship("ExamResult", back_populates="assignment", uselist=False, cascade="all, delete-orphan")
     proctoring_logs = relationship("ExamProctoringLog", back_populates="assignment", cascade="all, delete-orphan")
@@ -103,6 +105,8 @@ class AssignedQuestion(Base, TimestampMixin):
         nullable=False
     )
     order_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    question_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    question_deadline_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("assignment_id", "question_id", name="uq_assignment_question"),

@@ -43,6 +43,22 @@ export interface ParameterDef {
   type: string;
 }
 
+export type QuestionType = 'coding' | 'mcq';
+
+export interface MCQOption {
+  id?: string;
+  question_id?: number;
+  option_text: string;
+  is_correct?: boolean;
+  order_index?: number;
+}
+
+export interface StudentMCQOption {
+  id: string;
+  option_text: string;
+  order_index: number;
+}
+
 export interface Question {
   id: number;
   title: string;
@@ -60,6 +76,13 @@ export interface Question {
   starter_code?: Record<string, string>;
   driver_code?: Record<string, string>;
   test_cases?: TestCase[];
+  // MCQ properties
+  question_type?: QuestionType;
+  marks?: number;
+  mcq_time_limit_seconds?: number;
+  is_multi_select?: boolean;
+  mcq_options?: MCQOption[];
+  options?: MCQOption[];
 }
 
 export interface StudentQuestionView {
@@ -78,6 +101,30 @@ export interface StudentQuestionView {
   starter_code?: Record<string, string>;
   function_signature?: string;
   status?: string;
+  // MCQ properties
+  question_type?: QuestionType;
+  marks?: number;
+  mcq_time_limit_seconds?: number;
+  is_multi_select?: boolean;
+  question_started_at?: string;
+  question_deadline_at?: string;
+  mcq_options?: StudentMCQOption[];
+  selected_option_ids?: string[];
+  is_mcq_locked?: boolean;
+}
+
+export interface SubmitMCQResponsePayload {
+  assignment_id: number;
+  question_id: number;
+  selected_option_ids: string[];
+}
+
+export interface SubmitMCQResponseResult {
+  assignment_id: number;
+  question_id: number;
+  selected_option_ids: string[];
+  answered_at?: string;
+  is_locked: boolean;
 }
 
 export type AssignmentStatus = 'not_started' | 'in_progress' | 'submitted' | 'auto_submitted';

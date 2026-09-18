@@ -1,6 +1,8 @@
+import uuid
 from typing import Optional, List, Dict, Any
 import enum
 from sqlalchemy import String, Text, Integer, Float, Boolean, ForeignKey, Enum, JSON
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.models.base import Base, TimestampMixin
 
@@ -28,6 +30,12 @@ class Question(Base, TimestampMixin):
     sample_output: Mapped[str] = mapped_column(Text, nullable=True)
     input_format: Mapped[str] = mapped_column(Text, nullable=True)
 
+    # MCQ Support Fields
+    question_type: Mapped[str] = mapped_column(String(20), default="coding", nullable=False, index=True)
+    marks: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    mcq_time_limit_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    is_multi_select: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     # LeetCode Signature & Code Execution Engine Fields
     function_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     function_signature: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -40,6 +48,21 @@ class Question(Base, TimestampMixin):
     test_cases = relationship("TestCase", back_populates="question", cascade="all, delete-orphan")
     pool_entries = relationship("ExamQuestionPool", back_populates="question", cascade="all, delete-orphan")
     assigned_instances = relationship("AssignedQuestion", back_populates="question")
+    mcq_options = relationship("MCQOption", back_populates="question", cascade="all, delete-orphan", order_by="MCQOption.order_index")
+    mcq_responses = relationship("MCQResponse", back_populates="question", cascade="all, delete-orphan")
+
+
+class MCQOption(Base, TimestampMixin):
+    __tablename__ = "mcq_options"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    question_id: Mapped[int] = mapped_column(ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True)
+    option_text: Mapped[str] = mapped_column(Text, nullable=False)
+    is_correct: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Relationship
+    question = relationship("Question", back_populates="mcq_options")
 
 
 class TestCase(Base, TimestampMixin):

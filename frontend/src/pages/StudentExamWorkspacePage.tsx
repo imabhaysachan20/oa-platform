@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { examsApi } from '../api/exams';
@@ -6,6 +6,7 @@ import { submissionsApi } from '../api/submissions';
 import { useExamStore, STARTER_CODE } from '../store/examStore';
 import { useThemeStore } from '../store/themeStore';
 import { QuestionPanel } from '../components/QuestionPanel';
+import { MCQPanel } from '../components/MCQPanel';
 import { CodeEditor } from '../components/CodeEditor';
 import { OutputConsole } from '../components/OutputConsole';
 import { Timer } from '../components/ui/Timer';
@@ -33,6 +34,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
     codeDrafts,
     selectedLanguage,
     runOutputs,
+    mcqSelections,
     isRunningCode,
     isSubmittingCode,
     deadlineAt,
@@ -42,6 +44,8 @@ export const StudentExamWorkspacePage: React.FC = () => {
     setCodeDraft,
     setSelectedLanguage,
     setRunOutput,
+    setMCQSelection,
+    updateQuestionDeadline,
     setIsRunningCode,
     setIsSubmittingCode,
     resetExamState,
@@ -169,6 +173,67 @@ export const StudentExamWorkspacePage: React.FC = () => {
     ? codeDrafts[currentQ.id]?.[currentLang] || currentStarter
     : '';
   const currentOutput = currentQ ? runOutputs[currentQ.id] || null : null;
+
+  // Track question view and start timer for MCQ questions (idempotent on server)
+  useEffect(() => {
+    if (!currentQ || currentQ.question_type !== 'mcq') return;
+
+    let isMounted = true;
+    examsApi
+      .markQuestionViewed(id, currentQ.id)
+      .then((res) => {
+        if (isMounted && res?.question_deadline_at) {
+          updateQuestionDeadline(currentQ.id, res.question_deadline_at);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to mark question viewed:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentQ?.id, currentQ?.question_type, id, updateQuestionDeadline]);
+
+  // MCQ Selection & Debounced Autosave
+  const [isSavingMCQ, setIsSavingMCQ] = useState(false);
+  const [mcqSaveError, setMcqSaveError] = useState<string | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleMCQSelectionChange = (newSelectedIds: string[]) => {
+    if (!currentQ || !examData?.assignment_id) return;
+    const qId = currentQ.id;
+    const assignId = examData.assignment_id;
+
+    // Update store state immediately for snappy UI
+    setMCQSelection(qId, newSelectedIds);
+    setMcqSaveError(null);
+
+    // Debounce server submission by 300ms
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    setIsSavingMCQ(true);
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await submissionsApi.submitMCQ(assignId, qId, newSelectedIds);
+        setIsSavingMCQ(false);
+      } catch (err: any) {
+        setIsSavingMCQ(false);
+        setMcqSaveError(err.response?.data?.detail || 'Failed to autosave answer');
+      }
+    }, 300);
+  };
+
+  // Clean up timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Handle "Run Code" against visible sample cases
   const handleRunCode = async () => {
@@ -364,67 +429,79 @@ export const StudentExamWorkspacePage: React.FC = () => {
           />
         </div>
 
-        {/* Right Column: Code Editor & Console (7 cols on large) */}
-        <div className="lg:col-span-7 h-full flex flex-col gap-2.5 overflow-hidden min-h-0">
-          {/* Editor Container */}
-          <div className={`transition-all duration-200 min-h-0 overflow-hidden ${isConsoleExpanded ? 'flex-1' : 'flex-[3]'}`}>
-            <CodeEditor
-              value={currentCode}
-              onChange={(val) => setCodeDraft(currentQ.id, currentLang, val)}
-              language={currentLang}
-              onLanguageChange={(lang) => setSelectedLanguage(currentQ.id, lang)}
-              starterCode={currentStarter}
-              onReset={() => currentQ && setCodeDraft(currentQ.id, currentLang, currentStarter)}
-              onPasteAttempt={() => logInfraction('PASTE_ATTEMPT')}
+        {/* Right Column: Code Editor & Console OR MCQ Panel */}
+        {currentQ.question_type === 'mcq' ? (
+          <div className="lg:col-span-7 h-full overflow-hidden">
+            <MCQPanel
+              question={currentQ}
+              selectedOptionIds={mcqSelections[currentQ.id] || currentQ.selected_option_ids || []}
+              onChangeSelection={handleMCQSelectionChange}
+              isSaving={isSavingMCQ}
+              saveError={mcqSaveError}
             />
           </div>
-
-          {/* Action Buttons Bar */}
-          <div className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-2 rounded-xl shrink-0 shadow-sm">
-            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span>Proctored Exam</span>
+        ) : (
+          <div className="lg:col-span-7 h-full flex flex-col gap-2.5 overflow-hidden min-h-0">
+            {/* Editor Container */}
+            <div className={`transition-all duration-200 min-h-0 overflow-hidden ${isConsoleExpanded ? 'flex-1' : 'flex-[3]'}`}>
+              <CodeEditor
+                value={currentCode}
+                onChange={(val) => setCodeDraft(currentQ.id, currentLang, val)}
+                language={currentLang}
+                onLanguageChange={(lang) => setSelectedLanguage(currentQ.id, lang)}
+                starterCode={currentStarter}
+                onReset={() => currentQ && setCodeDraft(currentQ.id, currentLang, currentStarter)}
+                onPasteAttempt={() => logInfraction('PASTE_ATTEMPT')}
+              />
             </div>
 
-            <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleRunCode}
-                isLoading={isRunningCode}
-                disabled={isSubmittingCode}
-                className="gap-1.5 font-semibold"
-              >
-                <Play size={14} className="text-ubi-800 dark:text-ubi-400" />
-                <span>Run Code</span>
-              </Button>
+            {/* Action Buttons Bar */}
+            <div className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-2 rounded-xl shrink-0 shadow-sm">
+              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span>Proctored Exam</span>
+              </div>
 
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleSubmitCode}
-                isLoading={isSubmittingCode}
-                disabled={isRunningCode}
-                className="gap-1.5 font-semibold"
-              >
-                <Send size={14} />
-                <span>Submit Solution</span>
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleRunCode}
+                  isLoading={isRunningCode}
+                  disabled={isSubmittingCode}
+                  className="gap-1.5 font-semibold"
+                >
+                  <Play size={14} className="text-ubi-800 dark:text-ubi-400" />
+                  <span>Run Code</span>
+                </Button>
+
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleSubmitCode}
+                  isLoading={isSubmittingCode}
+                  disabled={isRunningCode}
+                  className="gap-1.5 font-semibold"
+                >
+                  <Send size={14} />
+                  <span>Submit Solution</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* Output & Test Cases Console */}
+            <div className={`transition-all duration-200 min-h-0 overflow-hidden ${isConsoleExpanded ? 'flex-[3]' : 'flex-[2]'}`}>
+              <OutputConsole
+                output={currentOutput}
+                isRunning={isRunningCode}
+                sampleInput={currentQ?.sample_input}
+                sampleOutput={currentQ?.sample_output}
+                isExpanded={isConsoleExpanded}
+                onToggleExpand={() => setIsConsoleExpanded(!isConsoleExpanded)}
+              />
             </div>
           </div>
-
-          {/* Output & Test Cases Console */}
-          <div className={`transition-all duration-200 min-h-0 overflow-hidden ${isConsoleExpanded ? 'flex-[3]' : 'flex-[2]'}`}>
-            <OutputConsole
-              output={currentOutput}
-              isRunning={isRunningCode}
-              sampleInput={currentQ?.sample_input}
-              sampleOutput={currentQ?.sample_output}
-              isExpanded={isConsoleExpanded}
-              onToggleExpand={() => setIsConsoleExpanded(!isConsoleExpanded)}
-            />
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Confirmation Finish Modal */}
@@ -445,16 +522,36 @@ export const StudentExamWorkspacePage: React.FC = () => {
             <p className="font-bold text-slate-900 dark:text-slate-200 uppercase tracking-wider text-[11px]">
               Question Submission Status:
             </p>
-            {questions.map((q, idx) => (
-              <div key={q.id} className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-slate-800/60 last:border-0">
-                <span className="font-medium text-slate-700 dark:text-slate-300">
-                  Question {idx + 1} ({q.difficulty}):
-                </span>
-                <span className={q.status && q.status !== 'unattempted' ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-slate-400 font-medium'}>
-                  {q.status && q.status !== 'unattempted' ? q.status : 'Not Submitted'}
-                </span>
-              </div>
-            ))}
+            {questions.map((q, idx) => {
+              const isMCQ = q.question_type === 'mcq';
+              const hasMCQAnswer = (mcqSelections[q.id]?.length || 0) > 0 || (q.selected_option_ids && q.selected_option_ids.length > 0);
+              return (
+                <div key={q.id} className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-slate-800/60 last:border-0">
+                  <span className="font-medium text-slate-700 dark:text-slate-300">
+                    Question {idx + 1} ({isMCQ ? 'MCQ' : q.difficulty}):
+                  </span>
+                  <span
+                    className={
+                      isMCQ
+                        ? hasMCQAnswer
+                          ? 'text-emerald-600 dark:text-emerald-400 font-bold'
+                          : 'text-slate-400 font-medium'
+                        : q.status && q.status !== 'unattempted'
+                        ? 'text-emerald-600 dark:text-emerald-400 font-bold'
+                        : 'text-slate-400 font-medium'
+                    }
+                  >
+                    {isMCQ
+                      ? hasMCQAnswer
+                        ? 'Answer Selected'
+                        : 'Not Answered'
+                      : q.status && q.status !== 'unattempted'
+                      ? q.status
+                      : 'Not Submitted'}
+                  </span>
+                </div>
+              );
+            })}
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">

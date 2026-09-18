@@ -1,5 +1,6 @@
 import csv
 import io
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from pydantic import BaseModel
@@ -10,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.database import get_db
 from backend.app.core.security import get_current_admin, get_password_hash
 from backend.app.models.user import User, UserRole
-from backend.app.models.question import Question, TestCase, QuestionDifficulty
-from backend.app.models.exam import Exam, ExamQuestionPool, AssignedQuestion
+from backend.app.models.question import Question, TestCase, QuestionDifficulty, MCQOption
+from backend.app.models.exam import Exam, ExamQuestionPool, AssignedQuestion, ExamAssignment, AssignmentStatus
 from backend.app.models.submission import Submission
 from backend.app.models.result import QuestionScore
 from backend.app.schemas.exam import (
@@ -93,10 +94,12 @@ async def create_exam(
         for q_id in body.question_ids:
             q = (await db.execute(select(Question).where(Question.id == q_id))).scalar_one_or_none()
             if q:
+                selection_mode = "fixed" if q.question_type == "mcq" else "random"
                 pool_entry = ExamQuestionPool(
                     exam_id=exam.id,
                     question_id=q.id,
-                    difficulty=q.difficulty
+                    difficulty=q.difficulty,
+                    selection_mode=selection_mode
                 )
                 db.add(pool_entry)
 
@@ -161,12 +164,14 @@ async def update_exam(
 
         unique_q_ids = list(dict.fromkeys(body.question_ids))
         for q_id in unique_q_ids:
-            q_diff = (await db.execute(select(Question.difficulty).where(Question.id == q_id))).scalar_one_or_none()
-            if q_diff is not None:
+            q_obj = (await db.execute(select(Question).where(Question.id == q_id))).scalar_one_or_none()
+            if q_obj is not None:
+                selection_mode = "fixed" if q_obj.question_type == "mcq" else "random"
                 db.add(ExamQuestionPool(
                     exam_id=exam.id,
                     question_id=q_id,
-                    difficulty=q_diff
+                    difficulty=q_obj.difficulty,
+                    selection_mode=selection_mode
                 ))
         await db.flush()
 
@@ -228,10 +233,12 @@ async def add_question_to_pool(
     )).scalar_one_or_none()
 
     if not existing:
+        selection_mode = "fixed" if q.question_type == "mcq" else "random"
         db.add(ExamQuestionPool(
             exam_id=exam_id,
             question_id=question_id,
-            difficulty=q.difficulty
+            difficulty=q.difficulty,
+            selection_mode=selection_mode
         ))
         await db.commit()
     return {"message": "Question added to exam pool"}
@@ -310,7 +317,11 @@ async def list_questions(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    stmt = select(Question).options(selectinload(Question.test_cases)).order_by(Question.id.asc())
+    stmt = (
+        select(Question)
+        .options(selectinload(Question.test_cases), selectinload(Question.mcq_options))
+        .order_by(Question.id.asc())
+    )
     questions = (await db.execute(stmt)).scalars().all()
     return [QuestionResponse.model_validate(q) for q in questions]
 
@@ -321,9 +332,22 @@ async def create_question(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
+    if body.question_type == "mcq":
+        if not body.options or len(body.options) < 2:
+            raise HTTPException(status_code=400, detail="MCQ questions require at least 2 options.")
+        correct_count = sum(1 for o in body.options if o.is_correct)
+        if not body.is_multi_select and correct_count != 1:
+            raise HTTPException(status_code=400, detail="Single-select MCQ must have exactly one correct option.")
+        if body.is_multi_select and correct_count < 1:
+            raise HTTPException(status_code=400, detail="Multi-select MCQ must have at least one correct option.")
+        if body.marks is None or body.marks <= 0:
+            raise HTTPException(status_code=400, detail="MCQ marks must be greater than 0.")
+        if body.mcq_time_limit_seconds is not None and body.mcq_time_limit_seconds <= 0:
+            raise HTTPException(status_code=400, detail="MCQ time limit seconds must be greater than 0.")
+
     starters = body.starter_code
     sig = body.function_signature
-    if body.function_name and body.parameters is not None and not starters:
+    if body.question_type != "mcq" and body.function_name and body.parameters is not None and not starters:
         gen = generate_all_templates(body.function_name, body.parameters, body.return_type or "void")
         starters = gen["starter"]
         sig = sig or gen["function_signature"]
@@ -337,6 +361,10 @@ async def create_question(
         sample_input=body.sample_input,
         sample_output=body.sample_output,
         input_format=body.input_format,
+        question_type=body.question_type or "coding",
+        marks=body.marks,
+        mcq_time_limit_seconds=body.mcq_time_limit_seconds,
+        is_multi_select=body.is_multi_select,
         function_name=body.function_name,
         function_signature=sig,
         parameters=body.parameters,
@@ -347,20 +375,31 @@ async def create_question(
     db.add(q)
     await db.flush()
 
-    if body.test_cases:
+    if body.question_type == "mcq" and body.options:
+        for idx, opt_data in enumerate(body.options):
+            db.add(MCQOption(
+                question_id=q.id,
+                option_text=opt_data.option_text,
+                is_correct=opt_data.is_correct,
+                order_index=opt_data.order_index if opt_data.order_index is not None else idx
+            ))
+    elif body.test_cases:
         for tc_data in body.test_cases:
-            tc = TestCase(
+            db.add(TestCase(
                 question_id=q.id,
                 input=tc_data.input,
                 expected_output=tc_data.expected_output,
                 is_hidden=tc_data.is_hidden,
                 weight=tc_data.weight
-            )
-            db.add(tc)
+            ))
 
     await db.commit()
 
-    q_stmt = select(Question).options(selectinload(Question.test_cases)).where(Question.id == q.id)
+    q_stmt = (
+        select(Question)
+        .options(selectinload(Question.test_cases), selectinload(Question.mcq_options))
+        .where(Question.id == q.id)
+    )
     q_with_tc = (await db.execute(q_stmt)).scalar_one()
     return QuestionResponse.model_validate(q_with_tc)
 
@@ -371,7 +410,11 @@ async def get_question(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    stmt = select(Question).options(selectinload(Question.test_cases)).where(Question.id == question_id)
+    stmt = (
+        select(Question)
+        .options(selectinload(Question.test_cases), selectinload(Question.mcq_options))
+        .where(Question.id == question_id)
+    )
     q = (await db.execute(stmt)).scalar_one_or_none()
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
@@ -385,10 +428,55 @@ async def update_question(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    stmt = select(Question).where(Question.id == question_id)
+    stmt = select(Question).options(selectinload(Question.mcq_options)).where(Question.id == question_id)
     q = (await db.execute(stmt)).scalar_one_or_none()
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
+
+    # If modifying options or answer key, verify exam is not live or already started
+    if body.options is not None:
+        now = datetime.now(timezone.utc)
+        attached_exams_stmt = (
+            select(Exam)
+            .join(ExamQuestionPool, ExamQuestionPool.exam_id == Exam.id)
+            .where(ExamQuestionPool.question_id == question_id)
+        )
+        attached_exams = (await db.execute(attached_exams_stmt)).scalars().all()
+        for ex in attached_exams:
+            if ex.start_time and ex.start_time <= now:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Cannot modify answer key: this question is already in use in an active or completed exam"
+                )
+            active_assign_stmt = select(ExamAssignment).where(
+                ExamAssignment.exam_id == ex.id,
+                ExamAssignment.status != AssignmentStatus.NOT_STARTED
+            )
+            has_started = (await db.execute(active_assign_stmt)).first()
+            if has_started:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Cannot modify answer key: this question is already in use in an active or completed exam"
+                )
+
+        if len(body.options) < 2:
+            raise HTTPException(status_code=400, detail="MCQ questions require at least 2 options.")
+        is_multi = body.is_multi_select if body.is_multi_select is not None else q.is_multi_select
+        correct_count = sum(1 for o in body.options if o.is_correct)
+        if not is_multi and correct_count != 1:
+            raise HTTPException(status_code=400, detail="Single-select MCQ must have exactly one correct option.")
+        if is_multi and correct_count < 1:
+            raise HTTPException(status_code=400, detail="Multi-select MCQ must have at least one correct option.")
+
+        # Update options
+        await db.execute(delete(MCQOption).where(MCQOption.question_id == question_id))
+        for idx, opt_data in enumerate(body.options):
+            db.add(MCQOption(
+                question_id=question_id,
+                option_text=opt_data.option_text,
+                is_correct=opt_data.is_correct,
+                order_index=opt_data.order_index if opt_data.order_index is not None else idx
+            ))
 
     if body.title is not None:
         q.title = body.title
@@ -406,6 +494,18 @@ async def update_question(
         q.sample_output = body.sample_output
     if body.input_format is not None:
         q.input_format = body.input_format
+    if body.question_type is not None:
+        q.question_type = body.question_type
+    if body.marks is not None:
+        if body.marks <= 0:
+            raise HTTPException(status_code=400, detail="Marks must be greater than 0.")
+        q.marks = body.marks
+    if body.mcq_time_limit_seconds is not None:
+        if body.mcq_time_limit_seconds <= 0:
+            raise HTTPException(status_code=400, detail="MCQ time limit seconds must be greater than 0.")
+        q.mcq_time_limit_seconds = body.mcq_time_limit_seconds
+    if body.is_multi_select is not None:
+        q.is_multi_select = body.is_multi_select
     if body.function_name is not None:
         q.function_name = body.function_name
     if body.function_signature is not None:
@@ -421,7 +521,11 @@ async def update_question(
 
     await db.commit()
 
-    q_stmt = select(Question).options(selectinload(Question.test_cases)).where(Question.id == q.id)
+    q_stmt = (
+        select(Question)
+        .options(selectinload(Question.test_cases), selectinload(Question.mcq_options))
+        .where(Question.id == q.id)
+    )
     q_with_tc = (await db.execute(q_stmt)).scalar_one()
     return QuestionResponse.model_validate(q_with_tc)
 
@@ -440,6 +544,7 @@ async def delete_question(
     await db.execute(delete(AssignedQuestion).where(AssignedQuestion.question_id == question_id))
     await db.execute(delete(QuestionScore).where(QuestionScore.question_id == question_id))
     await db.execute(delete(Submission).where(Submission.question_id == question_id))
+    await db.execute(delete(MCQOption).where(MCQOption.question_id == question_id))
     await db.execute(delete(TestCase).where(TestCase.question_id == question_id))
 
     await db.delete(q)

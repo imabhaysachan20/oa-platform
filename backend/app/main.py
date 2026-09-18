@@ -7,7 +7,7 @@ from backend.app.core.config import settings
 from backend.app.core.limiter import limiter
 from backend.app.api.auth import router as auth_router
 from backend.app.api.exams import router as exams_router
-from backend.app.api.submissions import router as submissions_router
+from backend.app.api.submissions import router as submissions_router, mcq_router
 from backend.app.api.admin import router as admin_router
 
 app = FastAPI(
@@ -43,6 +43,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
 app.include_router(exams_router, prefix=settings.API_V1_PREFIX)
 app.include_router(submissions_router, prefix=settings.API_V1_PREFIX)
+app.include_router(mcq_router, prefix=settings.API_V1_PREFIX)
 app.include_router(admin_router, prefix=settings.API_V1_PREFIX)
 
 

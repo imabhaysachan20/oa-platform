@@ -22,7 +22,8 @@ from backend.app.services.exam_service import (
     get_student_exam_questions,
     finish_exam_for_student,
     get_exam_leaderboard,
-    get_exam_result_detail
+    get_exam_result_detail,
+    mark_question_viewed
 )
 
 router = APIRouter(prefix="/exams", tags=["exams"])
@@ -265,4 +266,19 @@ async def batch_save_proctoring_logs(
     db.add_all(log_records)
     await db.commit()
     return {"saved": len(log_records)}
+
+
+@router.post("/{exam_id}/questions/{question_id}/view")
+async def mark_question_as_viewed(
+    exam_id: int,
+    question_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Marks a question as viewed by the student and starts its individual timer if applicable.
+    Idempotent: if already set, does not reset the timer.
+    """
+    deadline = await mark_question_viewed(db, exam_id, question_id, current_user.id)
+    return {"question_deadline_at": deadline}
 

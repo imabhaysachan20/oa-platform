@@ -23,6 +23,8 @@ interface ExamState {
   selectedLanguage: Record<number, string>;
   // questionId -> last run output
   runOutputs: Record<number, RunCodeResponse | null>;
+  // questionId -> array of selected MCQ option IDs
+  mcqSelections: Record<number, string[]>;
   isRunningCode: boolean;
   isSubmittingCode: boolean;
 
@@ -39,6 +41,8 @@ interface ExamState {
   setCodeDraft: (questionId: number, language: string, code: string) => void;
   setSelectedLanguage: (questionId: number, language: string) => void;
   setRunOutput: (questionId: number, output: RunCodeResponse | null) => void;
+  setMCQSelection: (questionId: number, selectedOptionIds: string[]) => void;
+  updateQuestionDeadline: (questionId: number, deadline: string) => void;
   setIsRunningCode: (val: boolean) => void;
   setIsSubmittingCode: (val: boolean) => void;
   resetExamState: () => void;
@@ -56,6 +60,7 @@ export const useExamStore = create<ExamState>((set) => ({
   codeDrafts: {},
   selectedLanguage: {},
   runOutputs: {},
+  mcqSelections: {},
   isRunningCode: false,
   isSubmittingCode: false,
 
@@ -65,8 +70,15 @@ export const useExamStore = create<ExamState>((set) => ({
       const drafts = isSameSession ? { ...state.codeDrafts } : {};
       const langs = isSameSession ? { ...state.selectedLanguage } : {};
       const runOutputs = isSameSession ? { ...state.runOutputs } : {};
+      const mcqSelections = isSameSession ? { ...state.mcqSelections } : {};
 
       questions.forEach((q) => {
+        if (q.question_type === 'mcq') {
+          if (!mcqSelections[q.id]) {
+            mcqSelections[q.id] = q.selected_option_ids || [];
+          }
+        }
+
         const lang = q.last_language || 'python';
         if (!langs[q.id]) {
           langs[q.id] = lang;
@@ -96,6 +108,7 @@ export const useExamStore = create<ExamState>((set) => ({
         codeDrafts: drafts,
         selectedLanguage: langs,
         runOutputs,
+        mcqSelections,
       };
     });
   },
@@ -139,6 +152,24 @@ export const useExamStore = create<ExamState>((set) => ({
       },
     })),
 
+  setMCQSelection: (questionId, selectedOptionIds) =>
+    set((state) => ({
+      mcqSelections: {
+        ...state.mcqSelections,
+        [questionId]: selectedOptionIds,
+      },
+      questions: state.questions.map((q) =>
+        q.id === questionId ? { ...q, selected_option_ids: selectedOptionIds } : q
+      ),
+    })),
+
+  updateQuestionDeadline: (questionId, deadline) =>
+    set((state) => ({
+      questions: state.questions.map((q) =>
+        q.id === questionId ? { ...q, question_deadline_at: deadline } : q
+      ),
+    })),
+
   setIsRunningCode: (val) => set({ isRunningCode: val }),
   setIsSubmittingCode: (val) => set({ isSubmittingCode: val }),
 
@@ -155,6 +186,7 @@ export const useExamStore = create<ExamState>((set) => ({
       codeDrafts: {},
       selectedLanguage: {},
       runOutputs: {},
+      mcqSelections: {},
       isRunningCode: false,
       isSubmittingCode: false,
     }),

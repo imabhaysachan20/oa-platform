@@ -31,6 +31,20 @@ export const useAuthStore = create<AuthState>((set) => {
       set({ token, user, isAuthenticated: true });
     },
     logout: () => {
+      const userRaw = localStorage.getItem('ubicode_user');
+      if (userRaw) {
+        try {
+          const u = JSON.parse(userRaw);
+          if (u?.id) {
+            // Clean up user-scoped exam keys and any legacy exam keys
+            Object.keys(localStorage).forEach((key) => {
+              if (key.startsWith(`u_${u.id}_exam_`) || key.startsWith('exam_')) {
+                localStorage.removeItem(key);
+              }
+            });
+          }
+        } catch {}
+      }
       localStorage.removeItem('ubicode_token');
       localStorage.removeItem('ubicode_user');
       useExamStore.getState().resetExamState();

@@ -153,15 +153,24 @@ export const useExamStore = create<ExamState>((set) => ({
     })),
 
   setMCQSelection: (questionId, selectedOptionIds) =>
-    set((state) => ({
-      mcqSelections: {
-        ...state.mcqSelections,
-        [questionId]: selectedOptionIds,
-      },
-      questions: state.questions.map((q) =>
-        q.id === questionId ? { ...q, selected_option_ids: selectedOptionIds } : q
-      ),
-    })),
+    set((state) => {
+      const current = state.mcqSelections[questionId] || [];
+      if (
+        current.length === selectedOptionIds.length &&
+        current.every((val, idx) => val === selectedOptionIds[idx])
+      ) {
+        return state;
+      }
+      return {
+        mcqSelections: {
+          ...state.mcqSelections,
+          [questionId]: selectedOptionIds,
+        },
+        questions: state.questions.map((q) =>
+          q.id === questionId ? { ...q, selected_option_ids: selectedOptionIds } : q
+        ),
+      };
+    }),
 
   updateQuestionDeadline: (questionId, deadline) =>
     set((state) => ({

@@ -5,6 +5,7 @@ import { Modal } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
 import { CodeEditor } from './CodeEditor';
+import { MarkdownRenderer } from './ui/RichTextEditor';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -244,13 +245,13 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
 
                     <div className="flex items-center gap-1.5 text-[10px] pt-0.5">
                       {q.has_submission ? (
-                        q.status === 'Accepted' ? (
+                        q.status === 'Accepted' || q.status === 'Correct' ? (
                           <span className="text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                            <CheckCircle2 size={11} /> Passed ({q.test_cases_passed}/{q.total_test_cases})
+                            <CheckCircle2 size={11} /> {q.question_type === 'mcq' ? 'Correct' : 'Passed'} ({q.test_cases_passed}/{q.total_test_cases})
                           </span>
                         ) : (
                           <span className="text-rose-700 dark:text-rose-400 font-semibold flex items-center gap-1">
-                            <XCircle size={11} /> {q.status} ({q.test_cases_passed}/{q.total_test_cases})
+                            <XCircle size={11} /> {q.question_type === 'mcq' ? 'Wrong' : q.status} ({q.test_cases_passed}/{q.total_test_cases})
                           </span>
                         )
                       ) : (
@@ -261,10 +262,118 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                 ))}
               </div>
 
-              {/* Code Viewer (8 cols) */}
-              <div className="col-span-8 flex flex-col gap-2 overflow-hidden min-h-0 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3">
+              {/* Question Solution / Code Viewer (8 cols) */}
+              <div className="col-span-8 flex flex-col gap-2 overflow-hidden min-h-0 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
                 {currentQuestion ? (
-                  currentQuestion.has_submission && currentQuestion.code ? (
+                  currentQuestion.question_type === 'mcq' ? (
+                    <div className="flex-1 flex flex-col gap-3.5 overflow-y-auto min-h-0 pr-1">
+                      {/* Top Header */}
+                      <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800 shrink-0">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                            {currentQuestion.is_multi_select ? 'Multiple Choice (Multi-Select)' : 'Single Choice (Single-Select)'}
+                          </span>
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                            Awarded: <span className="font-mono text-ubi-800 dark:text-ubi-400 font-extrabold">{currentQuestion.final_score.toFixed(1)} / {currentQuestion.difficulty_weight} pts</span>
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs">
+                          {currentQuestion.submitted_at && (
+                            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                              Answered at: {new Date(currentQuestion.submitted_at).toLocaleTimeString()}
+                            </span>
+                          )}
+                          {currentQuestion.status === 'Correct' ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+                              <CheckCircle2 size={13} /> Correct Selection
+                            </span>
+                          ) : currentQuestion.has_submission ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300 dark:border-rose-800 flex items-center gap-1">
+                              <XCircle size={13} /> Incorrect Selection
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                              Unattempted
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Question Description */}
+                      {currentQuestion.description && (
+                        <div className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed border-b border-slate-100 dark:border-slate-800/80 pb-3">
+                          <MarkdownRenderer content={currentQuestion.description} />
+                        </div>
+                      )}
+
+                      {/* Options & Candidate Answer Review */}
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                          <span>Answer Options & Candidate Response:</span>
+                          <span className="text-[11px] font-normal normal-case text-slate-400">
+                            {currentQuestion.selected_option_ids?.length || 0} selected by candidate
+                          </span>
+                        </div>
+
+                        {currentQuestion.mcq_options && currentQuestion.mcq_options.length > 0 ? (
+                          currentQuestion.mcq_options.map((opt, optIdx) => {
+                            const isSelected = Boolean(currentQuestion.selected_option_ids?.includes(opt.id));
+                            const isCorrect = Boolean(opt.is_correct);
+                            const optLetter = String.fromCharCode(65 + optIdx);
+
+                            let cardStyle = 'bg-slate-50/70 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300';
+                            let badge = null;
+
+                            if (isSelected && isCorrect) {
+                              cardStyle = 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-400 dark:border-emerald-600 text-emerald-950 dark:text-emerald-100 ring-1 ring-emerald-400/40';
+                              badge = (
+                                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/80 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1 shrink-0">
+                                  <CheckCircle2 size={12} className="text-emerald-600 dark:text-emerald-400" /> Candidate's Selection (Correct)
+                                </span>
+                              );
+                            } else if (isSelected && !isCorrect) {
+                              cardStyle = 'bg-rose-50 dark:bg-rose-950/50 border-rose-400 dark:border-rose-600 text-rose-950 dark:text-rose-100 ring-1 ring-rose-400/40';
+                              badge = (
+                                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-900/80 dark:text-rose-200 border border-rose-300 dark:border-rose-700 flex items-center gap-1 shrink-0">
+                                  <XCircle size={12} className="text-rose-600 dark:text-rose-400" /> Candidate's Selection (Incorrect)
+                                </span>
+                              );
+                            } else if (!isSelected && isCorrect) {
+                              cardStyle = 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-700 border-dashed text-emerald-900 dark:text-emerald-200';
+                              badge = (
+                                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-100/80 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1 shrink-0">
+                                  <CheckCircle2 size={12} className="text-emerald-600 dark:text-emerald-400" /> Correct Answer
+                                </span>
+                              );
+                            }
+
+                            return (
+                              <div
+                                key={opt.id}
+                                className={`p-3.5 rounded-xl border flex items-start justify-between gap-3 text-xs transition ${cardStyle}`}
+                              >
+                                <div className="flex items-start gap-3 min-w-0">
+                                  <span className={`w-5 h-5 rounded-md flex items-center justify-center font-bold text-xs shrink-0 font-mono ${
+                                    isSelected
+                                      ? (isCorrect ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white')
+                                      : (isCorrect ? 'bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-200' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300')
+                                  }`}>
+                                    {optLetter}
+                                  </span>
+                                  <span className="leading-relaxed font-medium pt-0.5 break-words">
+                                    {opt.option_text}
+                                  </span>
+                                </div>
+                                {badge}
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="text-xs text-slate-400 italic p-3">No options recorded for this question.</div>
+                        )}
+                      </div>
+                    </div>
+                  ) : currentQuestion.has_submission && currentQuestion.code ? (
                     <div className="flex-1 flex flex-col gap-2 overflow-hidden min-h-0">
                       <div className="flex items-center justify-between text-xs pb-1 border-b border-slate-200 dark:border-slate-800 shrink-0">
                         <div className="flex items-center gap-2">

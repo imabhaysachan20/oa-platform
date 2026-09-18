@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { examsApi } from '../api/exams';
@@ -13,8 +13,10 @@ import { Timer } from '../components/ui/Timer';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Play, Send, CheckCircle, AlertTriangle, Sun, Moon, ShieldAlert, ShieldCheck, Maximize2, Minimize2, Wifi, WifiOff } from 'lucide-react';
+import { useAuthStore } from '../store/authStore';
 import { useExamSecurity } from '../hooks/useExamSecurity';
 import { useCandidateHeartbeat } from '../hooks/useCandidateHeartbeat';
+import { useQuestionTimer } from '../hooks/useQuestionTimer';
 
 export const StudentExamWorkspacePage: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
@@ -175,7 +177,251 @@ export const StudentExamWorkspacePage: React.FC = () => {
     };
   }, []);
 
+  const { user } = useAuthStore();
+  const userId = user?.id;
+
+  // Set of locked question IDs (strictly scoped to current user so candidates never share state)
+  const [lockedQuestionIds, setLockedQuestionIds] = useState<Set<number>>(() => {
+    const set = new Set<number>();
+    if (!userId) return set;
+    try {
+      const raw = localStorage.getItem(`u_${userId}_exam_${id}_locked_questions`);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) arr.forEach((qId) => set.add(Number(qId)));
+      }
+    } catch {}
+    return set;
+  });
+
+  const markQuestionLocked = (qId: number) => {
+    setLockedQuestionIds((prev) => {
+      const next = new Set(prev);
+      next.add(qId);
+      if (userId) {
+        try {
+          localStorage.setItem(`u_${userId}_exam_${id}_locked_questions`, JSON.stringify(Array.from(next)));
+        } catch {}
+      }
+      return next;
+    });
+  };
+
+  // Sync server-locked questions and reload when userId changes
+  useEffect(() => {
+    const set = new Set<number>();
+    if (userId) {
+      try {
+        const raw = localStorage.getItem(`u_${userId}_exam_${id}_locked_questions`);
+        if (raw) {
+          const arr = JSON.parse(raw);
+          if (Array.isArray(arr)) arr.forEach((qId) => set.add(Number(qId)));
+        }
+      } catch {}
+    }
+    if (questions && questions.length > 0) {
+      questions.forEach((q) => {
+        if (q.is_mcq_locked) {
+          set.add(q.id);
+        }
+      });
+    }
+    setLockedQuestionIds((prev) => {
+      if (prev.size === set.size && [...set].every((qId) => prev.has(qId))) {
+        return prev;
+      }
+      return set;
+    });
+  }, [questions, userId, id]);
+
+  // Multi-tab real-time synchronization via StorageEvent
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (!e.key || !userId) return;
+
+      // 1. Sync locked questions across tabs immediately
+      if (e.key === `u_${userId}_exam_${id}_locked_questions`) {
+        try {
+          const arr = e.newValue ? JSON.parse(e.newValue) : [];
+          if (Array.isArray(arr)) {
+            setLockedQuestionIds((prev) => {
+              const newSet = new Set(arr.map(Number));
+              if (prev.size === newSet.size && [...newSet].every((qId) => prev.has(qId))) {
+                return prev;
+              }
+              return newSet;
+            });
+          }
+        } catch {}
+      }
+
+      // 2. Sync selection across tabs if student updated in another tab
+      const prefix = `u_${userId}_exam_${id}_q_`;
+      if (e.key.startsWith(prefix) && e.key.endsWith('_selection') && e.newValue) {
+        try {
+          const match = e.key.match(/_q_(\d+)_selection$/);
+          if (match) {
+            const qId = parseInt(match[1], 10);
+            const val = JSON.parse(e.newValue);
+            if (Array.isArray(val)) {
+              setMCQSelection(qId, val);
+            }
+          }
+        } catch {}
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [id, userId, setMCQSelection]);
+
+  // Hydration Auto-Recovery: Restore cached selections from localStorage ONCE on initial load
+  const hasHydratedSelectionsRef = useRef<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const sessionKey = `${userId}_${id}`;
+    if (!questions || questions.length === 0 || !userId || hasHydratedSelectionsRef.current[sessionKey]) return;
+    hasHydratedSelectionsRef.current[sessionKey] = true;
+
+    questions.forEach((q) => {
+      if (q.question_type === 'mcq') {
+        try {
+          const raw = localStorage.getItem(`u_${userId}_exam_${id}_q_${q.id}_selection`);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setMCQSelection(q.id, parsed);
+
+              // If server has no recorded answer and question is not locked, sync in background
+              const serverHasAnswer = q.selected_option_ids && q.selected_option_ids.length > 0;
+              if (!serverHasAnswer && !q.is_mcq_locked && !lockedQuestionIds.has(q.id) && examData?.assignment_id) {
+                submissionsApi.submitMCQ(examData.assignment_id, q.id, parsed).catch(() => {});
+              }
+            }
+          }
+        } catch {}
+      }
+    });
+  }, [questions.length, id, userId, examData?.assignment_id, lockedQuestionIds, setMCQSelection]);
+
   const currentQ = questions[activeQuestionIndex];
+
+  // Offline queue for resilience against intermittent Wi-Fi drops
+  const offlineQueueRef = useRef<Array<{ assignId: number; qId: number; selectedOptionIds: string[] }>>([]);
+
+  // Pending unsaved selection buffer for immediate flush on tab close/unload
+  const pendingMCQSaveRef = useRef<{ assignId: number; qId: number; selectedOptionIds: string[] } | null>(null);
+
+  // Flush any pending debounced change immediately (using fetch keepalive for guaranteed delivery on close)
+  const flushPendingMCQ = useCallback(() => {
+    if (!pendingMCQSaveRef.current) return;
+    const { assignId, qId, selectedOptionIds } = pendingMCQSaveRef.current;
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    pendingMCQSaveRef.current = null;
+
+    const token = localStorage.getItem('ubicode_token');
+    const payload = JSON.stringify({
+      assignment_id: assignId,
+      question_id: qId,
+      selected_option_ids: selectedOptionIds,
+    });
+
+    try {
+      fetch('/api/submissions/mcq', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: payload,
+        keepalive: true,
+      }).catch(() => {
+        submissionsApi.submitMCQ(assignId, qId, selectedOptionIds).catch(() => {});
+      });
+    } catch {
+      submissionsApi.submitMCQ(assignId, qId, selectedOptionIds).catch(() => {});
+    }
+  }, []);
+
+  // Flush on beforeunload (tab close/refresh) and visibilitychange (minimizing/switching tab)
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      flushPendingMCQ();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushPendingMCQ();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      flushPendingMCQ();
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [flushPendingMCQ]);
+
+  // Online event: Drain offline queue as soon as internet connection resumes
+  useEffect(() => {
+    const flushOfflineQueue = async () => {
+      if (offlineQueueRef.current.length === 0) return;
+      const queue = [...offlineQueueRef.current];
+      offlineQueueRef.current = [];
+      for (const item of queue) {
+        try {
+          await submissionsApi.submitMCQ(item.assignId, item.qId, item.selectedOptionIds);
+        } catch {
+          offlineQueueRef.current.push(item);
+        }
+      }
+    };
+
+    window.addEventListener('online', flushOfflineQueue);
+    return () => window.removeEventListener('online', flushOfflineQueue);
+  }, []);
+
+  // Auto-advance & lock when individual question timer reaches zero
+  const handleCurrentQuestionExpire = async () => {
+    if (!currentQ) return;
+    const qId = currentQ.id;
+
+    // 1. Immediately flush any pending MCQ answer to backend
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    pendingMCQSaveRef.current = null;
+
+    const currentSelection = mcqSelections[qId] || currentQ.selected_option_ids || [];
+    if (examData?.assignment_id && currentSelection.length > 0) {
+      try {
+        await submissionsApi.submitMCQ(examData.assignment_id, qId, currentSelection);
+      } catch (err) {
+        console.warn('Failed to flush expired question answer:', err);
+      }
+    }
+
+    // 2. Mark this question as locked
+    markQuestionLocked(qId);
+
+    // 3. Auto-advance to next question if available
+    if (activeQuestionIndex < questions.length - 1) {
+      const nextIdx = activeQuestionIndex + 1;
+      setActiveQuestionIndex(nextIdx);
+      setSubmissionFeedback(`Time limit reached for ${currentQ.title}. Auto-advanced to next question.`);
+    } else {
+      setSubmissionFeedback(`Time limit reached for ${currentQ.title}. Assessment questions completed.`);
+    }
+  };
+
+  const questionTimer = useQuestionTimer(userId, id, currentQ, handleCurrentQuestionExpire, examData?.server_time);
+
   const currentLang = currentQ ? selectedLanguage[currentQ.id] || 'python' : 'python';
   const currentStarter = currentQ?.starter_code?.[currentLang] || STARTER_CODE[currentLang] || '';
   const currentCode = currentQ
@@ -204,19 +450,29 @@ export const StudentExamWorkspacePage: React.FC = () => {
     };
   }, [currentQ?.id, currentQ?.question_type, id, updateQuestionDeadline]);
 
-  // MCQ Selection & Debounced Autosave
+  // MCQ Selection & Debounced Autosave with localStorage caching
   const [isSavingMCQ, setIsSavingMCQ] = useState(false);
   const [mcqSaveError, setMcqSaveError] = useState<string | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMCQSelectionChange = (newSelectedIds: string[]) => {
     if (!currentQ || !examData?.assignment_id) return;
+    if (lockedQuestionIds.has(currentQ.id) || currentQ.is_mcq_locked) return;
+
     const qId = currentQ.id;
     const assignId = examData.assignment_id;
 
-    // Update store state immediately for snappy UI
+    // Update store state and localStorage immediately for snappy UI
     setMCQSelection(qId, newSelectedIds);
     setMcqSaveError(null);
+    if (userId) {
+      try {
+        localStorage.setItem(`u_${userId}_exam_${id}_q_${qId}_selection`, JSON.stringify(newSelectedIds));
+      } catch {}
+    }
+
+    // Buffer into pendingMCQSaveRef so any tab close/refresh flushes it instantly
+    pendingMCQSaveRef.current = { assignId, qId, selectedOptionIds: newSelectedIds };
 
     // Debounce server submission by 300ms
     if (saveTimeoutRef.current) {
@@ -227,22 +483,31 @@ export const StudentExamWorkspacePage: React.FC = () => {
     saveTimeoutRef.current = setTimeout(async () => {
       try {
         await submissionsApi.submitMCQ(assignId, qId, newSelectedIds);
+        if (pendingMCQSaveRef.current?.qId === qId) {
+          pendingMCQSaveRef.current = null;
+        }
         setIsSavingMCQ(false);
       } catch (err: any) {
         setIsSavingMCQ(false);
+        // If network failure or offline, queue for replay
+        if (!navigator.onLine || !err.response) {
+          offlineQueueRef.current = offlineQueueRef.current.filter((item) => item.qId !== qId);
+          offlineQueueRef.current.push({ assignId, qId, selectedOptionIds: newSelectedIds });
+        }
         setMcqSaveError(err.response?.data?.detail || 'Failed to autosave answer');
       }
     }, 300);
   };
 
-  // Clean up timeout on unmount
+  // Clean up timeout on unmount and flush pending
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
+      flushPendingMCQ();
     };
-  }, []);
+  }, [flushPendingMCQ]);
 
   // Handle "Run Code" against visible sample cases
   const handleRunCode = async () => {
@@ -441,12 +706,26 @@ export const StudentExamWorkspacePage: React.FC = () => {
         {/* Left Column: Question Panel (5 cols on large) */}
         <div className="lg:col-span-5 h-full overflow-hidden">
           <QuestionPanel
+            userId={userId}
+            examId={id}
             questions={questions}
             activeIndex={activeQuestionIndex}
             onSelectIndex={(idx) => {
+              const targetQ = questions[idx];
+              if (
+                targetQ &&
+                targetQ.question_type === 'mcq' &&
+                lockedQuestionIds.has(targetQ.id) &&
+                idx !== activeQuestionIndex
+              ) {
+                setSubmissionFeedback(`Question ${idx + 1} is locked and cannot be reopened.`);
+                return;
+              }
               setActiveQuestionIndex(idx);
               setSubmissionFeedback(null);
             }}
+            lockedQuestionIds={lockedQuestionIds}
+            serverTime={examData?.server_time}
           />
         </div>
 
@@ -454,11 +733,15 @@ export const StudentExamWorkspacePage: React.FC = () => {
         {currentQ.question_type === 'mcq' ? (
           <div className="lg:col-span-7 h-full overflow-hidden">
             <MCQPanel
+              userId={userId}
+              examId={id}
               question={currentQ}
               selectedOptionIds={mcqSelections[currentQ.id] || currentQ.selected_option_ids || []}
               onChangeSelection={handleMCQSelectionChange}
               isSaving={isSavingMCQ}
               saveError={mcqSaveError}
+              onQuestionExpire={handleCurrentQuestionExpire}
+              serverTime={examData?.server_time}
             />
           </div>
         ) : (

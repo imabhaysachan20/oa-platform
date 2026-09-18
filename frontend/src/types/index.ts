@@ -294,6 +294,16 @@ export interface CandidateQuestionSubmissionDossier {
   total_test_cases: number;
   exec_time_ms?: number | null;
   submitted_at?: string | null;
+  question_type?: 'coding' | 'mcq';
+  description?: string | null;
+  mcq_options?: Array<{
+    id: string;
+    option_text: string;
+    is_correct?: boolean;
+    order_index: number;
+  }>;
+  selected_option_ids?: string[];
+  is_multi_select?: boolean;
 }
 
 export interface CandidateDossierResponse {

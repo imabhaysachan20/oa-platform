@@ -1,21 +1,32 @@
 import React from 'react';
 import { Badge } from './ui/Badge';
 import { StudentQuestionView } from '../types';
-import { Clock, HardDrive, CheckCircle2, Code2, AlignLeft } from 'lucide-react';
+import { Clock, HardDrive, CheckCircle2, Code2, AlignLeft, Lock } from 'lucide-react';
 import { MarkdownRenderer } from './ui/RichTextEditor';
 
+import { useQuestionTimer } from '../hooks/useQuestionTimer';
+
 interface QuestionPanelProps {
+  userId?: number | null;
+  examId?: number | null;
   questions: StudentQuestionView[];
   activeIndex: number;
   onSelectIndex: (idx: number) => void;
+  lockedQuestionIds?: Set<number>;
+  serverTime?: string | null;
 }
 
 export const QuestionPanel: React.FC<QuestionPanelProps> = ({
+  userId,
+  examId,
   questions,
   activeIndex,
   onSelectIndex,
+  lockedQuestionIds,
+  serverTime,
 }) => {
   const currentQ = questions[activeIndex];
+  const timer = useQuestionTimer(userId, examId, currentQ, undefined, serverTime);
 
   if (!currentQ) {
     return (
@@ -32,6 +43,7 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({
         {questions.map((q, idx) => {
           const isSelected = activeIndex === idx;
           const isMCQ = q.question_type === 'mcq';
+          const isLocked = isMCQ && (Boolean(lockedQuestionIds?.has(q.id)) || Boolean(q.is_mcq_locked));
           const isSubmitted = isMCQ
             ? (q.selected_option_ids && q.selected_option_ids.length > 0)
             : (q.status && q.status !== 'unattempted');
@@ -39,9 +51,16 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({
           return (
             <button
               key={q.id}
-              onClick={() => onSelectIndex(idx)}
+              disabled={isLocked && !isSelected}
+              onClick={() => {
+                if (isLocked && !isSelected) return;
+                onSelectIndex(idx);
+              }}
+              title={isLocked && !isSelected ? 'This question is locked and cannot be reopened' : undefined}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap ${
-                isSelected
+                isLocked && !isSelected
+                  ? 'opacity-40 cursor-not-allowed bg-slate-100 dark:bg-slate-900/60 text-slate-400 border border-slate-200/50 dark:border-slate-800/50'
+                  : isSelected
                   ? 'bg-ubi-800 text-white shadow-sm'
                   : 'bg-white dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-transparent'
               }`}
@@ -63,12 +82,14 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({
                 <span>Q{idx + 1}</span>
               </span>
 
-              {isSubmitted && (
+              {isLocked ? (
+                <Lock size={12} className={isSelected ? 'text-white' : 'text-slate-400'} />
+              ) : isSubmitted ? (
                 <CheckCircle2
                   size={14}
                   className={isSelected ? 'text-emerald-300' : 'text-emerald-500'}
                 />
-              )}
+              ) : null}
             </button>
           );
         })}
@@ -93,10 +114,18 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({
                     +{currentQ.marks} Marks
                   </span>
                 )}
-                {currentQ.mcq_time_limit_seconds != null && (
-                  <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400 text-[11px]">
+                {timer.hasTimer && (
+                  <span
+                    className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                      timer.hasExpired
+                        ? 'bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
+                        : timer.isExpiringSoon
+                        ? 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800 animate-pulse'
+                        : 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                    }`}
+                  >
                     <Clock size={12} />
-                    {currentQ.mcq_time_limit_seconds}s timer
+                    {timer.hasExpired ? 'Time Expired' : `${timer.formattedTime} left`}
                   </span>
                 )}
               </div>

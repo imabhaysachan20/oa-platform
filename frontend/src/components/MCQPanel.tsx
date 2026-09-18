@@ -1,57 +1,40 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React from 'react';
 import { StudentQuestionView } from '../types';
 import { MarkdownRenderer } from './ui/RichTextEditor';
 import { Clock, CheckCircle2, AlertCircle, CheckSquare, Square, Radio, HelpCircle, ShieldAlert } from 'lucide-react';
 
 interface MCQPanelProps {
+  userId?: number | null;
+  examId?: number | null;
   question: StudentQuestionView;
   selectedOptionIds: string[];
   onChangeSelection: (newSelectedIds: string[]) => void;
   isSaving: boolean;
   saveError: string | null;
   onQuestionExpire?: () => void;
+  serverTime?: string | null;
 }
 
+import { useQuestionTimer } from '../hooks/useQuestionTimer';
+import { QuestionTimerProgressBar } from './QuestionTimerProgressBar';
+
 export const MCQPanel: React.FC<MCQPanelProps> = ({
+  userId,
+  examId,
   question,
   selectedOptionIds,
   onChangeSelection,
   isSaving,
   saveError,
   onQuestionExpire,
+  serverTime,
 }) => {
   const isMultiSelect = !!question.is_multi_select;
   const options = question.mcq_options || [];
 
-  // Per-question timer state driven by server question_deadline_at
-  const [secondsRemaining, setSecondsRemaining] = useState<number | null>(() => {
-    if (!question.question_deadline_at) return null;
-    const diff = Math.floor((new Date(question.question_deadline_at).getTime() - Date.now()) / 1000);
-    return Math.max(0, diff);
-  });
-
-  const hasExpired = secondsRemaining !== null && secondsRemaining <= 0;
-  const isLocked = !!question.is_mcq_locked || hasExpired;
-
-  useEffect(() => {
-    if (!question.question_deadline_at) {
-      setSecondsRemaining(null);
-      return;
-    }
-
-    const calculateRemaining = () => {
-      const diff = Math.floor((new Date(question.question_deadline_at!).getTime() - Date.now()) / 1000);
-      const remaining = Math.max(0, diff);
-      setSecondsRemaining(remaining);
-      if (remaining <= 0) {
-        onQuestionExpire?.();
-      }
-    };
-
-    calculateRemaining();
-    const interval = setInterval(calculateRemaining, 1000);
-    return () => clearInterval(interval);
-  }, [question.question_deadline_at, onQuestionExpire]);
+  // Per-question timer state driven by localStorage and server question_deadline_at with serverTime skew compensation
+  const timer = useQuestionTimer(userId, examId, question, onQuestionExpire, serverTime);
+  const isLocked = !!question.is_mcq_locked || timer.hasExpired;
 
   const handleToggleOption = (optionId: string) => {
     if (isLocked) return;
@@ -68,14 +51,18 @@ export const MCQPanel: React.FC<MCQPanelProps> = ({
     }
   };
 
-  const formatTimer = (totalSec: number) => {
-    const mins = Math.floor(totalSec / 60);
-    const secs = totalSec % 60;
-    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  };
-
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
+      {/* Linear Top Progress Bar for this MCQ */}
+      {timer.hasTimer && (
+        <QuestionTimerProgressBar
+          timer={timer}
+          showLabel={false}
+          heightClass="h-1.5"
+          className="shrink-0 z-10"
+        />
+      )}
+
       {/* Top Banner: Question meta, Type badge & Server Countdown */}
       <div className="px-6 py-4 bg-slate-50 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-2.5">
@@ -89,27 +76,27 @@ export const MCQPanel: React.FC<MCQPanelProps> = ({
           )}
         </div>
 
-        {/* Question-level countdown timer */}
-        {question.question_deadline_at && (
+        {/* Question-level countdown timer badge */}
+        {timer.hasTimer && (
           <div
             className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold border transition ${
-              hasExpired
+              timer.hasExpired
                 ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/80 dark:text-rose-300 dark:border-rose-800'
-                : secondsRemaining !== null && secondsRemaining < 30
+                : timer.isExpiringSoon
                 ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800 animate-pulse'
                 : 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
             }`}
           >
             <Clock size={14} />
             <span>
-              {hasExpired ? 'Time Expired' : `Question Time Left: ${formatTimer(secondsRemaining ?? 0)}`}
+              {timer.hasExpired ? 'Time Expired' : `Question Time Left: ${timer.formattedTime}`}
             </span>
           </div>
         )}
       </div>
 
       {/* Lock Notice if expired */}
-      {hasExpired && (
+      {timer.hasExpired && (
         <div className="bg-rose-50 dark:bg-rose-950/60 border-b border-rose-200 dark:border-rose-900/60 px-6 py-2.5 flex items-center gap-2 text-xs font-semibold text-rose-800 dark:text-rose-200 shrink-0">
           <ShieldAlert size={16} className="text-rose-600 dark:text-rose-400 shrink-0" />
           <span>This question's individual timer has expired. Your responses have been locked and submitted.</span>

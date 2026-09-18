@@ -30,7 +30,8 @@ Built as a lean v1 — no Kubernetes, no microservice sprawl, no over-engineerin
 6. [Core Product Logic](#core-product-logic)
    - [Randomized & Locked Question Assignment](#1-randomized--locked-question-assignment)
    - [Sandbox Code Execution](#2-sandbox-code-execution)
-   - [Server-Driven Auto-Submit & Scoring](#3-server-driven-auto-submit--scoring)
+   - [MCQ Question Support](#3-mcq-question-support)
+   - [Server-Driven Auto-Submit & Scoring](#4-server-driven-auto-submit--scoring)
 7. [End-to-End Flow (Sequence Diagrams)](#end-to-end-flow-sequence-diagrams)
 8. [Scoring Formula — Worked Example](#scoring-formula--worked-example)
 9. [Default Login Credentials](#default-login-credentials)
@@ -50,7 +51,7 @@ Built as a lean v1 — no Kubernetes, no microservice sprawl, no over-engineerin
 
 ## Overview
 
-**UBIcode** lets an admin create a timed coding assessment from a pool of questions, have each candidate randomly receive a **locked set of 3 questions (1 Easy + 2 Medium)**, write and run code in-browser against sandboxed test cases, and get an automatically computed, difficulty- and speed-weighted score — all without any code ever executing on the application servers themselves.
+**UBIcode** lets an admin create a timed assessment from a pool of coding and **MCQ (multiple-choice) questions**. Each candidate randomly receives a **locked set of 3 coding questions (1 Easy + 2 Medium)** plus every MCQ attached to the exam, writes and runs code in-browser against sandboxed test cases, answers MCQs with any number of options, and gets an automatically computed, combined score — all without any code ever executing on the application servers themselves.
 
 It is designed to comfortably support **~1,000 concurrent candidates** on a single docker-compose deployment (no Kubernetes required for v1).
 
@@ -58,11 +59,12 @@ It is designed to comfortably support **~1,000 concurrent candidates** on a sing
 
 | Problem | How UBIcode solves it |
 |---|---|
-| Candidates copying each other's questions | Each candidate gets a randomized, permanently-locked draw of 3 questions from a shared pool |
-| Client-side timers can be tampered with | The exam deadline (`deadline_at`) is computed and enforced **server-side**; the UI timer just displays it |
+| Candidates copying each other's questions | Each candidate gets a randomized, permanently-locked draw of 3 coding questions from a shared pool |
+| Client-side timers can be tampered with | The exam deadline (`deadline_at`), and each MCQ's individual timer (`question_deadline_at`), are computed and enforced **server-side**; the UI timer just displays them |
 | Running untrusted code is dangerous | All execution is offloaded to a self-hosted **Judge0** sandbox — FastAPI never runs student code itself |
-| Candidates losing progress on refresh | Assignment + submissions are persisted; resuming an exam restores exact state |
-| Fair scoring across difficulty levels | Score = difficulty weight × correctness × (1 + speed bonus), fully configurable per exam |
+| Candidates losing progress on refresh | Assignment, submissions, and MCQ responses are persisted; resuming an exam restores exact state |
+| Fair scoring across difficulty levels | Coding score = difficulty weight × correctness × (1 + speed bonus); MCQ score = full marks on exact match, 0 otherwise — combined into one normalized total per exam |
+| MCQ answer keys leaking to candidates | Correct-answer flags are structurally excluded from every student-facing API response via a dedicated response schema — never present to strip, never sent |
 
 ---
 
@@ -105,8 +107,9 @@ flowchart LR
 
     subgraph App["FastAPI Backend (async, N replicas)"]
         C1[Auth & Exam Service]
-        C2[Submission Service]
+        C2[Coding Submission Service]
         C3[Admin Service]
+        C4[MCQ Response & Grading Service]
     end
 
     subgraph Data
@@ -129,9 +132,11 @@ flowchart LR
     B --> C1
     B --> C2
     B --> C3
+    B --> C4
     C1 --> D
     C2 --> D
     C3 --> D
+    C4 --> D
     C1 --> E
     C2 --> E
     C2 -->|submit code via REST| F
@@ -157,14 +162,17 @@ erDiagram
     EXAMS ||--o{ EXAM_QUESTION_POOL : "contains"
     EXAMS ||--o{ EXAM_ASSIGNMENTS : "sat by"
 
-    QUESTIONS ||--o{ TEST_CASES : "has"
+    QUESTIONS ||--o{ TEST_CASES : "has (coding)"
     QUESTIONS ||--o{ EXAM_QUESTION_POOL : "belongs to"
     QUESTIONS ||--o{ ASSIGNED_QUESTIONS : "assigned as"
-    QUESTIONS ||--o{ SUBMISSIONS : "solved via"
+    QUESTIONS ||--o{ SUBMISSIONS : "solved via (coding)"
+    QUESTIONS ||--o{ MCQ_OPTIONS : "has (mcq)"
+    QUESTIONS ||--o{ MCQ_RESPONSES : "answered via (mcq)"
 
     EXAM_ASSIGNMENTS ||--o{ ASSIGNED_QUESTIONS : "locks in"
     EXAM_ASSIGNMENTS ||--o{ SUBMISSIONS : "receives"
     EXAM_ASSIGNMENTS ||--o{ QUESTION_SCORES : "scored as"
+    EXAM_ASSIGNMENTS ||--o{ MCQ_RESPONSES : "receives"
     EXAM_ASSIGNMENTS ||--|| EXAM_RESULTS : "aggregates to"
 
     USERS {
@@ -181,12 +189,35 @@ erDiagram
         uuid id PK
         text title
         text description
-        text difficulty "easy|medium|hard"
-        int time_limit_ms
-        int memory_limit_kb
-        text sample_input
-        text sample_output
+        text question_type "coding|mcq"
+        text difficulty "easy|medium|hard, coding only"
+        int time_limit_ms "coding only"
+        int memory_limit_kb "coding only"
+        text sample_input "coding only"
+        text sample_output "coding only"
+        float marks "mcq only"
+        int mcq_time_limit_seconds "mcq only, nullable"
+        bool is_multi_select "mcq only"
         uuid created_by FK
+    }
+
+    MCQ_OPTIONS {
+        uuid id PK
+        uuid question_id FK
+        text option_text
+        bool is_correct "never sent to students"
+        int order_index
+    }
+
+    MCQ_RESPONSES {
+        uuid id PK
+        uuid assignment_id FK
+        uuid question_id FK
+        uuid_array selected_option_ids
+        bool is_correct "null until graded"
+        float marks_awarded
+        timestamptz answered_at
+        bool is_locked
     }
 
     TEST_CASES {
@@ -215,6 +246,7 @@ erDiagram
         uuid exam_id FK
         uuid question_id FK
         text difficulty
+        text selection_mode "random (coding) | fixed (mcq)"
     }
 
     EXAM_ASSIGNMENTS {
@@ -233,6 +265,8 @@ erDiagram
         uuid question_id FK
         text difficulty
         int order_index
+        timestamptz question_started_at "mcq per-question timer"
+        timestamptz question_deadline_at "mcq per-question timer"
     }
 
     SUBMISSIONS {
@@ -300,20 +334,46 @@ erDiagram
 
 Supported languages in v1: **Python 3**, **C++ (GCC)**, **Java (OpenJDK)** — mapped to their respective Judge0 `language_id` values.
 
-### 3. Server-Driven Auto-Submit & Scoring
+### 3. MCQ Question Support
 
-- **Celery Beat** runs a scan every **10 seconds** for any `exam_assignments` row past its `deadline_at` that is still `in_progress`.
-- Expired assignments are automatically finalized as `auto_submitted`, scoring whatever was last submitted (or nothing, if the candidate never submitted a question).
-- Scoring formula, computed per question then aggregated:
+- Admins build MCQ questions in the Question Bank with **any number of options**, one or more marked correct (single-select or multi-select), **marks** per question, and an **optional per-question time limit**.
+- Unlike coding questions, MCQs added to an exam use `selection_mode = 'fixed'` in `exam_question_pool` — **every MCQ attached to the exam is shown to every candidate** (no random subset drawing). Coding questions are unaffected and keep the existing random 1-Easy + 2-Medium draw.
+- **Per-question timer**: the first time a candidate views an MCQ, `question_started_at` is set once (idempotent — refreshing never resets it); if the question has a time limit, `question_deadline_at` is computed and enforced **server-side**, exactly like the overall exam deadline.
+- **Option shuffling**: option order is shuffled per `(assignment_id, question_id)` using a deterministic seed, so order is stable across refreshes but varies candidate-to-candidate — reduces trivial copying by seat/screen position.
+- **Answer key security**: `is_correct` is **never** included in any student-facing API response, before or during the exam — enforced by a dedicated response schema that structurally excludes the field, not by manually stripping it at the last step.
+- **Answer key immutability**: once a question is attached to an exam that has started (or has any non-`not_started` assignment), editing its options or correct answers is rejected with a `409` — the answer key cannot change mid-exam.
+- **Scoring**: single-select and multi-select both use exact-match grading — full marks if the selected option(s) exactly equal the correct option(s), otherwise zero. No partial credit in v1.
+- Answers auto-save on each change (debounced) via an idempotent upsert keyed on `(assignment_id, question_id)`, so a browser refresh restores the candidate's last selection.
+
+### 4. Server-Driven Auto-Submit & Scoring
+
+- **Celery Beat** runs a scan every **10 seconds** for any `exam_assignments` row past its `deadline_at` that is still `in_progress`, **and** for any `assigned_questions` row whose individual `question_deadline_at` (MCQ) has passed but isn't yet locked — an MCQ with its own expired timer is graded immediately, without waiting for the whole exam to end.
+- Expired assignments/questions are automatically finalized (`auto_submitted` for the assignment, `is_locked = true` for the MCQ response), scoring whatever was last submitted or selected — or nothing, if the candidate never attempted it.
+- **Coding score**, computed per question then aggregated:
 
   ```
-  correctness   = test_cases_passed / total_test_cases                        (range: 0–1)
-  time_bonus    = clamp(1 - (time_taken_sec / allowed_time_sec), 0, 0.2)       (up to +20% for speed)
+  correctness    = test_cases_passed / total_test_cases                       (range: 0–1)
+  time_bonus     = clamp(1 - (time_taken_sec / allowed_time_sec), 0, 0.2)      (up to +20% for speed)
   question_score = difficulty_weight × correctness × (1 + time_bonus)
-  total_score    = (Σ question_score / max_possible_score) × 100
   ```
 
-- Difficulty weights are **configurable per exam** in the database (defaults: Easy = 10, Medium = 20, Hard = 30) — no code changes needed to retune scoring.
+- **MCQ score**, computed per question:
+
+  ```
+  is_correct    = (selected_option_ids == correct_option_ids)   -- exact match, single or multi-select
+  marks_awarded = question.marks if is_correct else 0
+  ```
+
+- **Combined exam total**:
+
+  ```
+  total_raw    = Σ(coding question_score) + Σ(mcq marks_awarded)
+  max_possible = Σ(coding difficulty_weight for assigned coding questions)
+               + Σ(question.marks for assigned mcq questions)
+  total_score  = (total_raw / max_possible) × 100
+  ```
+
+- Difficulty weights and MCQ marks are **configurable per exam / per question** in the database — no code changes needed to retune scoring. A pure-coding exam (zero MCQs attached) scores exactly as before; this is fully backward compatible.
 
 ---
 
@@ -367,6 +427,34 @@ sequenceDiagram
     API-->>S: Submission status + score
 ```
 
+### Answering an MCQ Question
+
+```mermaid
+sequenceDiagram
+    participant S as Student (React)
+    participant API as FastAPI
+    participant DB as PostgreSQL
+
+    S->>API: POST /api/exams/{id}/questions/{qid}/view
+    alt First view
+        API->>DB: SET question_started_at = now()
+        API->>DB: Compute question_deadline_at (if mcq_time_limit_seconds set)
+    else Already viewed
+        API->>DB: Return existing question_started_at / deadline_at
+    end
+    API-->>S: question_deadline_at (or null)
+
+    S->>API: POST /api/mcq-responses {assignment_id, question_id, selected_option_ids}
+    API->>DB: Check exam deadline_at AND question_deadline_at not passed
+    API->>DB: Check response not already is_locked
+    alt Within time & unlocked
+        API->>DB: UPSERT mcq_responses (selected_option_ids, answered_at)
+        API-->>S: 200 OK (saved, not yet graded)
+    else Expired or locked
+        API-->>S: 400 Rejected
+    end
+```
+
 ### Auto-Submit on Timeout
 
 ```mermaid
@@ -376,12 +464,14 @@ sequenceDiagram
     participant DB as PostgreSQL
 
     loop Every 10 seconds
-        Beat->>Worker: Scan for expired assignments
+        Beat->>Worker: Scan for expired assignments & expired MCQ timers
         Worker->>DB: SELECT WHERE deadline_at < now() AND status = 'in_progress'
+        Worker->>DB: SELECT WHERE question_deadline_at < now() AND NOT is_locked
         loop For each expired assignment
             Worker->>DB: Mark status = 'auto_submitted'
-            Worker->>DB: Score last submission per question
-            Worker->>DB: UPSERT exam_results (total_score, rank)
+            Worker->>DB: Score last submission per coding question
+            Worker->>DB: Grade & lock each mcq_responses row (exact-match check)
+            Worker->>DB: UPSERT exam_results (combined total_score, rank)
         end
     end
 ```
@@ -389,6 +479,8 @@ sequenceDiagram
 ---
 
 ## Scoring Formula — Worked Example
+
+### Coding-only example
 
 Assume default weights (Easy = 10, Medium = 20) and a candidate who:
 
@@ -413,6 +505,28 @@ Q3: correctness = 3/8 = 0.375
 
 max_possible = 10 + 20 + 20 = 50
 total_score  = (9.6 + 24.0 + 7.875) / 50 × 100 = 82.95 / 100
+```
+
+### Combined coding + MCQ example
+
+Same candidate as above (coding raw = 9.6 + 24.0 + 7.875 = 41.475, coding max = 50), now with 2 MCQs also attached to the exam:
+
+| Question | Type | Marks | Selected | Correct? |
+|---|---|---|---|---|
+| Q4 | MCQ (single-select) | 5 | Option B | ✅ Yes |
+| Q5 | MCQ (multi-select) | 5 | Options A, C | ❌ No (correct set was A, B) |
+
+```
+Q4: is_correct = true  -> marks_awarded = 5
+Q5: is_correct = false -> marks_awarded = 0
+
+mcq_raw = 5 + 0 = 5
+mcq_max = 5 + 5 = 10
+
+total_raw    = 41.475 (coding) + 5 (mcq) = 46.475
+max_possible = 50 (coding) + 10 (mcq)    = 60
+
+total_score  = (46.475 / 60) × 100 = 77.46 / 100
 ```
 
 ---
@@ -444,7 +558,7 @@ ubicode/
 │   │   ├── api/                   # Route modules (auth, exams, submissions, admin)
 │   │   ├── models/                # SQLAlchemy models
 │   │   ├── schemas/                # Pydantic request/response schemas
-│   │   ├── services/               # Business logic (assignment, scoring, judge0 client)
+│   │   ├── services/               # Business logic (assignment, scoring, judge0 client, mcq_service)
 │   │   ├── tasks/                  # Celery app + auto-submit tasks
 │   │   └── core/                   # Config, security, DB session
 │   ├── alembic/                    # Migration scripts
@@ -454,7 +568,7 @@ ubicode/
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/                  # Login, ExamStart, Workspace, AdminDashboard, etc.
-│   │   ├── components/             # Button, Card, Modal, Timer, CodeEditor
+│   │   ├── components/             # Button, Card, Modal, Timer, CodeEditor, MCQOptionList, MCQBuilder
 │   │   ├── hooks/                  # TanStack Query hooks
 │   │   ├── store/                  # Zustand stores
 │   │   └── api/                    # Typed API client
@@ -592,11 +706,12 @@ Open `http://localhost:5173`. Vite is configured with a proxy forwarding all `/a
 |---|---|---|
 | `GET` | `/api/exams` | List published exams |
 | `GET` | `/api/exams/{id}` | Get exam details |
-| `POST` | `/api/exams/{id}/start` | Idempotently start exam & assign 3 questions |
-| `GET` | `/api/exams/{id}/my-questions` | Get locked questions, draft code, server deadline |
-| `POST` | `/api/exams/{id}/finish` | Manually finish exam and aggregate scores |
-| `GET` | `/api/exams/{id}/result` | Candidate's score breakdown |
-| `GET` | `/api/exams/{id}/leaderboard` | Real-time ranked leaderboard |
+| `POST` | `/api/exams/{id}/start` | Idempotently start exam & assign 3 coding questions + all attached MCQs |
+| `GET` | `/api/exams/{id}/my-questions` | Get locked coding + MCQ questions, draft code/answers, server deadlines. MCQ options never include `is_correct` |
+| `POST` | `/api/exams/{id}/questions/{question_id}/view` | Mark an MCQ as viewed; idempotently starts its per-question timer and returns `question_deadline_at` |
+| `POST` | `/api/exams/{id}/finish` | Manually finish exam and aggregate combined coding + MCQ scores |
+| `GET` | `/api/exams/{id}/result` | Candidate's score breakdown (coding + MCQ) |
+| `GET` | `/api/exams/{id}/leaderboard` | Real-time ranked leaderboard, admin-only |
 
 ### Code Submissions & Judging
 | Method | Endpoint | Description |
@@ -605,13 +720,19 @@ Open `http://localhost:5173`. Vite is configured with a proxy forwarding all `/a
 | `POST` | `/api/submissions/submit` | Submit solution against all test cases |
 | `GET` | `/api/submissions/{id}/status` | Poll submission status |
 
+### MCQ Responses
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/mcq-responses` | Upsert a candidate's selected option(s) for an MCQ; rejected if exam or question deadline has passed, or response is already locked |
+
 ### Admin Management
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` / `POST` | `/api/admin/exams` | List / create assessments |
 | `PUT` / `DELETE` | `/api/admin/exams/{id}` | Update / delete an assessment |
-| `GET` / `POST` | `/api/admin/questions` | Manage question bank |
-| `POST` | `/api/admin/questions/{id}/test-cases` | Add visible/hidden test cases |
+| `GET` / `POST` | `/api/admin/questions` | Manage question bank (`question_type`: `coding` or `mcq`) |
+| `POST` | `/api/admin/questions/{id}/test-cases` | Add visible/hidden test cases (coding questions) |
+| `POST` | `/api/admin/questions/{id}/options` | Add/update MCQ options and correct answer(s) — rejected with `409` if the question is already attached to a live or completed exam |
 | `POST` | `/api/admin/students/import-csv` | Bulk student import via CSV |
 | `GET` | `/api/admin/students` | Roster of enrolled candidates |
 | `GET` | `/api/admin/exams/{id}/monitoring` | Real-time candidate monitoring dashboard |
@@ -663,6 +784,9 @@ Recommended additions as the suite grows: `pytest` coverage for assignment-locki
 - Passwords hashed with `bcrypt` via `passlib`; JWTs signed with a server-side secret (`JWT_SECRET_KEY`) — rotate this before production use.
 - Exam deadlines are enforced server-side; the client timer is a display only, not a source of truth.
 - All code execution is sandboxed in Judge0's isolated Docker workers, with configurable CPU/memory/time limits per submission.
+- **MCQ answer keys are never exposed to students**: `is_correct` is excluded structurally by a dedicated response schema, not filtered out as an afterthought — it is never present in any payload served pre-results.
+- **MCQ answer-key immutability**: options/correct-answers on a question already attached to a started or completed exam cannot be edited, preventing an accidental or malicious mid-exam answer-key change.
+- **MCQ option order is shuffled per candidate** (deterministically, so it's stable across refreshes) to reduce trivial answer-sharing by option position.
 - CORS is restricted to configured frontend origins (`CORS_ORIGINS`).
 - Change all default seed credentials before any non-local deployment.
 
@@ -676,6 +800,9 @@ Recommended additions as the suite grows: `pytest` coverage for assignment-locki
 - [ ] Per-question analytics (pass rate, average time, common failure patterns)
 - [ ] Horizontal autoscaling story if usage grows well beyond ~1,000 concurrent users
 - [ ] Optional webcam/browser lockdown proctoring integration
+- [ ] Partial credit for multi-select MCQs (currently exact-match only)
+- [ ] Randomized subset selection for MCQ pools (currently all attached MCQs go to every candidate)
+- [ ] Per-question MCQ analytics (option-selection distribution, difficulty calibration)
 
 ---
 
@@ -688,6 +815,8 @@ Recommended additions as the suite grows: `pytest` coverage for assignment-locki
 | Timer resets after refresh | `deadline_at` not being persisted, or a client-only timer bug | Confirm `/api/exams/{id}/my-questions` returns the same `deadline_at` on every call |
 | 429 on `/api/submissions/run` | Rate limit triggered | Expected behavior; backoff and retry |
 | Alembic migration fails on fresh DB | Migration order issue | Run `alembic upgrade head` again after confirming Postgres is reachable |
+| MCQ save returns 400 near end of exam | Question or exam deadline already passed | Expected behavior — server-side deadline enforcement is intentional and cannot be bypassed from the client |
+| Admin gets 409 editing an MCQ's options | Question is already attached to a started/completed exam | Expected — the answer key is locked once an exam is live; create a new question version instead |
 
 ---
 

@@ -251,6 +251,20 @@ export interface MonitoringStudentView {
   submissions_count: number;
   current_score?: number;
   flags_count?: number;
+  network_status?: 'online' | 'unstable' | 'offline' | 'not_started' | 'submitted';
+  seconds_since_last_ping?: number | null;
+  disconnect_incidents_count?: number;
+  total_offline_seconds?: number;
+}
+
+export interface NetworkIncidentItem {
+  id: number;
+  assignment_id: number;
+  disconnected_at: string;
+  reconnected_at?: string | null;
+  duration_seconds?: number | null;
+  reason: string;
+  created_at: string;
 }
 
 export interface ProctoringLogItem {
@@ -301,5 +315,9 @@ export interface CandidateDossierResponse {
   integrity_status: 'Clean' | 'Warning' | 'High Risk';
   proctoring_logs: ProctoringLogItem[];
   questions: CandidateQuestionSubmissionDossier[];
+  network_status?: string;
+  disconnect_incidents_count?: number;
+  total_offline_seconds?: number;
+  network_incidents?: NetworkIncidentItem[];
 }
 

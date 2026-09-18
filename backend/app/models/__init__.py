@@ -11,6 +11,7 @@ from backend.app.models.exam import (
 from backend.app.models.submission import Submission, MCQResponse
 from backend.app.models.result import QuestionScore, ExamResult
 from backend.app.models.proctoring import ExamProctoringLog
+from backend.app.models.network_incident import ExamNetworkIncident
 
 __all__ = [
     "Base",
@@ -31,4 +32,5 @@ __all__ = [
     "QuestionScore",
     "ExamResult",
     "ExamProctoringLog",
+    "ExamNetworkIncident",
 ]

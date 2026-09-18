@@ -4,18 +4,23 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import redis.asyncio as aioredis
 from backend.app.core.database import get_db
+from backend.app.core.redis import get_redis
 from backend.app.core.security import get_current_user, get_current_admin
 from backend.app.models.user import User, UserRole
 from backend.app.models.exam import Exam, ExamAssignment, AssignmentStatus
 from backend.app.models.proctoring import ExamProctoringLog
+from backend.app.models.network_incident import ExamNetworkIncident
 from backend.app.schemas.exam import (
     ExamResponse,
     ExamStartResponse,
     MyQuestionsResponse,
     LeaderboardEntry,
     ExamResultDetail,
-    BatchProctoringLogRequest
+    BatchProctoringLogRequest,
+    CandidateHeartbeatRequest,
+    CandidateHeartbeatResponse
 )
 from backend.app.services.exam_service import (
     start_exam_for_student,
@@ -268,6 +273,7 @@ async def batch_save_proctoring_logs(
     return {"saved": len(log_records)}
 
 
+<<<<<<< Updated upstream
 @router.post("/{exam_id}/questions/{question_id}/view")
 async def mark_question_as_viewed(
     exam_id: int,
@@ -281,4 +287,78 @@ async def mark_question_as_viewed(
     """
     deadline = await mark_question_viewed(db, exam_id, question_id, current_user.id)
     return {"question_deadline_at": deadline}
+=======
+@router.post("/{exam_id}/heartbeat", response_model=CandidateHeartbeatResponse)
+async def record_candidate_heartbeat(
+    exam_id: int,
+    body: CandidateHeartbeatRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis)
+):
+    """
+    High-throughput, low-latency candidate heartbeat for 1,000+ concurrent users.
+    Stores last seen timestamp in Redis in-memory hash.
+    Automatically detects disconnections/shutdowns (>30s) upon reconnection and
+    logs an incident into exam_network_incidents (without altering cheating flags).
+    """
+    now = datetime.now(timezone.utc)
+    now_ts = int(now.timestamp())
+
+    stmt = (
+        select(ExamAssignment)
+        .where(
+            ExamAssignment.id == body.assignment_id,
+            ExamAssignment.user_id == current_user.id,
+            ExamAssignment.exam_id == exam_id
+        )
+    )
+    assignment = (await db.execute(stmt)).scalar_one_or_none()
+    if not assignment:
+        raise HTTPException(status_code=403, detail="Invalid exam assignment for heartbeat")
+
+    # Only process heartbeats if exam assignment is in progress
+    if assignment.status != AssignmentStatus.IN_PROGRESS:
+        return CandidateHeartbeatResponse(
+            status="ok",
+            server_time=now,
+            network_status="not_in_progress",
+            incident_logged=False
+        )
+
+    redis_hb_key = f"exam:{exam_id}:heartbeats"
+    prev_ts_str = await redis.hget(redis_hb_key, str(assignment.id))
+
+    incident_logged = False
+    if prev_ts_str is not None:
+        try:
+            prev_ts = int(prev_ts_str)
+            gap = now_ts - prev_ts
+            # If gap >= 30 seconds, candidate was disconnected or machine was shut down!
+            if gap >= 30:
+                disconnected_at = datetime.fromtimestamp(prev_ts, tz=timezone.utc)
+                incident = ExamNetworkIncident(
+                    assignment_id=assignment.id,
+                    disconnected_at=disconnected_at,
+                    reconnected_at=now,
+                    duration_seconds=gap,
+                    reason=f"Heartbeat Timeout ({gap}s)"
+                )
+                db.add(incident)
+                await db.commit()
+                incident_logged = True
+        except (ValueError, TypeError):
+            pass
+
+    # Save current heartbeat in Redis with 24-hour expiration
+    await redis.hset(redis_hb_key, str(assignment.id), str(now_ts))
+    await redis.expire(redis_hb_key, 86400)
+
+    return CandidateHeartbeatResponse(
+        status="ok",
+        server_time=now,
+        network_status="online",
+        incident_logged=incident_logged
+    )
+>>>>>>> Stashed changes
 

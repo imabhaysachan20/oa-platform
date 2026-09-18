@@ -51,8 +51,22 @@ export const examsApi = {
     return res.data;
   },
 
+<<<<<<< Updated upstream
   markQuestionViewed: async (examId: number, questionId: number): Promise<{ question_deadline_at?: string | null }> => {
     const res = await api.post<{ question_deadline_at?: string | null }>(`/exams/${examId}/questions/${questionId}/view`);
+=======
+  sendHeartbeat: async (
+    examId: number,
+    assignmentId: number
+  ): Promise<{ status: string; server_time: string; network_status: string; incident_logged: boolean }> => {
+    const res = await api.post<{ status: string; server_time: string; network_status: string; incident_logged: boolean }>(
+      `/exams/${examId}/heartbeat`,
+      {
+        assignment_id: assignmentId,
+        client_timestamp: new Date().toISOString(),
+      }
+    );
+>>>>>>> Stashed changes
     return res.data;
   },
 };

@@ -8,7 +8,9 @@ from sqlalchemy import select, func, delete
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import redis.asyncio as aioredis
 from backend.app.core.database import get_db
+from backend.app.core.redis import get_redis
 from backend.app.core.security import get_current_admin, get_password_hash
 from backend.app.models.user import User, UserRole
 from backend.app.models.question import Question, TestCase, QuestionDifficulty, MCQOption
@@ -735,13 +737,14 @@ async def list_student_groups(
 async def monitor_exam(
     exam_id: int,
     current_admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis)
 ):
     """
     Live exam monitoring: tracks student session states, remaining time,
-    number of submissions, flags count, and current scores in real time.
+    number of submissions, flags count, network connectivity health, and current scores in real time.
     """
-    return await get_live_exam_monitoring(db, exam_id)
+    return await get_live_exam_monitoring(db, exam_id, redis)
 
 
 @router.get("/exams/{exam_id}/candidates/{assignment_id}/dossier", response_model=CandidateDossierResponse)
@@ -749,13 +752,15 @@ async def get_candidate_dossier_detail(
     exam_id: int,
     assignment_id: int,
     current_admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis)
 ):
     """
     Candidate inspection dossier for admins:
     - Integrity flags and full proctoring audit log
     - Submitted code per question, language, status, execution time
     - Time spent per question and score calculation
+    - Network connectivity health and disconnection incident logs
     """
-    return await get_candidate_dossier(db, exam_id, assignment_id)
+    return await get_candidate_dossier(db, exam_id, assignment_id, redis)
 

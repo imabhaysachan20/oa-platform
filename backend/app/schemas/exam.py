@@ -117,9 +117,38 @@ class MonitoringStudentView(BaseModel):
     submissions_count: int
     current_score: Optional[float] = None
     flags_count: int = 0
+    network_status: str = "online"  # "online" | "unstable" | "offline" | "not_started"
+    seconds_since_last_ping: Optional[float] = None
+    disconnect_incidents_count: int = 0
+    total_offline_seconds: int = 0
 
 
-# ==================== PROCTORING & CANDIDATE DOSSIER SCHEMAS ====================
+# ==================== PROCTORING, NETWORK & CANDIDATE DOSSIER SCHEMAS ====================
+
+class CandidateHeartbeatRequest(BaseModel):
+    assignment_id: int
+    client_timestamp: Optional[datetime] = None
+
+
+class CandidateHeartbeatResponse(BaseModel):
+    status: str = "ok"
+    server_time: datetime
+    network_status: str = "online"
+    incident_logged: bool = False
+
+
+class NetworkIncidentItem(BaseModel):
+    id: int
+    assignment_id: int
+    disconnected_at: datetime
+    reconnected_at: Optional[datetime] = None
+    duration_seconds: Optional[int] = None
+    reason: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 
 class ProctoringLogCreate(BaseModel):
     event_type: str
@@ -185,4 +214,8 @@ class CandidateDossierResponse(BaseModel):
     integrity_status: str = "Clean"
     proctoring_logs: List[ProctoringLogItem] = []
     questions: List[CandidateQuestionSubmissionDossier] = []
+    network_status: str = "online"
+    disconnect_incidents_count: int = 0
+    total_offline_seconds: int = 0
+    network_incidents: List[NetworkIncidentItem] = []
 

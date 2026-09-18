@@ -12,8 +12,9 @@ import { OutputConsole } from '../components/OutputConsole';
 import { Timer } from '../components/ui/Timer';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { Play, Send, CheckCircle, AlertTriangle, Sun, Moon, ShieldAlert, ShieldCheck, Maximize2, Minimize2 } from 'lucide-react';
+import { Play, Send, CheckCircle, AlertTriangle, Sun, Moon, ShieldAlert, ShieldCheck, Maximize2, Minimize2, Wifi, WifiOff } from 'lucide-react';
 import { useExamSecurity } from '../hooks/useExamSecurity';
+import { useCandidateHeartbeat } from '../hooks/useCandidateHeartbeat';
 
 export const StudentExamWorkspacePage: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
@@ -103,6 +104,14 @@ export const StudentExamWorkspacePage: React.FC = () => {
     requireFullscreen: true,
     examId: id,
     assignmentId: examData?.assignment_id,
+  });
+
+  // Candidate Real-Time Heartbeat & Network Health Liveness Engine
+  const { isOnline } = useCandidateHeartbeat({
+    examId: id,
+    assignmentId: examData?.assignment_id,
+    enabled: !!examData && examData.status === 'in_progress',
+    intervalMs: 10000,
   });
 
   // Warn on accidental tab/window close
@@ -319,6 +328,13 @@ export const StudentExamWorkspacePage: React.FC = () => {
       onContextMenu={(e) => e.preventDefault()}
       className="h-screen flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden transition-colors duration-150"
     >
+      {/* Network Disconnection Warning Banner */}
+      {!isOnline && (
+        <div className="bg-amber-500 text-slate-950 font-bold px-4 py-2 flex items-center justify-center gap-2 text-xs shadow-md z-50 shrink-0 animate-pulse">
+          <WifiOff size={16} />
+          <span>Network connection lost! Your code is safely preserved locally. Reconnecting automatically...</span>
+        </div>
+      )}
       {/* Workspace Top Navigation Bar */}
       <div className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between shadow-sm shrink-0">
         <div className="flex items-center gap-3">
@@ -335,8 +351,13 @@ export const StudentExamWorkspacePage: React.FC = () => {
             <h1 className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-xs sm:max-w-md">
               {examTitle || 'Coding Assessment'}
             </h1>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-              Autosave Active
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5">
+              <span>Autosave Active</span>
+              <span>•</span>
+              <span className={`inline-flex items-center gap-1 font-semibold ${isOnline ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                {isOnline ? <Wifi size={12} /> : <WifiOff size={12} />}
+                <span>{isOnline ? 'Connected' : 'Offline'}</span>
+              </span>
             </span>
           </div>
         </div>

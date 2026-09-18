@@ -17,8 +17,14 @@ from backend.app.models.question import Question, QuestionDifficulty, MCQOption
 from backend.app.models.submission import Submission, MCQResponse
 from backend.app.models.user import User
 from backend.app.models.result import ExamResult, QuestionScore
+import redis.asyncio as aioredis
 from backend.app.models.proctoring import ExamProctoringLog
+<<<<<<< Updated upstream
 from backend.app.schemas.question import StudentQuestionView, StudentMCQOptionView
+=======
+from backend.app.models.network_incident import ExamNetworkIncident
+from backend.app.schemas.question import StudentQuestionView
+>>>>>>> Stashed changes
 from backend.app.schemas.exam import (
     ExamStartResponse,
     MyQuestionsResponse,
@@ -28,7 +34,8 @@ from backend.app.schemas.exam import (
     MonitoringStudentView,
     CandidateDossierResponse,
     CandidateQuestionSubmissionDossier,
-    ProctoringLogItem
+    ProctoringLogItem,
+    NetworkIncidentItem
 )
 from backend.app.services.scoring_service import compute_and_save_exam_scores
 from backend.app.services.question_templates import (
@@ -582,11 +589,48 @@ async def get_exam_leaderboard(db: AsyncSession, exam_id: int) -> List[Leaderboa
     return leaderboard
 
 
-async def get_live_exam_monitoring(db: AsyncSession, exam_id: int) -> List[MonitoringStudentView]:
+async def get_live_exam_monitoring(
+    db: AsyncSession,
+    exam_id: int,
+    redis: Optional[aioredis.Redis] = None
+) -> List[MonitoringStudentView]:
     """
+<<<<<<< Updated upstream
     Fetches real-time status of all students for an exam.
     """
     stmt_assigns = (
+=======
+    Admin endpoint to view real-time status of all students in an exam.
+    Includes in-memory Redis heartbeat liveness check and network incident logs.
+    """
+    now = datetime.now(timezone.utc)
+    now_ts = int(now.timestamp())
+
+    # 1. Fetch heartbeats in bulk from Redis (O(1) in-memory)
+    heartbeats = {}
+    if redis:
+        try:
+            heartbeats = await redis.hgetall(f"exam:{exam_id}:heartbeats")
+        except Exception:
+            heartbeats = {}
+
+    # 2. Fetch network incidents summary per assignment
+    stmt_incidents = (
+        select(
+            ExamNetworkIncident.assignment_id,
+            func.count(ExamNetworkIncident.id).label("cnt"),
+            func.coalesce(func.sum(ExamNetworkIncident.duration_seconds), 0).label("total_sec")
+        )
+        .join(ExamAssignment, ExamNetworkIncident.assignment_id == ExamAssignment.id)
+        .where(ExamAssignment.exam_id == exam_id)
+        .group_by(ExamNetworkIncident.assignment_id)
+    )
+    inc_rows = (await db.execute(stmt_incidents)).all()
+    inc_counts = {r[0]: int(r[1]) for r in inc_rows}
+    inc_durations = {r[0]: int(r[2]) for r in inc_rows}
+
+    stmt = (
+>>>>>>> Stashed changes
         select(ExamAssignment, User, ExamResult)
         .join(User, ExamAssignment.user_id == User.id)
         .outerjoin(ExamResult, ExamResult.assignment_id == ExamAssignment.id)
@@ -597,9 +641,18 @@ async def get_live_exam_monitoring(db: AsyncSession, exam_id: int) -> List[Monit
     now = datetime.now(timezone.utc)
     monitoring_list = []
 
+<<<<<<< Updated upstream
     for assign, user, result in rows:
         count_stmt = select(func.count(Submission.id)).where(Submission.assignment_id == assign.id)
         submission_count = (await db.execute(count_stmt)).scalar() or 0
+=======
+        # Count proctoring flags / infractions (PURE ANTI-CHEAT ONLY)
+        flags_count_stmt = (
+            select(func.count(ExamProctoringLog.id))
+            .where(ExamProctoringLog.assignment_id == assignment.id)
+        )
+        flags_count = (await db.execute(flags_count_stmt)).scalar() or 0
+>>>>>>> Stashed changes
 
         flags_stmt = select(func.count(ExamProctoringLog.id)).where(ExamProctoringLog.assignment_id == assign.id)
         flags_count = (await db.execute(flags_stmt)).scalar() or 0
@@ -609,12 +662,37 @@ async def get_live_exam_monitoring(db: AsyncSession, exam_id: int) -> List[Monit
             delta = (assign.deadline_at - now).total_seconds()
             remaining_sec = max(0, int(delta))
 
+        # Network liveness calculation
+        network_status = "not_started"
+        seconds_since_last_ping = None
+        if assignment.status == AssignmentStatus.IN_PROGRESS:
+            last_ts_str = heartbeats.get(str(assignment.id))
+            if last_ts_str:
+                try:
+                    last_ts = int(last_ts_str)
+                    lag = max(0, now_ts - last_ts)
+                    seconds_since_last_ping = float(lag)
+                    if lag <= 18:
+                        network_status = "online"
+                    elif lag <= 30:
+                        network_status = "unstable"
+                    else:
+                        network_status = "offline"
+                except (ValueError, TypeError):
+                    network_status = "offline"
+            else:
+                # In progress but no recent heartbeat
+                network_status = "offline"
+        elif assignment.status in (AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED):
+            network_status = "submitted"
+
         monitoring_list.append(MonitoringStudentView(
             assignment_id=assign.id,
             user_id=user.id,
             name=user.name,
             email=user.email,
             roll_no=user.roll_no,
+<<<<<<< Updated upstream
             college=user.college,
             candidate_group=user.candidate_group,
             status=assign.status.value,
@@ -624,6 +702,20 @@ async def get_live_exam_monitoring(db: AsyncSession, exam_id: int) -> List[Monit
             submission_count=submission_count,
             flags_count=flags_count,
             current_score=result.total_score if result else None
+=======
+            status=assignment.status.value,
+            started_at=assignment.started_at,
+            deadline_at=assignment.deadline_at,
+            submitted_at=assignment.submitted_at,
+            time_remaining_sec=time_remaining,
+            submissions_count=sub_count,
+            current_score=result.total_score if result else None,
+            flags_count=flags_count,
+            network_status=network_status,
+            seconds_since_last_ping=seconds_since_last_ping,
+            disconnect_incidents_count=inc_counts.get(assignment.id, 0),
+            total_offline_seconds=inc_durations.get(assignment.id, 0)
+>>>>>>> Stashed changes
         ))
 
     return monitoring_list
@@ -632,10 +724,19 @@ async def get_live_exam_monitoring(db: AsyncSession, exam_id: int) -> List[Monit
 async def get_candidate_dossier(
     db: AsyncSession,
     exam_id: int,
-    assignment_id: int
+    assignment_id: int,
+    redis: Optional[aioredis.Redis] = None
 ) -> CandidateDossierResponse:
     """
+<<<<<<< Updated upstream
     Detailed inspector for admin: code submissions, MCQ answers, proctoring log.
+=======
+    Returns comprehensive candidate dossier for administrators:
+    - Candidate info, timings, total score, and rank
+    - Integrity rating and full proctoring audit log
+    - Assigned questions, submitted code, language, status, test results, and question score
+    - Network connectivity health and disconnection incident logs (separate from anti-cheat)
+>>>>>>> Stashed changes
     """
     stmt = (
         select(ExamAssignment, User, Exam, ExamResult)
@@ -658,7 +759,7 @@ async def get_candidate_dossier(
         end_time = assignment.submitted_at or assignment.deadline_at or datetime.now(timezone.utc)
         total_time_sec = max(0.0, (end_time - assignment.started_at).total_seconds())
 
-    # Proctoring logs
+    # Proctoring logs (Pure Anti-Cheat)
     stmt_logs = (
         select(ExamProctoringLog)
         .where(ExamProctoringLog.assignment_id == assignment_id)
@@ -677,6 +778,37 @@ async def get_candidate_dossier(
         integrity_status = "Warning"
     else:
         integrity_status = "High Risk"
+
+    # Network Incidents (Non-punitive network & system outages)
+    stmt_incidents = (
+        select(ExamNetworkIncident)
+        .where(ExamNetworkIncident.assignment_id == assignment_id)
+        .order_by(ExamNetworkIncident.disconnected_at.desc())
+    )
+    incident_rows = (await db.execute(stmt_incidents)).scalars().all()
+    disconnect_incidents_count = len(incident_rows)
+    total_offline_seconds = sum(inc.duration_seconds or 0 for inc in incident_rows)
+
+    # Current network status
+    network_status = "not_started"
+    if assignment.status == AssignmentStatus.IN_PROGRESS:
+        network_status = "offline"
+        if redis:
+            try:
+                last_ping_str = await redis.hget(f"exam:{exam_id}:heartbeats", str(assignment_id))
+                if last_ping_str:
+                    now_ts = int(datetime.now(timezone.utc).timestamp())
+                    lag = max(0, now_ts - int(last_ping_str))
+                    if lag <= 18:
+                        network_status = "online"
+                    elif lag <= 30:
+                        network_status = "unstable"
+                    else:
+                        network_status = "offline"
+            except Exception:
+                pass
+    elif assignment.status in (AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED):
+        network_status = "submitted"
 
     # Assigned questions, scores, and submissions
     stmt_assigned = (
@@ -779,5 +911,9 @@ async def get_candidate_dossier(
         flag_counts_by_type=flag_counts_by_type,
         integrity_status=integrity_status,
         proctoring_logs=[ProctoringLogItem.model_validate(l) for l in log_rows],
-        questions=question_dossiers
+        questions=question_dossiers,
+        network_status=network_status,
+        disconnect_incidents_count=disconnect_incidents_count,
+        total_offline_seconds=total_offline_seconds,
+        network_incidents=[NetworkIncidentItem.model_validate(inc) for inc in incident_rows]
     )

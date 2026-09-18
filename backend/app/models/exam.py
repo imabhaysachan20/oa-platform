@@ -92,6 +92,7 @@ class ExamAssignment(Base, TimestampMixin):
     question_scores = relationship("QuestionScore", back_populates="assignment", cascade="all, delete-orphan")
     result = relationship("ExamResult", back_populates="assignment", uselist=False, cascade="all, delete-orphan")
     proctoring_logs = relationship("ExamProctoringLog", back_populates="assignment", cascade="all, delete-orphan")
+    network_incidents = relationship("ExamNetworkIncident", back_populates="assignment", cascade="all, delete-orphan")
 
 
 class AssignedQuestion(Base, TimestampMixin):

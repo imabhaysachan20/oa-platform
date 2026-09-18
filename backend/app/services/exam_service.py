@@ -516,15 +516,16 @@ async def get_exam_result_detail(
 
     if not is_admin:
         return ExamResultDetail(
+            assignment_id=assignment.id,
             exam_id=exam.id,
             exam_title=exam.title,
-            student_name="",
-            student_roll_no=None,
-            total_score=0.0,
+            student_name=user.name,
+            roll_no=user.roll_no,
+            status=assignment.status.value,
+            total_score=None,
             rank=None,
-            duration_minutes=exam.duration_minutes,
             submitted_at=assignment.submitted_at,
-            question_breakdown=[]
+            question_scores=[]
         )
 
     # For Admins: include score breakdown
@@ -538,26 +539,29 @@ async def get_exam_result_detail(
 
     breakdown = []
     for qs, q in score_rows:
+        diff_str = q.difficulty.value if hasattr(q.difficulty, 'value') else str(q.difficulty)
         breakdown.append(QuestionScoreBreakdown(
             question_id=q.id,
             question_title=q.title,
-            difficulty=q.difficulty,
+            difficulty=diff_str,
             difficulty_weight=qs.difficulty_weight,
             correctness=qs.correctness,
             time_taken_sec=qs.time_taken_sec,
+            time_bonus=getattr(qs, 'time_bonus', 0.0) or 0.0,
             final_score=qs.final_score
         ))
 
     return ExamResultDetail(
+        assignment_id=assignment.id,
         exam_id=exam.id,
         exam_title=exam.title,
         student_name=user.name,
-        student_roll_no=user.roll_no,
+        roll_no=user.roll_no,
+        status=assignment.status.value,
         total_score=result.total_score if result else 0.0,
         rank=result.rank if result else None,
-        duration_minutes=exam.duration_minutes,
         submitted_at=assignment.submitted_at,
-        question_breakdown=breakdown
+        question_scores=breakdown
     )
 
 

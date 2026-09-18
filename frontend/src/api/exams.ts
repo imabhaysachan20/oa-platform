@@ -50,11 +50,11 @@ export const examsApi = {
     });
     return res.data;
   },
-
-<<<<<<< Updated upstream
   markQuestionViewed: async (examId: number, questionId: number): Promise<{ question_deadline_at?: string | null }> => {
     const res = await api.post<{ question_deadline_at?: string | null }>(`/exams/${examId}/questions/${questionId}/view`);
-=======
+    return res.data;
+  },
+
   sendHeartbeat: async (
     examId: number,
     assignmentId: number
@@ -66,7 +66,6 @@ export const examsApi = {
         client_timestamp: new Date().toISOString(),
       }
     );
->>>>>>> Stashed changes
     return res.data;
   },
 };

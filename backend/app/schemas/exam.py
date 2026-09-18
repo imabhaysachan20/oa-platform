@@ -109,12 +109,14 @@ class MonitoringStudentView(BaseModel):
     name: str
     email: str
     roll_no: Optional[str] = None
+    college: Optional[str] = None
+    candidate_group: Optional[str] = None
     status: str
     started_at: Optional[datetime] = None
     deadline_at: Optional[datetime] = None
     submitted_at: Optional[datetime] = None
     time_remaining_sec: Optional[float] = None
-    submissions_count: int
+    submissions_count: int = 0
     current_score: Optional[float] = None
     flags_count: int = 0
     network_status: str = "online"  # "online" | "unstable" | "offline" | "not_started"

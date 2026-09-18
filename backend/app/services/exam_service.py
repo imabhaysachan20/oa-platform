@@ -19,12 +19,9 @@ from backend.app.models.user import User
 from backend.app.models.result import ExamResult, QuestionScore
 import redis.asyncio as aioredis
 from backend.app.models.proctoring import ExamProctoringLog
-<<<<<<< Updated upstream
-from backend.app.schemas.question import StudentQuestionView, StudentMCQOptionView
-=======
 from backend.app.models.network_incident import ExamNetworkIncident
-from backend.app.schemas.question import StudentQuestionView
->>>>>>> Stashed changes
+from backend.app.schemas.question import StudentQuestionView, StudentMCQOptionView
+
 from backend.app.schemas.exam import (
     ExamStartResponse,
     MyQuestionsResponse,
@@ -595,12 +592,7 @@ async def get_live_exam_monitoring(
     redis: Optional[aioredis.Redis] = None
 ) -> List[MonitoringStudentView]:
     """
-<<<<<<< Updated upstream
     Fetches real-time status of all students for an exam.
-    """
-    stmt_assigns = (
-=======
-    Admin endpoint to view real-time status of all students in an exam.
     Includes in-memory Redis heartbeat liveness check and network incident logs.
     """
     now = datetime.now(timezone.utc)
@@ -629,8 +621,7 @@ async def get_live_exam_monitoring(
     inc_counts = {r[0]: int(r[1]) for r in inc_rows}
     inc_durations = {r[0]: int(r[2]) for r in inc_rows}
 
-    stmt = (
->>>>>>> Stashed changes
+    stmt_assigns = (
         select(ExamAssignment, User, ExamResult)
         .join(User, ExamAssignment.user_id == User.id)
         .outerjoin(ExamResult, ExamResult.assignment_id == ExamAssignment.id)
@@ -638,35 +629,26 @@ async def get_live_exam_monitoring(
         .order_by(ExamAssignment.id.desc())
     )
     rows = (await db.execute(stmt_assigns)).all()
-    now = datetime.now(timezone.utc)
     monitoring_list = []
 
-<<<<<<< Updated upstream
     for assign, user, result in rows:
         count_stmt = select(func.count(Submission.id)).where(Submission.assignment_id == assign.id)
         submission_count = (await db.execute(count_stmt)).scalar() or 0
-=======
-        # Count proctoring flags / infractions (PURE ANTI-CHEAT ONLY)
-        flags_count_stmt = (
-            select(func.count(ExamProctoringLog.id))
-            .where(ExamProctoringLog.assignment_id == assignment.id)
-        )
-        flags_count = (await db.execute(flags_count_stmt)).scalar() or 0
->>>>>>> Stashed changes
 
+        # Count proctoring flags / infractions (PURE ANTI-CHEAT ONLY)
         flags_stmt = select(func.count(ExamProctoringLog.id)).where(ExamProctoringLog.assignment_id == assign.id)
         flags_count = (await db.execute(flags_stmt)).scalar() or 0
 
         remaining_sec = None
         if assign.status == AssignmentStatus.IN_PROGRESS and assign.deadline_at:
             delta = (assign.deadline_at - now).total_seconds()
-            remaining_sec = max(0, int(delta))
+            remaining_sec = max(0.0, delta)
 
         # Network liveness calculation
         network_status = "not_started"
         seconds_since_last_ping = None
-        if assignment.status == AssignmentStatus.IN_PROGRESS:
-            last_ts_str = heartbeats.get(str(assignment.id))
+        if assign.status == AssignmentStatus.IN_PROGRESS:
+            last_ts_str = heartbeats.get(str(assign.id))
             if last_ts_str:
                 try:
                     last_ts = int(last_ts_str)
@@ -683,7 +665,7 @@ async def get_live_exam_monitoring(
             else:
                 # In progress but no recent heartbeat
                 network_status = "offline"
-        elif assignment.status in (AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED):
+        elif assign.status in (AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED):
             network_status = "submitted"
 
         monitoring_list.append(MonitoringStudentView(
@@ -692,30 +674,20 @@ async def get_live_exam_monitoring(
             name=user.name,
             email=user.email,
             roll_no=user.roll_no,
-<<<<<<< Updated upstream
             college=user.college,
             candidate_group=user.candidate_group,
             status=assign.status.value,
             started_at=assign.started_at,
+            deadline_at=assign.deadline_at,
             submitted_at=assign.submitted_at,
-            remaining_seconds=remaining_sec,
-            submission_count=submission_count,
+            time_remaining_sec=remaining_sec,
+            submissions_count=submission_count,
             flags_count=flags_count,
-            current_score=result.total_score if result else None
-=======
-            status=assignment.status.value,
-            started_at=assignment.started_at,
-            deadline_at=assignment.deadline_at,
-            submitted_at=assignment.submitted_at,
-            time_remaining_sec=time_remaining,
-            submissions_count=sub_count,
             current_score=result.total_score if result else None,
-            flags_count=flags_count,
             network_status=network_status,
             seconds_since_last_ping=seconds_since_last_ping,
-            disconnect_incidents_count=inc_counts.get(assignment.id, 0),
-            total_offline_seconds=inc_durations.get(assignment.id, 0)
->>>>>>> Stashed changes
+            disconnect_incidents_count=inc_counts.get(assign.id, 0),
+            total_offline_seconds=inc_durations.get(assign.id, 0)
         ))
 
     return monitoring_list
@@ -728,16 +700,10 @@ async def get_candidate_dossier(
     redis: Optional[aioredis.Redis] = None
 ) -> CandidateDossierResponse:
     """
-<<<<<<< Updated upstream
-    Detailed inspector for admin: code submissions, MCQ answers, proctoring log.
-=======
-    Returns comprehensive candidate dossier for administrators:
-    - Candidate info, timings, total score, and rank
-    - Integrity rating and full proctoring audit log
-    - Assigned questions, submitted code, language, status, test results, and question score
-    - Network connectivity health and disconnection incident logs (separate from anti-cheat)
->>>>>>> Stashed changes
+    Detailed inspector for admin: code submissions, MCQ answers, proctoring log,
+    and network connectivity health with disconnection incident logs (separate from anti-cheat).
     """
+
     stmt = (
         select(ExamAssignment, User, Exam, ExamResult)
         .join(User, ExamAssignment.user_id == User.id)

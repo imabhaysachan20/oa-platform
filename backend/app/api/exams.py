@@ -273,7 +273,6 @@ async def batch_save_proctoring_logs(
     return {"saved": len(log_records)}
 
 
-<<<<<<< Updated upstream
 @router.post("/{exam_id}/questions/{question_id}/view")
 async def mark_question_as_viewed(
     exam_id: int,
@@ -287,7 +286,8 @@ async def mark_question_as_viewed(
     """
     deadline = await mark_question_viewed(db, exam_id, question_id, current_user.id)
     return {"question_deadline_at": deadline}
-=======
+
+
 @router.post("/{exam_id}/heartbeat", response_model=CandidateHeartbeatResponse)
 async def record_candidate_heartbeat(
     exam_id: int,
@@ -360,5 +360,5 @@ async def record_candidate_heartbeat(
         network_status="online",
         incident_logged=incident_logged
     )
->>>>>>> Stashed changes
+
 

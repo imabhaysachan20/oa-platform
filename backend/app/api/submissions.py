@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -133,8 +133,9 @@ async def _handle_submit_mcq_response(
 
     assigned_q, question = row
 
-    # Reject if question deadline passed
-    if assigned_q.question_deadline_at and now > assigned_q.question_deadline_at:
+    # Reject if question deadline passed (with a 7-second network grace period for auto-submit & transit latency)
+    MCQ_NETWORK_GRACE_PERIOD = timedelta(seconds=7)
+    if assigned_q.question_deadline_at and now > (assigned_q.question_deadline_at + MCQ_NETWORK_GRACE_PERIOD):
         raise HTTPException(status_code=400, detail="Time limit for this question has expired")
 
     # 3. Check if response is already locked

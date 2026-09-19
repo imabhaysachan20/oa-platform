@@ -86,6 +86,9 @@ async def create_exam(
         easy_weight=body.easy_weight,
         medium_weight=body.medium_weight,
         hard_weight=body.hard_weight,
+        easy_count=body.easy_count if body.easy_count is not None else 1,
+        medium_count=body.medium_count if body.medium_count is not None else 2,
+        hard_count=body.hard_count if body.hard_count is not None else 0,
         is_published=body.is_published,
         target_groups=body.target_groups or [],
     )
@@ -154,6 +157,12 @@ async def update_exam(
         exam.medium_weight = body.medium_weight
     if body.hard_weight is not None:
         exam.hard_weight = body.hard_weight
+    if body.easy_count is not None:
+        exam.easy_count = body.easy_count
+    if body.medium_count is not None:
+        exam.medium_count = body.medium_count
+    if body.hard_count is not None:
+        exam.hard_count = body.hard_count
     if body.is_published is not None:
         exam.is_published = body.is_published
     if body.target_groups is not None:

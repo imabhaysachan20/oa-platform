@@ -28,6 +28,9 @@ class Exam(Base, TimestampMixin):
     easy_weight: Mapped[float] = mapped_column(Float, default=10.0, nullable=False)
     medium_weight: Mapped[float] = mapped_column(Float, default=20.0, nullable=False)
     hard_weight: Mapped[float] = mapped_column(Float, default=30.0, nullable=False)
+    easy_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    medium_count: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
+    hard_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_published: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     target_groups: Mapped[Optional[list[str]]] = mapped_column(JSON, default=list, nullable=True)
 

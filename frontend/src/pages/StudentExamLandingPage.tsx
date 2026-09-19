@@ -237,7 +237,19 @@ export const StudentExamLandingPage: React.FC = () => {
                       )}
                       <span className="flex items-center gap-1.5 font-medium">
                         <FileCode2 size={14} className="text-slate-400" />
-                        3 Questions (1 Easy, 2 Medium)
+                        {(() => {
+                          const easy = exam.easy_count ?? 1;
+                          const med = exam.medium_count ?? 2;
+                          const hard = exam.hard_count ?? 0;
+                          const total = easy + med + hard;
+                          const parts: string[] = [];
+                          if (easy > 0) parts.push(`${easy} Easy`);
+                          if (med > 0) parts.push(`${med} Medium`);
+                          if (hard > 0) parts.push(`${hard} Hard`);
+                          return total > 0
+                            ? `${total} Coding Questions (${parts.join(', ')})`
+                            : 'Assessment Questions';
+                        })()}
                       </span>
                     </div>
                   </div>

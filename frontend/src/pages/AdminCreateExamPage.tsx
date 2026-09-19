@@ -16,6 +16,9 @@ import {
   Layers,
   Plus,
   X,
+  Sliders,
+  AlertTriangle,
+  Filter,
 } from 'lucide-react';
 
 export const AdminCreateExamPage: React.FC = () => {
@@ -28,6 +31,10 @@ export const AdminCreateExamPage: React.FC = () => {
   const [easyWeight, setEasyWeight] = useState(10);
   const [mediumWeight, setMediumWeight] = useState(20);
   const [hardWeight, setHardWeight] = useState(30);
+  const [easyCount, setEasyCount] = useState(1);
+  const [mediumCount, setMediumCount] = useState(2);
+  const [hardCount, setHardCount] = useState(0);
+  const [difficultyFilter, setDifficultyFilter] = useState<'all' | 'easy' | 'medium' | 'hard' | 'mcq'>('all');
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [customGroupInput, setCustomGroupInput] = useState('');
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<number[]>([]);
@@ -138,6 +145,9 @@ export const AdminCreateExamPage: React.FC = () => {
       easy_weight: easyWeight,
       medium_weight: mediumWeight,
       hard_weight: hardWeight,
+      easy_count: easyCount,
+      medium_count: mediumCount,
+      hard_count: hardCount,
       is_published: true,
       target_groups: selectedGroups,
       question_ids: selectedQuestionIds,
@@ -146,10 +156,26 @@ export const AdminCreateExamPage: React.FC = () => {
     });
   };
 
-  const filteredQuestions = questions?.filter((q) =>
-    q.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    q.difficulty.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const selectedQuestions = questions?.filter((q) => selectedQuestionIds.includes(q.id)) || [];
+  const poolEasyCount = selectedQuestions.filter((q) => q.question_type !== 'mcq' && q.difficulty === 'easy').length;
+  const poolMedCount = selectedQuestions.filter((q) => q.question_type !== 'mcq' && q.difficulty === 'medium').length;
+  const poolHardCount = selectedQuestions.filter((q) => q.question_type !== 'mcq' && q.difficulty === 'hard').length;
+  const poolMcqCount = selectedQuestions.filter((q) => q.question_type === 'mcq').length;
+
+  const bankEasyCount = questions?.filter((q) => q.question_type !== 'mcq' && q.difficulty === 'easy').length || 0;
+  const bankMedCount = questions?.filter((q) => q.question_type !== 'mcq' && q.difficulty === 'medium').length || 0;
+  const bankHardCount = questions?.filter((q) => q.question_type !== 'mcq' && q.difficulty === 'hard').length || 0;
+  const bankMcqCount = questions?.filter((q) => q.question_type === 'mcq').length || 0;
+
+  const filteredQuestions = questions?.filter((q) => {
+    const matchesSearch =
+      q.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      q.difficulty.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!matchesSearch) return false;
+    if (difficultyFilter === 'all') return true;
+    if (difficultyFilter === 'mcq') return q.question_type === 'mcq';
+    return q.question_type !== 'mcq' && q.difficulty === difficultyFilter;
+  });
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-6 animate-fadeIn">
@@ -181,21 +207,21 @@ export const AdminCreateExamPage: React.FC = () => {
             1. Basic Assessment Details
           </h2>
 
-          <div>
-            <label className="block font-bold text-slate-700 dark:text-slate-300 text-xs uppercase tracking-wider mb-1">
-              Assessment Title <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. UsefulBI Senior Software Engineer Assessment"
-              className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-            />
-          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="sm:col-span-2">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 text-xs uppercase tracking-wider mb-1">
+                Assessment Title <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. UsefulBI Senior Software Engineer Assessment"
+                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
+              />
+            </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div>
               <label className="block font-bold text-slate-700 dark:text-slate-300 text-xs uppercase tracking-wider mb-1">
                 Duration (minutes) <span className="text-rose-500">*</span>
@@ -210,47 +236,166 @@ export const AdminCreateExamPage: React.FC = () => {
                   setDurationMinutes(val);
                   if (startTime) handleStartTimeChange(startTime, val);
                 }}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
+                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
               />
             </div>
+          </div>
+        </Card>
 
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 text-xs uppercase tracking-wider mb-1">
-                Easy Weight
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={easyWeight}
-                onChange={(e) => setEasyWeight(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-              />
+        {/* Question Pattern & Scoring Weights Card */}
+        <Card className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2 gap-1">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
+              <Sliders size={16} className="text-ubi-800 dark:text-ubi-400" />
+              <span>2. Question Pattern & Scoring Weights</span>
+            </h2>
+            <span className="text-[11px] text-slate-500 font-medium">
+              Candidate gets a randomized draw matching these counts
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Easy Config */}
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-emerald-200 dark:border-emerald-900/50 rounded-xl space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  Easy Questions
+                </span>
+                <span className="text-[10px] text-slate-500">Pool: {poolEasyCount} available</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-0.5">
+                    Count / Candidate
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={easyCount}
+                    onChange={(e) => setEasyCount(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-0.5">
+                    Weight (Marks)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={easyWeight}
+                    onChange={(e) => setEasyWeight(Number(e.target.value))}
+                    className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none"
+                  />
+                </div>
+              </div>
+              {selectedQuestionIds.length > 0 && easyCount > poolEasyCount && (
+                <div className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 font-medium pt-0.5">
+                  <AlertTriangle size={11} className="shrink-0" />
+                  <span>Pool only has {poolEasyCount} Easy. Fallback will apply.</span>
+                </div>
+              )}
             </div>
 
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 text-xs uppercase tracking-wider mb-1">
-                Medium Weight
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={mediumWeight}
-                onChange={(e) => setMediumWeight(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-              />
+            {/* Medium Config */}
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-amber-200 dark:border-amber-900/50 rounded-xl space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                  Medium Questions
+                </span>
+                <span className="text-[10px] text-slate-500">Pool: {poolMedCount} available</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-0.5">
+                    Count / Candidate
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={mediumCount}
+                    onChange={(e) => setMediumCount(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-0.5">
+                    Weight (Marks)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={mediumWeight}
+                    onChange={(e) => setMediumWeight(Number(e.target.value))}
+                    className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none"
+                  />
+                </div>
+              </div>
+              {selectedQuestionIds.length > 0 && mediumCount > poolMedCount && (
+                <div className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 font-medium pt-0.5">
+                  <AlertTriangle size={11} className="shrink-0" />
+                  <span>Pool only has {poolMedCount} Medium. Fallback will apply.</span>
+                </div>
+              )}
             </div>
 
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 text-xs uppercase tracking-wider mb-1">
-                Hard Weight
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={hardWeight}
-                onChange={(e) => setHardWeight(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-              />
+            {/* Hard Config */}
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-rose-200 dark:border-rose-900/50 rounded-xl space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                  Hard Questions
+                </span>
+                <span className="text-[10px] text-slate-500">Pool: {poolHardCount} available</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-0.5">
+                    Count / Candidate
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={hardCount}
+                    onChange={(e) => setHardCount(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-0.5">
+                    Weight (Marks)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={hardWeight}
+                    onChange={(e) => setHardWeight(Number(e.target.value))}
+                    className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none"
+                  />
+                </div>
+              </div>
+              {selectedQuestionIds.length > 0 && hardCount > poolHardCount && (
+                <div className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 font-medium pt-0.5">
+                  <AlertTriangle size={11} className="shrink-0" />
+                  <span>Pool only has {poolHardCount} Hard. Fallback will apply.</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Dynamic Draw Summary */}
+          <div className="p-3 bg-ubi-50/80 dark:bg-ubi-950/40 border border-ubi-200 dark:border-ubi-800/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 text-ubi-900 dark:text-ubi-200 font-semibold">
+              <Sparkles size={15} className="text-ubi-700 dark:text-ubi-400 shrink-0" />
+              <span>
+                Candidate Exam Draw: <strong>{easyCount} Easy</strong> + <strong>{mediumCount} Medium</strong> + <strong>{hardCount} Hard</strong> = <strong>{easyCount + mediumCount + hardCount} Coding Questions</strong>
+                {poolMcqCount > 0 ? ` + ${poolMcqCount} Fixed MCQs` : ''}
+              </span>
+            </div>
+            <div className="text-ubi-800 dark:text-ubi-300 font-bold self-end sm:self-auto shrink-0">
+              Total Coding Weight: {easyCount * easyWeight + mediumCount * mediumWeight + hardCount * hardWeight} pts
             </div>
           </div>
         </Card>
@@ -260,7 +405,7 @@ export const AdminCreateExamPage: React.FC = () => {
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
             <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
               <Layers size={16} className="text-ubi-800 dark:text-ubi-400" />
-              <span>2. Candidate Group Access (Multi-Group Selection)</span>
+              <span>3. Candidate Group Access (Multi-Group Selection)</span>
             </h2>
             <span className="text-[11px] text-slate-500 font-medium">
               {selectedGroups.length > 0 ? `${selectedGroups.length} group(s) selected` : 'Open to All Candidates'}
@@ -372,7 +517,7 @@ export const AdminCreateExamPage: React.FC = () => {
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
             <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
               <Calendar size={16} className="text-ubi-800 dark:text-ubi-400" />
-              <span>3. Scheduled Access Window</span>
+              <span>4. Scheduled Access Window</span>
             </h2>
             <span className="text-[11px] text-slate-500 font-medium">Optional (Leave empty for flexible access)</span>
           </div>
@@ -417,10 +562,15 @@ export const AdminCreateExamPage: React.FC = () => {
         {/* Question Pool Selection Card */}
         <Card className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
-            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
-              <Sparkles size={16} className="text-ubi-800 dark:text-ubi-400" />
-              <span>3. Select Questions for Pool ({selectedQuestionIds.length} selected)</span>
-            </h2>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                <Sparkles size={16} className="text-ubi-800 dark:text-ubi-400" />
+                <span>5. Select Questions for Pool ({selectedQuestionIds.length} selected)</span>
+              </h2>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Select questions from the bank. Candidates will receive random draws from this pool matching your configured pattern.
+              </p>
+            </div>
             <button
               type="button"
               onClick={handleSelectAllQuestions}
@@ -430,16 +580,89 @@ export const AdminCreateExamPage: React.FC = () => {
             </button>
           </div>
 
-          {/* Search Filter */}
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-            <input
-              type="text"
-              placeholder="Search questions by title or difficulty..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-            />
+          {/* Selected Pool Composition Badges */}
+          <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider text-[11px]">
+                Current Pool Composition:
+              </span>
+              <span className="text-[11px] font-semibold text-slate-500">
+                {selectedQuestionIds.length} Total Questions Selected
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md border font-semibold ${
+                poolEasyCount >= easyCount
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                  : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+              }`}>
+                Easy in Pool: <strong>{poolEasyCount}</strong> / {easyCount} required
+              </span>
+              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md border font-semibold ${
+                poolMedCount >= mediumCount
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                  : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+              }`}>
+                Medium in Pool: <strong>{poolMedCount}</strong> / {mediumCount} required
+              </span>
+              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md border font-semibold ${
+                poolHardCount >= hardCount
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                  : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+              }`}>
+                Hard in Pool: <strong>{poolHardCount}</strong> / {hardCount} required
+              </span>
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border font-semibold bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800">
+                MCQs in Pool: <strong>{poolMcqCount}</strong> (all fixed)
+              </span>
+            </div>
+          </div>
+
+          {/* Search Filter & Difficulty Filter Tabs */}
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="text-[11px] font-bold text-slate-500 mr-1 flex items-center gap-1">
+                <Filter size={12} /> Filter Bank:
+              </span>
+              {(['all', 'easy', 'medium', 'hard', 'mcq'] as const).map((filterKey) => {
+                const count =
+                  filterKey === 'all'
+                    ? questions?.length || 0
+                    : filterKey === 'easy'
+                    ? bankEasyCount
+                    : filterKey === 'medium'
+                    ? bankMedCount
+                    : filterKey === 'hard'
+                    ? bankHardCount
+                    : bankMcqCount;
+                const isActive = difficultyFilter === filterKey;
+                return (
+                  <button
+                    key={filterKey}
+                    type="button"
+                    onClick={() => setDifficultyFilter(filterKey)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition border ${
+                      isActive
+                        ? 'bg-ubi-800 text-white border-ubi-900 dark:bg-ubi-700 dark:border-ubi-600 shadow-2xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-300 dark:border-slate-800'
+                    }`}
+                  >
+                    {filterKey} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+              <input
+                type="text"
+                placeholder="Search questions by title or description..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
+              />
+            </div>
           </div>
 
           {/* Question List */}
@@ -487,7 +710,7 @@ export const AdminCreateExamPage: React.FC = () => {
               })
             ) : (
               <div className="text-center py-6 text-xs text-slate-500">
-                No questions found in question bank.
+                No questions found matching your filter/search.
               </div>
             )}
           </div>
@@ -497,10 +720,10 @@ export const AdminCreateExamPage: React.FC = () => {
               📌 Assessment Assignment Rules:
             </p>
             <p>
-              • <strong>MCQ Questions:</strong> All selected MCQs are included for <strong>every student</strong> taking this exam (fixed assignment).
+              • <strong>MCQ Questions:</strong> All selected MCQs ({poolMcqCount}) are included for <strong>every student</strong> taking this exam (fixed assignment).
             </p>
             <p>
-              • <strong>Coding Questions:</strong> Sampled randomly per candidate (1 Easy + 2 Medium) from the coding questions in this pool.
+              • <strong>Coding Questions:</strong> Each candidate receives a random draw matching the configured pattern (<strong>{easyCount} Easy</strong>, <strong>{mediumCount} Medium</strong>, <strong>{hardCount} Hard</strong> = <strong>{easyCount + mediumCount + hardCount} total</strong>) from this pool.
             </p>
           </div>
         </Card>

@@ -143,7 +143,7 @@ async def start_exam(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Idempotently assigns 3 questions (1 easy + 2 medium) and starts the timer.
+    Idempotently assigns questions based on exam configuration and starts the timer.
     """
     return await start_exam_for_student(
         db=db,

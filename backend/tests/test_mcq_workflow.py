@@ -443,8 +443,23 @@ async def test_mcq_submission_rejections_and_validations():
         assert resp.selected_option_ids == [opt_a.id]
         assert resp.is_locked is False
 
-        # Case 4: Expired question deadline -> 400
-        assigned_q.question_deadline_at = now - timedelta(seconds=1)
+        # Case 4a: Within 7-second network grace period -> accepted
+        assigned_q.question_deadline_at = now - timedelta(seconds=2)
+        await db.commit()
+
+        resp_grace = await _handle_submit_mcq_response(
+            SubmitMCQResponseRequest(
+                assignment_id=assignment.id,
+                question_id=q.id,
+                selected_option_ids=[opt_a.id]
+            ),
+            current_user=student,
+            db=db
+        )
+        assert resp_grace.selected_option_ids == [opt_a.id]
+
+        # Case 4b: Beyond network grace period -> 400
+        assigned_q.question_deadline_at = now - timedelta(seconds=15)
         await db.commit()
 
         with pytest.raises(HTTPException) as exc4:
@@ -458,7 +473,7 @@ async def test_mcq_submission_rejections_and_validations():
                 db=db
             )
         assert exc4.value.status_code == 400
-        assert "Time limit" in exc4.value.detail or "expired" in exc4.value.detail
+        assert "expired" in exc4.value.detail.lower()
 
 
 @pytest.mark.asyncio

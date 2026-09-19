@@ -25,6 +25,10 @@ import {
   Square,
   Radio
 } from 'lucide-react';
+import { InfoTooltip } from '../components/ui/InfoTooltip';
+
+const IDENTIFIER_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+const isValidIdentifier = (name: string): boolean => IDENTIFIER_REGEX.test(name.trim());
 
 const COMMON_DATA_TYPES = [
   { value: 'int', label: 'int (Integer)' },
@@ -62,9 +66,6 @@ export const AdminCreateQuestionPage: React.FC = () => {
     { option_text: '', is_correct: false },
     { option_text: '', is_correct: false },
   ]);
-
-  // Coding Mode: LeetCode style function vs Standard CP program
-  const [questionMode, setQuestionMode] = useState<'leetcode' | 'standard'>('leetcode');
 
   // Basic Details
   const [title, setTitle] = useState('');
@@ -140,12 +141,9 @@ export const AdminCreateQuestionPage: React.FC = () => {
       }
 
       if (existingQuestion.function_name) {
-        setQuestionMode('leetcode');
         setFunctionName(existingQuestion.function_name);
         setParameters(existingQuestion.parameters || []);
         setReturnType(existingQuestion.return_type || 'void');
-      } else {
-        setQuestionMode('standard');
       }
 
       if (existingQuestion.starter_code) {
@@ -267,6 +265,16 @@ export const AdminCreateQuestionPage: React.FC = () => {
       setValidationError('Please enter a function name before generating templates.');
       return;
     }
+    if (!isValidIdentifier(functionName)) {
+      setValidationError('Invalid function name. Spaces and special characters are not allowed. Please use standard identifier format like "isAnagram" or "twoSum".');
+      return;
+    }
+    for (const p of parameters) {
+      if (!p.name.trim() || !isValidIdentifier(p.name)) {
+        setValidationError(`Invalid parameter name "${p.name}". Parameter names cannot contain spaces or special characters.`);
+        return;
+      }
+    }
     setValidationError(null);
     setIsGeneratingStarters(true);
     try {
@@ -378,10 +386,20 @@ export const AdminCreateQuestionPage: React.FC = () => {
       return;
     }
 
-    // Coding question payload
-    if (questionMode === 'leetcode' && !functionName.trim()) {
-      setValidationError('Please enter a function name for the LeetCode signature.');
+    // Coding question payload (LeetCode function format)
+    if (!functionName.trim()) {
+      setValidationError('Please enter a function name for the function signature.');
       return;
+    }
+    if (!isValidIdentifier(functionName)) {
+      setValidationError('Function name must be a valid programming identifier without spaces (e.g. "isAnagram", "twoSum").');
+      return;
+    }
+    for (const p of parameters) {
+      if (!p.name.trim() || !isValidIdentifier(p.name)) {
+        setValidationError(`Parameter name "${p.name}" is invalid. Parameter names must not contain spaces or special characters.`);
+        return;
+      }
     }
 
     const payload: any = {
@@ -397,20 +415,12 @@ export const AdminCreateQuestionPage: React.FC = () => {
       marks: null,
       mcq_time_limit_seconds: null,
       is_multi_select: false,
-      options: []
+      options: [],
+      function_name: functionName.trim(),
+      parameters: parameters,
+      return_type: returnType,
+      starter_code: Object.keys(starterCode).length > 0 ? starterCode : undefined,
     };
-
-    if (questionMode === 'leetcode') {
-      payload.function_name = functionName.trim();
-      payload.parameters = parameters;
-      payload.return_type = returnType;
-      payload.starter_code = Object.keys(starterCode).length > 0 ? starterCode : undefined;
-    } else {
-      payload.function_name = null;
-      payload.parameters = null;
-      payload.return_type = null;
-      payload.starter_code = null;
-    }
 
     if (!isEditMode && localTestCases.length > 0) {
       payload.test_cases = localTestCases.map(tc => ({
@@ -475,9 +485,17 @@ export const AdminCreateQuestionPage: React.FC = () => {
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Question Type Selector Toggle */}
         <Card className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-          <label className="block font-bold text-slate-800 dark:text-slate-200 text-xs uppercase tracking-wider mb-2">
-            Question Type
-          </label>
+          <div className="flex items-center gap-1.5 mb-2">
+            <label className="block font-bold text-slate-800 dark:text-slate-200 text-xs uppercase tracking-wider">
+              Question Type
+            </label>
+            <InfoTooltip
+              title="Question Type"
+              content="Choose between a Coding Problem (automated code evaluation against test cases via Judge0) or Multiple Choice Question (MCQ with selectable options, instant grading, and optional timer)."
+              example="Select Coding for algorithms/data structures, or MCQ for conceptual questions."
+              align="left"
+            />
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
               type="button"
@@ -537,9 +555,17 @@ export const AdminCreateQuestionPage: React.FC = () => {
               </h2>
 
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                  Question Title *
-                </label>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                    Question Title *
+                  </label>
+                  <InfoTooltip
+                    title="MCQ Question Title"
+                    content="A concise headline or prompt summary for this multiple choice question displayed in exam listings and candidate navigation."
+                    example="e.g. 'Binary Search Tree Worst-Case Lookup' or 'HTTP Response Status Codes'"
+                    align="left"
+                  />
+                </div>
                 <input
                   type="text"
                   value={title}
@@ -550,9 +576,17 @@ export const AdminCreateQuestionPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                  Question Content / Prompt *
-                </label>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                    Question Content / Prompt *
+                  </label>
+                  <InfoTooltip
+                    title="MCQ Question Prompt"
+                    content="The full problem statement or question text shown to candidates. Supports rich text formatting, lists, code snippets, and images."
+                    example="e.g. 'Which data structure follows the First-In, First-Out (FIFO) principle?'"
+                    align="left"
+                  />
+                </div>
                 <RichTextEditor
                   value={description}
                   onChange={setDescription}
@@ -562,9 +596,15 @@ export const AdminCreateQuestionPage: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                    Difficulty Level
-                  </label>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                      Difficulty Level
+                    </label>
+                    <InfoTooltip
+                      title="Difficulty Rating"
+                      content="Categorizes the complexity of the question. Useful for structuring assessments and candidate reporting."
+                    />
+                  </div>
                   <select
                     value={difficulty}
                     onChange={(e) => setDifficulty(e.target.value as QuestionDifficulty)}
@@ -577,9 +617,16 @@ export const AdminCreateQuestionPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                    Marks Awarded *
-                  </label>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                      Marks Awarded *
+                    </label>
+                    <InfoTooltip
+                      title="Marks Awarded"
+                      content="The total score points added to the candidate's total exam score when answered correctly."
+                      example="e.g. 5, 10, or 20 marks."
+                    />
+                  </div>
                   <input
                     type="number"
                     step="0.5"
@@ -593,9 +640,16 @@ export const AdminCreateQuestionPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                    Time Limit (seconds, optional)
-                  </label>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                      Time Limit (seconds, optional)
+                    </label>
+                    <InfoTooltip
+                      title="Question Timer"
+                      content="Optional dedicated countdown timer just for this question. If left empty, only the overall exam timer applies."
+                      example="e.g. 60 for a 1-minute quick question, or blank for untimed."
+                    />
+                  </div>
                   <input
                     type="number"
                     min="5"
@@ -616,6 +670,12 @@ export const AdminCreateQuestionPage: React.FC = () => {
                   <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
                     <span className="flex items-center justify-center w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold border border-slate-200 dark:border-slate-700">2</span>
                     <span>Answer Options ({mcqOptions.length})</span>
+                    <InfoTooltip
+                      title="Answer Choices"
+                      content="Provide at least 2 choices. Click the circle/checkbox on the left to designate which option(s) are correct. Single-select requires exactly 1 correct answer."
+                      example="Mark option B as correct if B is the answer."
+                      align="left"
+                    />
                   </h2>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
                     Define the choices. Mark the correct answer(s) using the radio/checkbox on the left.
@@ -650,6 +710,11 @@ export const AdminCreateQuestionPage: React.FC = () => {
                       className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
                     />
                     <span>Allow Multi-Select (Multiple Answers)</span>
+                    <InfoTooltip
+                      title="Multi-Select Answers"
+                      content="Enable if this question has more than one valid answer. Candidates will use checkboxes instead of radio buttons."
+                      align="right"
+                    />
                   </label>
 
                   <Button
@@ -664,6 +729,7 @@ export const AdminCreateQuestionPage: React.FC = () => {
                   </Button>
                 </div>
               </div>
+
 
               {/* Options List */}
               <div className="space-y-2.5">
@@ -760,68 +826,25 @@ export const AdminCreateQuestionPage: React.FC = () => {
         ) : (
           /* ==================== CODING QUESTION FORM ==================== */
           <Card className="p-4 sm:p-5 space-y-5">
-            {/* Execution Architecture Toggle */}
-            <div className="space-y-2">
-              <label className="block font-bold text-slate-800 dark:text-slate-200 text-xs uppercase tracking-wider">
-                Execution Architecture
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div
-                  onClick={() => setQuestionMode('leetcode')}
-                  className={`p-3 rounded-xl border cursor-pointer transition flex items-start gap-3 ${
-                    questionMode === 'leetcode'
-                      ? 'border-ubi-800 bg-ubi-50/60 dark:bg-ubi-950/40 dark:border-ubi-700 shadow-xs'
-                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
-                  }`}
-                >
-                  <div className={`p-2 rounded-lg ${questionMode === 'leetcode' ? 'bg-ubi-800 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600'}`}>
-                    <Sparkles size={16} />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <span>LeetCode Style (Function)</span>
-                      <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.2 rounded-full font-bold">Recommended</span>
-                    </div>
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
-                      Candidate completes a typed function. System automatically injects test harnesses for all 4 languages.
-                    </div>
-                  </div>
-                </div>
-
-                <div
-                  onClick={() => setQuestionMode('standard')}
-                  className={`p-3 rounded-xl border cursor-pointer transition flex items-start gap-3 ${
-                    questionMode === 'standard'
-                      ? 'border-ubi-800 bg-ubi-50/60 dark:bg-ubi-950/40 dark:border-ubi-700 shadow-xs'
-                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
-                  }`}
-                >
-                  <div className={`p-2 rounded-lg ${questionMode === 'standard' ? 'bg-ubi-800 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600'}`}>
-                    <Code2 size={16} />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-900 dark:text-white">
-                      Standard Program (stdin/stdout)
-                    </div>
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
-                      Classic competitive programming. Candidate writes full standalone program reading stdin and printing to stdout.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
             {/* 1. Basic Problem Information */}
-            <div className="space-y-3.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+            <div className="space-y-3.5">
               <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
                 <span className="flex items-center justify-center w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold border border-slate-200 dark:border-slate-700">1</span>
                 <span>Problem Information</span>
               </h2>
 
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                  Question Title *
-                </label>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                    Question Title *
+                  </label>
+                  <InfoTooltip
+                    title="Problem Title"
+                    content="Descriptive title of the programming problem shown in the problem catalog and workspace header."
+                    example="e.g. 'Two Sum', 'Valid Anagram', 'Reverse Linked List'"
+                    align="left"
+                  />
+                </div>
                 <input
                   type="text"
                   value={title}
@@ -832,9 +855,17 @@ export const AdminCreateQuestionPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                  Problem Description (Markdown / Rich Text) *
-                </label>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                    Problem Description (Markdown / Rich Text) *
+                  </label>
+                  <InfoTooltip
+                    title="Problem Description"
+                    content="Full specification of the challenge. Include task background, requirements, mathematical formulas, and constraints (e.g. 1 <= N <= 10^5)."
+                    example="State clearly what the candidate needs to compute, input ranges, and edge cases."
+                    align="left"
+                  />
+                </div>
                 <RichTextEditor
                   value={description}
                   onChange={setDescription}
@@ -844,9 +875,15 @@ export const AdminCreateQuestionPage: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                    Difficulty Level
-                  </label>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                      Difficulty Level
+                    </label>
+                    <InfoTooltip
+                      title="Difficulty Rating"
+                      content="Easy (weight 1.0), Medium (weight 2.0), or Hard (weight 3.0). Determines scoring weight multiplier in assessments."
+                    />
+                  </div>
                   <select
                     value={difficulty}
                     onChange={(e) => setDifficulty(e.target.value as QuestionDifficulty)}
@@ -859,9 +896,16 @@ export const AdminCreateQuestionPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                    Time Limit (ms)
-                  </label>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                      Time Limit (ms)
+                    </label>
+                    <InfoTooltip
+                      title="Execution Time Limit"
+                      content="Maximum CPU time allowed for a single test case before terminating with Time Limit Exceeded (TLE)."
+                      example="Default: 2000 ms (2.0 seconds)."
+                    />
+                  </div>
                   <input
                     type="number"
                     value={timeLimitMs}
@@ -873,9 +917,16 @@ export const AdminCreateQuestionPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                    Memory Limit (KB)
-                  </label>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                      Memory Limit (KB)
+                    </label>
+                    <InfoTooltip
+                      title="Execution Memory Limit"
+                      content="Maximum RAM memory allocation per test run before failing with Memory Limit Exceeded (MLE)."
+                      example="Default: 128000 KB (~128 MB)."
+                    />
+                  </div>
                   <input
                     type="number"
                     value={memoryLimitKb}
@@ -888,9 +939,8 @@ export const AdminCreateQuestionPage: React.FC = () => {
               </div>
             </div>
 
-            {/* 2. LeetCode Signature Builder (Shown only in LeetCode mode) */}
-            {questionMode === 'leetcode' && (
-              <div className="space-y-3.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+            {/* 2. LeetCode Signature Builder */}
+            <div className="space-y-3.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
                 <div className="flex items-center justify-between">
                   <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
                     <span className="flex items-center justify-center w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold border border-slate-200 dark:border-slate-700">2</span>
@@ -912,21 +962,51 @@ export const AdminCreateQuestionPage: React.FC = () => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                      Function Name *
-                    </label>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                        Function Name *
+                      </label>
+                      <InfoTooltip
+                        title="Function Name Rule"
+                        content="Function name must be a valid programming language identifier (letters, numbers, underscores). Spaces and special characters are strictly prohibited. It cannot start with a digit."
+                        example="e.g. 'isAnagram' (NOT 'is anagram'), 'twoSum', 'reverseList', 'maxSubArray'"
+                        align="left"
+                      />
+                    </div>
                     <input
                       type="text"
                       value={functionName}
                       onChange={(e) => setFunctionName(e.target.value)}
-                      placeholder="e.g. twoSum, isPalindrome, reverseList"
-                      className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-xs font-mono focus:ring-1 focus:ring-ubi-800 focus:outline-none"
+                      placeholder="e.g. isAnagram, twoSum, reverseList"
+                      className={`w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border rounded-md text-slate-900 dark:text-slate-100 text-xs font-mono focus:outline-none ${
+                        functionName.length > 0 && !isValidIdentifier(functionName)
+                          ? 'border-rose-400 dark:border-rose-600 focus:ring-1 focus:ring-rose-500'
+                          : 'border-slate-300 dark:border-slate-800 focus:ring-1 focus:ring-ubi-800'
+                      }`}
                     />
+                    {functionName.length > 0 && !isValidIdentifier(functionName) && (
+                      <p className="mt-1 text-[11px] text-rose-500 dark:text-rose-400 font-medium flex items-center gap-1">
+                        <AlertTriangle size={12} className="shrink-0" />
+                        <span>
+                          Invalid format. Spaces and special characters are not allowed. Use an identifier like{' '}
+                          <code className="bg-rose-100 dark:bg-rose-950/70 px-1 py-0.5 rounded font-mono text-[10px]">isAnagram</code>
+                          {' '}or{' '}
+                          <code className="bg-rose-100 dark:bg-rose-950/70 px-1 py-0.5 rounded font-mono text-[10px]">twoSum</code>.
+                        </span>
+                      </p>
+                    )}
                   </div>
                   <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                      Return Type
-                    </label>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                        Return Type
+                      </label>
+                      <InfoTooltip
+                        title="Return Data Type"
+                        content="The data type returned by the function. Used to generate strongly typed stubs for Python, JS, C++, and Java."
+                        example="e.g. 'bool' for anagram check, 'int[]' for indices, 'int' for count/sum."
+                      />
+                    </div>
                     <select
                       value={returnType}
                       onChange={(e) => setReturnType(e.target.value)}
@@ -942,9 +1022,17 @@ export const AdminCreateQuestionPage: React.FC = () => {
                 {/* Parameters list */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
-                      Parameters ({parameters.length})
-                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                        Parameters ({parameters.length})
+                      </label>
+                      <InfoTooltip
+                        title="Function Parameters"
+                        content="Specify the arguments passed into your function. Each parameter name must be a valid identifier without spaces (e.g. 's', 't', 'nums', 'target')."
+                        example="isAnagram(s: string, t: string) -> bool"
+                        align="left"
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={handleAddParameter}
@@ -961,8 +1049,12 @@ export const AdminCreateQuestionPage: React.FC = () => {
                           type="text"
                           value={p.name}
                           onChange={(e) => handleParameterChange(idx, 'name', e.target.value)}
-                          placeholder="arg name"
-                          className="w-1/3 px-3 py-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded text-xs font-mono"
+                          placeholder="arg name (e.g. nums)"
+                          className={`w-1/3 px-3 py-1 bg-slate-50 dark:bg-slate-950 border rounded text-xs font-mono focus:outline-none ${
+                            p.name.length > 0 && !isValidIdentifier(p.name)
+                              ? 'border-rose-400 dark:border-rose-600 focus:ring-1 focus:ring-rose-500'
+                              : 'border-slate-300 dark:border-slate-800 focus:ring-1 focus:ring-ubi-800'
+                          }`}
                         />
                         <select
                           value={p.type}
@@ -986,52 +1078,75 @@ export const AdminCreateQuestionPage: React.FC = () => {
                   </div>
                 </div>
               </div>
-            )}
 
             {/* 3. Sample Input & Output */}
             <div className="space-y-3.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
               <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
                 <span className="flex items-center justify-center w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold border border-slate-200 dark:border-slate-700">
-                  {questionMode === 'leetcode' ? '3' : '2'}
+                  3
                 </span>
                 <span>Sample Input & Format</span>
               </h2>
 
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                  Input Format Explanation
-                </label>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                    Input Format Explanation
+                  </label>
+                  <InfoTooltip
+                    title="Input Format Guidance"
+                    content="Briefly describe how inputs are organized line by line so candidates understand what to expect."
+                    example="e.g. 'Line 1: string s, Line 2: string t' or 'Line 1: array nums, Line 2: integer target'"
+                    align="left"
+                  />
+                </div>
                 <textarea
                   rows={2}
                   value={inputFormat}
                   onChange={(e) => setInputFormat(e.target.value)}
-                  placeholder={questionMode === 'leetcode' ? 'e.g. Line 1: nums (array), Line 2: target (integer)' : 'e.g. First line contains N. Second line contains space-separated integers.'}
+                  placeholder="e.g. Line 1: nums (array), Line 2: target (integer)"
                   className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-[11px] focus:ring-1 focus:ring-ubi-800 focus:outline-none"
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                    Sample Input
-                  </label>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                      Sample Input
+                    </label>
+                    <InfoTooltip
+                      title="Sample Input Example"
+                      content="Example input passed into test case runners. For LeetCode mode, provide one line per parameter formatted as valid JSON or primitives."
+                      example={`"anagram"\n"nagaram"  OR  [2,7,11,15]\n9`}
+                      align="left"
+                    />
+                  </div>
                   <textarea
                     rows={3}
                     value={sampleInput}
                     onChange={(e) => setSampleInput(e.target.value)}
-                    placeholder={questionMode === 'leetcode' ? '[2,7,11,15]\n9' : '5\n1 2 3 4 5'}
+                    placeholder="[2,7,11,15]&#10;9"
                     className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-[11px] font-mono focus:ring-1 focus:ring-ubi-800 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                    Sample Expected Output
-                  </label>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                      Sample Expected Output
+                    </label>
+                    <InfoTooltip
+                      title="Sample Expected Output"
+                      content="The expected return value or output for the sample input. Evaluated with exact equality against student's return value."
+                      example="true  OR  [0,1]"
+                      align="left"
+                    />
+                  </div>
                   <textarea
                     rows={3}
                     value={sampleOutput}
                     onChange={(e) => setSampleOutput(e.target.value)}
-                    placeholder={questionMode === 'leetcode' ? '[0,1]' : '15'}
+                    placeholder="[0,1]"
                     className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-[11px] font-mono focus:ring-1 focus:ring-ubi-800 focus:outline-none"
                   />
                 </div>
@@ -1041,13 +1156,20 @@ export const AdminCreateQuestionPage: React.FC = () => {
             {/* 4. Test Cases Management */}
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-3.5">
               <div className="flex items-center justify-between">
-                <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                <div className="flex items-center gap-2">
                   <span className="flex items-center justify-center w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold border border-slate-200 dark:border-slate-700">
-                    {questionMode === 'leetcode' ? '4' : '3'}
+                    4
                   </span>
                   <ListChecks size={14} className="text-ubi-800 dark:text-ubi-400" />
-                  <span>Test Cases Management ({activeTestCases.length})</span>
-                </h2>
+                  <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
+                    Test Cases Management ({activeTestCases.length})
+                  </h2>
+                  <InfoTooltip
+                    title="Test Cases Management"
+                    content="Add public sample cases and secret hidden evaluation test cases. Provide parameters on newline rows."
+                    align="left"
+                  />
+                </div>
                 <span className="text-[10px] text-slate-500 font-medium">
                   Add evaluation and hidden cases right here
                 </span>
@@ -1060,33 +1182,49 @@ export const AdminCreateQuestionPage: React.FC = () => {
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[10px] uppercase tracking-wider mb-1">
-                      Input Data
-                    </label>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[10px] uppercase tracking-wider">
+                        Input Data
+                      </label>
+                      <InfoTooltip
+                        title="Test Case Input Data"
+                        content="The raw arguments fed to the candidate's function. Each parameter on its own newline."
+                        example={`"rat"\n"car"`}
+                        align="left"
+                      />
+                    </div>
                     <textarea
                       rows={2}
                       value={tcInput}
                       onChange={(e) => setTcInput(e.target.value)}
-                      placeholder={questionMode === 'leetcode' ? '[3,2,4]\n6' : '10\n1 2 3...'}
+                      placeholder="[3,2,4]&#10;6"
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-xs font-mono"
                     />
                   </div>
                   <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[10px] uppercase tracking-wider mb-1">
-                      Expected Output
-                    </label>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[10px] uppercase tracking-wider">
+                        Expected Output
+                      </label>
+                      <InfoTooltip
+                        title="Expected Output Data"
+                        content="The exact expected return value for this test case."
+                        example="false"
+                        align="left"
+                      />
+                    </div>
                     <textarea
                       rows={2}
                       value={tcExpected}
                       onChange={(e) => setTcExpected(e.target.value)}
-                      placeholder={questionMode === 'leetcode' ? '[1,2]' : '45'}
+                      placeholder="[1,2]"
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-xs font-mono"
                     />
                   </div>
                 </div>
 
                 <div className="flex items-center justify-between pt-1">
-                  <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                  <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none">
                     <input
                       type="checkbox"
                       checked={tcIsHidden}
@@ -1094,6 +1232,11 @@ export const AdminCreateQuestionPage: React.FC = () => {
                       className="rounded text-ubi-800 focus:ring-ubi-800"
                     />
                     <span>Hidden Test Case (Evaluated only upon submission)</span>
+                    <InfoTooltip
+                      title="Hidden Test Case"
+                      content="Hidden test cases prevent hardcoding and test edge cases. They are not visible to students during local test runs, only evaluated upon final submission."
+                      align="left"
+                    />
                   </label>
 
                   <Button
@@ -1211,10 +1354,10 @@ export const AdminCreateQuestionPage: React.FC = () => {
             sampleInput,
             sampleOutput,
             inputFormat,
-            functionName: questionMode === 'leetcode' ? functionName : undefined,
-            functionSignature: questionMode === 'leetcode' ? existingQuestion?.function_signature : undefined,
-            parameters: questionMode === 'leetcode' ? parameters : undefined,
-            returnType: questionMode === 'leetcode' ? returnType : undefined,
+            functionName: functionName,
+            functionSignature: existingQuestion?.function_signature,
+            parameters: parameters,
+            returnType: returnType,
             starterCode,
             testCases: activeTestCases,
           }}

@@ -13,6 +13,11 @@ class ExamBase(BaseModel):
     easy_weight: float = 10.0
     medium_weight: float = 20.0
     hard_weight: float = 30.0
+    mcq_weight: float = 2.0
+    mcq_count: int = 0
+    easy_count: int = 1
+    medium_count: int = 2
+    hard_count: int = 0
     is_published: bool = True
     target_groups: Optional[List[str]] = []
 
@@ -29,6 +34,11 @@ class ExamUpdate(BaseModel):
     easy_weight: Optional[float] = None
     medium_weight: Optional[float] = None
     hard_weight: Optional[float] = None
+    mcq_weight: Optional[float] = None
+    mcq_count: Optional[int] = None
+    easy_count: Optional[int] = None
+    medium_count: Optional[int] = None
+    hard_count: Optional[int] = None
     is_published: Optional[bool] = None
     target_groups: Optional[List[str]] = None
     question_ids: Optional[List[int]] = None
@@ -195,6 +205,11 @@ class CandidateQuestionSubmissionDossier(BaseModel):
     total_test_cases: int = 0
     exec_time_ms: Optional[float] = None
     submitted_at: Optional[datetime] = None
+    question_type: str = "coding"
+    description: Optional[str] = None
+    mcq_options: Optional[List[dict]] = None
+    selected_option_ids: Optional[List[str]] = None
+    is_multi_select: bool = False
 
 
 class CandidateDossierResponse(BaseModel):

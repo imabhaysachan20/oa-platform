@@ -20,6 +20,9 @@ import {
   AlertTriangle,
   Layers,
   X,
+  Sliders,
+  Filter,
+  Sparkles,
 } from 'lucide-react';
 
 export const AdminExamsPage: React.FC = () => {
@@ -36,6 +39,12 @@ export const AdminExamsPage: React.FC = () => {
   const [editEasyWeight, setEditEasyWeight] = useState(10);
   const [editMediumWeight, setEditMediumWeight] = useState(20);
   const [editHardWeight, setEditHardWeight] = useState(30);
+  const [editMcqWeight, setEditMcqWeight] = useState(2);
+  const [editMcqCount, setEditMcqCount] = useState(0);
+  const [editEasyCount, setEditEasyCount] = useState(1);
+  const [editMediumCount, setEditMediumCount] = useState(2);
+  const [editHardCount, setEditHardCount] = useState(0);
+  const [editDifficultyFilter, setEditDifficultyFilter] = useState<'all' | 'easy' | 'medium' | 'hard' | 'mcq'>('all');
   const [editSelectedGroups, setEditSelectedGroups] = useState<string[]>([]);
   const [editCustomGroupInput, setEditCustomGroupInput] = useState('');
   const [editSelectedQuestionIds, setEditSelectedQuestionIds] = useState<number[]>([]);
@@ -60,11 +69,6 @@ export const AdminExamsPage: React.FC = () => {
     queryKey: ['adminQuestions'],
     queryFn: adminApi.listQuestions,
   });
-
-  const filteredEditQuestions = questions?.filter((q) =>
-    q.title.toLowerCase().includes(editSearchQuery.toLowerCase()) ||
-    q.difficulty.toLowerCase().includes(editSearchQuery.toLowerCase())
-  );
 
   // Helper: Convert UTC ISO string to local datetime-local format (YYYY-MM-DDTHH:mm)
   const toLocalDatetimeInput = (isoStr?: string) => {
@@ -140,6 +144,12 @@ export const AdminExamsPage: React.FC = () => {
     setEditEasyWeight(exam.easy_weight);
     setEditMediumWeight(exam.medium_weight);
     setEditHardWeight(exam.hard_weight);
+    setEditMcqWeight(exam.mcq_weight ?? 2);
+    setEditMcqCount(exam.mcq_count ?? 0);
+    setEditEasyCount(exam.easy_count ?? 1);
+    setEditMediumCount(exam.medium_count ?? 2);
+    setEditHardCount(exam.hard_count ?? 0);
+    setEditDifficultyFilter('all');
     setEditSelectedGroups(exam.target_groups || []);
     setEditCustomGroupInput('');
     setEditStartTime(toLocalDatetimeInput(exam.start_time));
@@ -195,6 +205,11 @@ export const AdminExamsPage: React.FC = () => {
         easy_weight: editEasyWeight,
         medium_weight: editMediumWeight,
         hard_weight: editHardWeight,
+        mcq_weight: editMcqWeight,
+        mcq_count: editMcqCount,
+        easy_count: editEasyCount,
+        medium_count: editMediumCount,
+        hard_count: editHardCount,
         is_published: true,
         target_groups: editSelectedGroups,
         question_ids: editSelectedQuestionIds,
@@ -203,6 +218,27 @@ export const AdminExamsPage: React.FC = () => {
       },
     });
   };
+
+  const editSelectedQuestions = questions?.filter((q) => editSelectedQuestionIds.includes(q.id)) || [];
+  const editPoolEasyCount = editSelectedQuestions.filter((q) => q.question_type !== 'mcq' && q.difficulty === 'easy').length;
+  const editPoolMedCount = editSelectedQuestions.filter((q) => q.question_type !== 'mcq' && q.difficulty === 'medium').length;
+  const editPoolHardCount = editSelectedQuestions.filter((q) => q.question_type !== 'mcq' && q.difficulty === 'hard').length;
+  const editPoolMcqCount = editSelectedQuestions.filter((q) => q.question_type === 'mcq').length;
+
+  const bankEasyCount = questions?.filter((q) => q.question_type !== 'mcq' && q.difficulty === 'easy').length || 0;
+  const bankMedCount = questions?.filter((q) => q.question_type !== 'mcq' && q.difficulty === 'medium').length || 0;
+  const bankHardCount = questions?.filter((q) => q.question_type !== 'mcq' && q.difficulty === 'hard').length || 0;
+  const bankMcqCount = questions?.filter((q) => q.question_type === 'mcq').length || 0;
+
+  const filteredEditQuestions = questions?.filter((q) => {
+    const matchesSearch =
+      q.title.toLowerCase().includes(editSearchQuery.toLowerCase()) ||
+      q.difficulty.toLowerCase().includes(editSearchQuery.toLowerCase());
+    if (!matchesSearch) return false;
+    if (editDifficultyFilter === 'all') return true;
+    if (editDifficultyFilter === 'mcq') return q.question_type === 'mcq';
+    return q.question_type !== 'mcq' && q.difficulty === editDifficultyFilter;
+  });
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6 animate-fadeIn">
@@ -281,7 +317,11 @@ export const AdminExamsPage: React.FC = () => {
                       </>
                     )}
                     <span>•</span>
-                    <span>Weights: Easy({exam.easy_weight}) Med({exam.medium_weight}) Hard({exam.hard_weight})</span>
+                    <span className="font-medium text-slate-700 dark:text-slate-300">
+                      Pattern: <strong>{exam.easy_count ?? 1}E</strong> • <strong>{exam.medium_count ?? 2}M</strong> • <strong>{exam.hard_count ?? 0}H</strong> ({(exam.easy_count ?? 1) + (exam.medium_count ?? 2) + (exam.hard_count ?? 0)} coding){exam.mcq_count ? ` • ${exam.mcq_count} MCQ` : ''}
+                    </span>
+                    <span>•</span>
+                    <span>Weights: Easy({exam.easy_weight}) Med({exam.medium_weight}) Hard({exam.hard_weight}) MCQ({exam.mcq_weight ?? 2})</span>
                   </div>
 
                   {/* Groups Assigned */}
@@ -370,57 +410,162 @@ export const AdminExamsPage: React.FC = () => {
                   />
                 </div>
 
-                {/* Duration & Weights */}
+                {/* Duration */}
                 <div>
                   <label className="block font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1 text-[11px]">
-                    Duration & Question Weights
+                    Duration (minutes) <span className="text-rose-500">*</span>
                   </label>
-                  <div className="grid grid-cols-4 gap-2">
-                    <div>
-                      <span className="block text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">Duration (m)</span>
-                      <input
-                        type="number"
-                        min={5}
-                        required
-                        value={editDurationMinutes}
-                        onChange={(e) => {
-                          const val = Number(e.target.value);
-                          setEditDurationMinutes(val);
-                          if (editStartTime) handleEditStartTimeChange(editStartTime, val);
-                        }}
-                        className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-                      />
+                  <input
+                    type="number"
+                    min={5}
+                    required
+                    value={editDurationMinutes}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setEditDurationMinutes(val);
+                      if (editStartTime) handleEditStartTimeChange(editStartTime, val);
+                    }}
+                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
+                  />
+                </div>
+
+                {/* Question Pattern & Weights */}
+                <div className="p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
+                      <Sliders size={13} className="text-ubi-700 dark:text-ubi-400" />
+                      Dynamic Question Pattern & Weights
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-medium">Draw / candidate</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {/* Easy */}
+                    <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/50 space-y-1.5">
+                      <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 block">
+                        Easy ({editPoolEasyCount} in pool)
+                      </span>
+                      <div>
+                        <span className="block text-[9px] text-slate-500 uppercase font-semibold">Count</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={editEasyCount}
+                          onChange={(e) => setEditEasyCount(Math.max(0, parseInt(e.target.value) || 0))}
+                          className="w-full px-1.5 py-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-slate-100"
+                        />
+                      </div>
+                      <div>
+                        <span className="block text-[9px] text-slate-500 uppercase font-semibold">Weight</span>
+                        <input
+                          type="number"
+                          step="any"
+                          value={editEasyWeight}
+                          onChange={(e) => setEditEasyWeight(Number(e.target.value))}
+                          className="w-full px-1.5 py-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-slate-100"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <span className="block text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">Easy Wt</span>
-                      <input
-                        type="number"
-                        step="any"
-                        value={editEasyWeight}
-                        onChange={(e) => setEditEasyWeight(Number(e.target.value))}
-                        className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-                      />
+
+                    {/* Medium */}
+                    <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/50 space-y-1.5">
+                      <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 block">
+                        Med ({editPoolMedCount} in pool)
+                      </span>
+                      <div>
+                        <span className="block text-[9px] text-slate-500 uppercase font-semibold">Count</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={editMediumCount}
+                          onChange={(e) => setEditMediumCount(Math.max(0, parseInt(e.target.value) || 0))}
+                          className="w-full px-1.5 py-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-slate-100"
+                        />
+                      </div>
+                      <div>
+                        <span className="block text-[9px] text-slate-500 uppercase font-semibold">Weight</span>
+                        <input
+                          type="number"
+                          step="any"
+                          value={editMediumWeight}
+                          onChange={(e) => setEditMediumWeight(Number(e.target.value))}
+                          className="w-full px-1.5 py-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-slate-100"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <span className="block text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">Med Wt</span>
-                      <input
-                        type="number"
-                        step="any"
-                        value={editMediumWeight}
-                        onChange={(e) => setEditMediumWeight(Number(e.target.value))}
-                        className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-                      />
+
+                    {/* Hard */}
+                    <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/50 space-y-1.5">
+                      <span className="text-[10px] font-bold text-rose-700 dark:text-rose-400 block">
+                        Hard ({editPoolHardCount} in pool)
+                      </span>
+                      <div>
+                        <span className="block text-[9px] text-slate-500 uppercase font-semibold">Count</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={editHardCount}
+                          onChange={(e) => setEditHardCount(Math.max(0, parseInt(e.target.value) || 0))}
+                          className="w-full px-1.5 py-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-slate-100"
+                        />
+                      </div>
+                      <div>
+                        <span className="block text-[9px] text-slate-500 uppercase font-semibold">Weight</span>
+                        <input
+                          type="number"
+                          step="any"
+                          value={editHardWeight}
+                          onChange={(e) => setEditHardWeight(Number(e.target.value))}
+                          className="w-full px-1.5 py-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-slate-100"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <span className="block text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">Hard Wt</span>
-                      <input
-                        type="number"
-                        step="any"
-                        value={editHardWeight}
-                        onChange={(e) => setEditHardWeight(Number(e.target.value))}
-                        className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-                      />
+
+                    {/* MCQ */}
+                    <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-900/50 space-y-1.5">
+                      <span className="text-[10px] font-bold text-purple-700 dark:text-purple-400 block">
+                        MCQ ({editPoolMcqCount} in pool)
+                      </span>
+                      <div>
+                        <span className="block text-[9px] text-slate-500 uppercase font-semibold">Count</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={editMcqCount}
+                          onChange={(e) => setEditMcqCount(Math.max(0, parseInt(e.target.value) || 0))}
+                          className="w-full px-1.5 py-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-slate-100"
+                        />
+                      </div>
+                      <div>
+                        <span className="block text-[9px] text-slate-500 uppercase font-semibold">Weight</span>
+                        <input
+                          type="number"
+                          step="any"
+                          min={0.1}
+                          value={editMcqWeight}
+                          onChange={(e) => setEditMcqWeight(Number(e.target.value))}
+                          className="w-full px-1.5 py-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-slate-100"
+                        />
+                      </div>
                     </div>
+                  </div>
+
+                  {editSelectedQuestionIds.length > 0 && editMcqCount > editPoolMcqCount && (
+                    <div className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 font-medium px-1">
+                      <AlertTriangle size={11} className="shrink-0" />
+                      <span>Pool only has {editPoolMcqCount} MCQ(s). Fallback will apply.</span>
+                    </div>
+                  )}
+
+                  <div className="p-1.5 bg-ubi-50/70 dark:bg-ubi-950/40 border border-ubi-200 dark:border-ubi-800 rounded-lg text-[10px] text-ubi-900 dark:text-ubi-200 flex items-center justify-between font-medium">
+                    <span className="flex items-center gap-1">
+                      <Sparkles size={11} className="text-ubi-700 dark:text-ubi-400 shrink-0" />
+                      Candidate Draw: <strong>{editEasyCount}E + {editMediumCount}M + {editHardCount}H = {editEasyCount + editMediumCount + editHardCount} Coding</strong>
+                      {editMcqCount > 0 ? ` + ${editMcqCount} MCQs (${editMcqWeight}m)` : ''}
+                    </span>
+                    <span className="text-ubi-800 dark:text-ubi-300 font-bold">
+                      Max Score: {editEasyCount * editEasyWeight + editMediumCount * editMediumWeight + editHardCount * editHardWeight + editMcqCount * editMcqWeight} pts
+                    </span>
                   </div>
                 </div>
 
@@ -570,6 +715,52 @@ export const AdminExamsPage: React.FC = () => {
                   </button>
                 </div>
 
+                {/* Pool breakdown and alerts */}
+                <div className="flex flex-wrap gap-1 text-[10px]">
+                  <span className={`px-1.5 py-0.5 rounded border font-semibold ${
+                    editPoolEasyCount >= editEasyCount
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                      : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+                  }`}>
+                    Easy: {editPoolEasyCount}/{editEasyCount}
+                  </span>
+                  <span className={`px-1.5 py-0.5 rounded border font-semibold ${
+                    editPoolMedCount >= editMediumCount
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                      : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+                  }`}>
+                    Med: {editPoolMedCount}/{editMediumCount}
+                  </span>
+                  <span className={`px-1.5 py-0.5 rounded border font-semibold ${
+                    editPoolHardCount >= editHardCount
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                      : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+                  }`}>
+                    Hard: {editPoolHardCount}/{editHardCount}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded border font-semibold bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800">
+                    MCQ: {editPoolMcqCount}
+                  </span>
+                </div>
+
+                {/* Filter tabs */}
+                <div className="flex flex-wrap items-center gap-1">
+                  {(['all', 'easy', 'medium', 'hard', 'mcq'] as const).map((filterKey) => (
+                    <button
+                      key={filterKey}
+                      type="button"
+                      onClick={() => setEditDifficultyFilter(filterKey)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-semibold capitalize border transition ${
+                        editDifficultyFilter === filterKey
+                          ? 'bg-ubi-800 text-white border-ubi-900 dark:bg-ubi-700 dark:border-ubi-600 shadow-2xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-300 dark:border-slate-800'
+                      }`}
+                    >
+                      {filterKey}
+                    </button>
+                  ))}
+                </div>
+
                 {/* Search input */}
                 <div className="relative">
                   <Search className="absolute left-2.5 top-2 text-slate-400" size={13} />
@@ -603,17 +794,23 @@ export const AdminExamsPage: React.FC = () => {
                               {q.title}
                             </span>
                           </div>
-                          <span
-                            className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border flex-shrink-0 ${
-                              q.difficulty === 'easy'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
-                                : q.difficulty === 'medium'
-                                ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
-                                : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
-                            }`}
-                          >
-                            {q.difficulty}
-                          </span>
+                          {q.question_type === 'mcq' ? (
+                            <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800 flex-shrink-0">
+                              MCQ ({editMcqWeight}m)
+                            </span>
+                          ) : (
+                            <span
+                              className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border flex-shrink-0 ${
+                                q.difficulty === 'easy'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                                  : q.difficulty === 'medium'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+                                  : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800'
+                              }`}
+                            >
+                              Code ({q.difficulty})
+                            </span>
+                          )}
                         </div>
                       );
                     })

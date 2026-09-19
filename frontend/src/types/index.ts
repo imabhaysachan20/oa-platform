@@ -138,6 +138,11 @@ export interface Exam {
   easy_weight: number;
   medium_weight: number;
   hard_weight: number;
+  mcq_weight?: number;
+  mcq_count?: number;
+  easy_count?: number;
+  medium_count?: number;
+  hard_count?: number;
   is_published: boolean;
   target_groups?: string[];
   pool_count?: number;

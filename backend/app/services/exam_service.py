@@ -50,7 +50,7 @@ async def start_exam_for_student(
     Idempotently starts the exam for a student:
     - If already assigned, returns existing assignment and locked questions.
     - If not assigned:
-      - Randomly picks 1 easy + 2 medium coding questions (selection_mode='random')
+      - Randomly picks coding questions based on dynamic exam pattern (easy_count, medium_count, hard_count)
       - Fetches ALL fixed/MCQ questions (selection_mode='fixed') for this exam
       - Every student gets all fixed MCQs in the pool + the random coding draw
       - Sets started_at and deadline_at = started_at + duration_minutes.
@@ -120,70 +120,121 @@ async def start_exam_for_student(
         )
 
     # 3. Create new assignment
-    # A. Fetch fixed questions (All MCQs added to pool with selection_mode='fixed')
-    stmt_fixed = (
-        select(ExamQuestionPool.question_id)
-        .where(
-            ExamQuestionPool.exam_id == exam_id,
-            ExamQuestionPool.selection_mode == "fixed"
+    # A. Fetch MCQ questions based on exam configuration (mcq_count)
+    mcq_target = getattr(exam, 'mcq_count', None)
+    mcq_q_ids = []
+    if mcq_target is not None and mcq_target > 0:
+        stmt_mcq = (
+            select(ExamQuestionPool.question_id)
+            .join(Question, ExamQuestionPool.question_id == Question.id)
+            .where(
+                ExamQuestionPool.exam_id == exam_id,
+                Question.question_type == "mcq"
+            )
+            .order_by(func.random())
+            .limit(mcq_target)
         )
-        .order_by(ExamQuestionPool.id.asc())
-    )
-    fixed_q_ids = list((await db.execute(stmt_fixed)).scalars().all())
-
-    # B. Fetch random coding questions (1 easy + 2 medium with selection_mode='random')
-    stmt_easy = (
-        select(ExamQuestionPool.question_id)
-        .where(
-            ExamQuestionPool.exam_id == exam_id,
-            ExamQuestionPool.difficulty == QuestionDifficulty.EASY,
-            ExamQuestionPool.selection_mode == "random"
+        mcq_q_ids = list((await db.execute(stmt_mcq)).scalars().all())
+    elif mcq_target is None:
+        # Fallback for unconfigured legacy exams: all fixed MCQs
+        stmt_fixed = (
+            select(ExamQuestionPool.question_id)
+            .join(Question, ExamQuestionPool.question_id == Question.id)
+            .where(
+                ExamQuestionPool.exam_id == exam_id,
+                Question.question_type == "mcq"
+            )
+            .order_by(ExamQuestionPool.id.asc())
         )
-        .order_by(func.random())
-        .limit(1)
-    )
-    easy_q_ids = (await db.execute(stmt_easy)).scalars().all()
+        mcq_q_ids = list((await db.execute(stmt_fixed)).scalars().all())
 
-    stmt_med = (
-        select(ExamQuestionPool.question_id)
-        .where(
-            ExamQuestionPool.exam_id == exam_id,
-            ExamQuestionPool.difficulty == QuestionDifficulty.MEDIUM,
-            ExamQuestionPool.selection_mode == "random"
+    # B. Fetch random coding questions based on exam configuration (easy_count, medium_count, hard_count)
+    easy_target = getattr(exam, 'easy_count', 1)
+    if easy_target is None:
+        easy_target = 1
+    med_target = getattr(exam, 'medium_count', 2)
+    if med_target is None:
+        med_target = 2
+    hard_target = getattr(exam, 'hard_count', 0)
+    if hard_target is None:
+        hard_target = 0
+    total_coding_target = easy_target + med_target + hard_target
+
+    easy_q_ids = []
+    if easy_target > 0:
+        stmt_easy = (
+            select(ExamQuestionPool.question_id)
+            .join(Question, ExamQuestionPool.question_id == Question.id)
+            .where(
+                ExamQuestionPool.exam_id == exam_id,
+                Question.question_type != "mcq",
+                ExamQuestionPool.difficulty == QuestionDifficulty.EASY
+            )
+            .order_by(func.random())
+            .limit(easy_target)
         )
-        .order_by(func.random())
-        .limit(2)
-    )
-    med_q_ids = (await db.execute(stmt_med)).scalars().all()
+        easy_q_ids = list((await db.execute(stmt_easy)).scalars().all())
 
-    coding_selected_ids = list(easy_q_ids) + list(med_q_ids)
+    med_q_ids = []
+    if med_target > 0:
+        stmt_med = (
+            select(ExamQuestionPool.question_id)
+            .join(Question, ExamQuestionPool.question_id == Question.id)
+            .where(
+                ExamQuestionPool.exam_id == exam_id,
+                Question.question_type != "mcq",
+                ExamQuestionPool.difficulty == QuestionDifficulty.MEDIUM
+            )
+            .order_by(func.random())
+            .limit(med_target)
+        )
+        med_q_ids = list((await db.execute(stmt_med)).scalars().all())
 
-    # Check if there are any random pool questions available to fallback from
+    hard_q_ids = []
+    if hard_target > 0:
+        stmt_hard = (
+            select(ExamQuestionPool.question_id)
+            .join(Question, ExamQuestionPool.question_id == Question.id)
+            .where(
+                ExamQuestionPool.exam_id == exam_id,
+                Question.question_type != "mcq",
+                ExamQuestionPool.difficulty == QuestionDifficulty.HARD
+            )
+            .order_by(func.random())
+            .limit(hard_target)
+        )
+        hard_q_ids = list((await db.execute(stmt_hard)).scalars().all())
+
+    coding_selected_ids = list(easy_q_ids) + list(med_q_ids) + list(hard_q_ids)
+
+    # Check if there are any random coding pool questions available to fallback from
     stmt_random_pool = (
         select(ExamQuestionPool.question_id)
+        .join(Question, ExamQuestionPool.question_id == Question.id)
         .where(
             ExamQuestionPool.exam_id == exam_id,
-            ExamQuestionPool.selection_mode == "random"
+            Question.question_type != "mcq"
         )
     )
     all_random_count = len((await db.execute(stmt_random_pool)).scalars().all())
 
-    if all_random_count > 0 and len(coding_selected_ids) < 3:
+    if all_random_count > 0 and len(coding_selected_ids) < total_coding_target:
         stmt_fallback = (
             select(ExamQuestionPool.question_id)
+            .join(Question, ExamQuestionPool.question_id == Question.id)
             .where(
                 ExamQuestionPool.exam_id == exam_id,
-                ExamQuestionPool.selection_mode == "random",
+                Question.question_type != "mcq",
                 ExamQuestionPool.question_id.not_in(coding_selected_ids) if coding_selected_ids else True
             )
             .order_by(func.random())
-            .limit(3 - len(coding_selected_ids))
+            .limit(total_coding_target - len(coding_selected_ids))
         )
         fallback_ids = (await db.execute(stmt_fallback)).scalars().all()
         coding_selected_ids.extend(fallback_ids)
 
-    # Total assigned questions: all fixed MCQs + selected coding questions
-    final_assigned_q_ids = fixed_q_ids + coding_selected_ids
+    # Total assigned questions: selected random MCQs + selected coding questions
+    final_assigned_q_ids = mcq_q_ids + coding_selected_ids
 
     if not final_assigned_q_ids:
         raise HTTPException(
@@ -372,6 +423,14 @@ async def _get_assigned_question_views(db: AsyncSession, assignment_id: int) -> 
     For coding questions:
       - Includes the latest code draft/submission.
     """
+    assign_stmt = select(ExamAssignment).where(ExamAssignment.id == assignment_id)
+    assignment = (await db.execute(assign_stmt)).scalar_one_or_none()
+    exam = None
+    if assignment:
+        exam_stmt = select(Exam).where(Exam.id == assignment.exam_id)
+        exam = (await db.execute(exam_stmt)).scalar_one_or_none()
+    mcq_weight = float(exam.mcq_weight) if exam and getattr(exam, "mcq_weight", None) is not None else 2.0
+
     stmt = (
         select(AssignedQuestion, Question)
         .join(Question, AssignedQuestion.question_id == Question.id)
@@ -417,9 +476,10 @@ async def _get_assigned_question_views(db: AsyncSession, assignment_id: int) -> 
             selected_ids = mcq_resp.selected_option_ids if mcq_resp else None
             is_locked = mcq_resp.is_locked if mcq_resp else False
 
-            # Check if per-question deadline has passed
+            # Check if per-question deadline has passed (with 7s grace period for network transit)
             now = datetime.now(timezone.utc)
-            if assigned_q.question_deadline_at and now > assigned_q.question_deadline_at:
+            MCQ_NETWORK_GRACE_PERIOD = timedelta(seconds=7)
+            if assigned_q.question_deadline_at and now > (assigned_q.question_deadline_at + MCQ_NETWORK_GRACE_PERIOD):
                 is_locked = True
 
             views.append(StudentQuestionView(
@@ -439,7 +499,7 @@ async def _get_assigned_question_views(db: AsyncSession, assignment_id: int) -> 
                 function_signature=None,
                 status="submitted" if (selected_ids and len(selected_ids) > 0) else "unattempted",
                 question_type="mcq",
-                marks=q.marks,
+                marks=mcq_weight,
                 mcq_time_limit_seconds=q.mcq_time_limit_seconds,
                 is_multi_select=q.is_multi_select,
                 question_started_at=assigned_q.question_started_at,
@@ -805,28 +865,49 @@ async def get_candidate_dossier(
             )
             mcq_resp = (await db.execute(resp_stmt)).scalar_one_or_none()
 
+            opts_stmt = select(MCQOption).where(MCQOption.question_id == q.id).order_by(MCQOption.order_index)
+            opts_rows = (await db.execute(opts_stmt)).scalars().all()
+            mcq_options_list = [
+                {
+                    "id": str(opt.id),
+                    "option_text": opt.option_text,
+                    "is_correct": opt.is_correct,
+                    "order_index": opt.order_index,
+                }
+                for opt in opts_rows
+            ]
+
+            selected_ids = [str(o) for o in (mcq_resp.selected_option_ids if mcq_resp else [])]
+
             time_taken = q_score.time_taken_sec if q_score else 0.0
             if not time_taken and mcq_resp and mcq_resp.answered_at and assignment.started_at:
                 time_taken = max(0.0, (mcq_resp.answered_at - assignment.started_at).total_seconds())
 
-            selected_opts_str = ", ".join(str(o) for o in (mcq_resp.selected_option_ids if mcq_resp else []))
+            is_correct = bool(mcq_resp and mcq_resp.is_correct)
+            status = "Correct" if is_correct else ("Wrong" if selected_ids else "Unattempted")
+
             question_dossiers.append(CandidateQuestionSubmissionDossier(
                 question_id=q.id,
-                question_title=f"[MCQ] {q.title}",
+                question_title=q.title,
                 difficulty=assigned_q.difficulty.value,
                 order_index=assigned_q.order_index,
-                correctness=q_score.correctness if q_score else (1.0 if (mcq_resp and mcq_resp.is_correct) else 0.0),
-                difficulty_weight=q_score.difficulty_weight if q_score else (q.marks or 10.0),
+                correctness=q_score.correctness if q_score else (1.0 if is_correct else 0.0),
+                difficulty_weight=q_score.difficulty_weight if q_score else float(getattr(exam, 'mcq_weight', 2.0) if getattr(exam, 'mcq_weight', None) is not None else 2.0),
                 final_score=q_score.final_score if q_score else (mcq_resp.marks_awarded if mcq_resp and mcq_resp.marks_awarded is not None else 0.0),
                 time_taken_sec=round(time_taken, 1),
-                has_submission=bool(mcq_resp and mcq_resp.selected_option_ids),
-                code=f"Selected Options: {selected_opts_str}" if selected_opts_str else "No option selected",
+                has_submission=bool(selected_ids),
+                code=None,
                 language="MCQ",
-                status="Correct" if (mcq_resp and mcq_resp.is_correct) else ("Wrong" if (mcq_resp and mcq_resp.selected_option_ids) else "Unattempted"),
-                test_cases_passed=1 if (mcq_resp and mcq_resp.is_correct) else 0,
+                status=status,
+                test_cases_passed=1 if is_correct else 0,
                 total_test_cases=1,
                 exec_time_ms=None,
-                submitted_at=mcq_resp.answered_at if mcq_resp else None
+                submitted_at=mcq_resp.answered_at if mcq_resp else None,
+                question_type="mcq",
+                description=q.description,
+                mcq_options=mcq_options_list,
+                selected_option_ids=selected_ids,
+                is_multi_select=bool(q.is_multi_select),
             ))
         else:
             stmt_sub = (
@@ -860,7 +941,10 @@ async def get_candidate_dossier(
                 test_cases_passed=sub.test_cases_passed if sub else 0,
                 total_test_cases=sub.total_test_cases if sub else 0,
                 exec_time_ms=sub.exec_time_ms if sub else None,
-                submitted_at=sub.submitted_at if sub else None
+                submitted_at=sub.submitted_at if sub else None,
+                question_type="coding",
+                description=q.description,
+                is_multi_select=False,
             ))
 
     return CandidateDossierResponse(

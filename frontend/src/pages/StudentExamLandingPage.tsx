@@ -1,24 +1,18 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { examsApi } from '../api/exams';
-import { useExamStore } from '../store/examStore';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Modal } from '../components/ui/Modal';
 import {
   Clock,
-  Award,
   ShieldAlert,
   Play,
   CheckCircle2,
+  Check,
   FileCode2,
   AlertTriangle,
-  Eye,
-  EyeOff,
   Scale,
-  ShieldCheck,
-  Check,
   Calendar
 } from 'lucide-react';
 
@@ -194,7 +188,28 @@ export const StudentExamLandingPage: React.FC = () => {
                       )}
                       <span className="flex items-center gap-1.5 font-medium">
                         <FileCode2 size={14} className="text-slate-400" />
-                        3 Questions (1 Easy, 2 Medium)
+                        {(() => {
+                          const easy = exam.easy_count ?? 1;
+                          const med = exam.medium_count ?? 2;
+                          const hard = exam.hard_count ?? 0;
+                          const mcq = exam.mcq_count ?? 0;
+                          const totalCoding = easy + med + hard;
+                          const parts: string[] = [];
+                          if (easy > 0) parts.push(`${easy} Easy`);
+                          if (med > 0) parts.push(`${med} Medium`);
+                          if (hard > 0) parts.push(`${hard} Hard`);
+                          const codingDesc = totalCoding > 0
+                            ? `${totalCoding} Coding Questions (${parts.join(', ')})`
+                            : '';
+                          if (mcq > 0 && totalCoding > 0) {
+                            return `${mcq} MCQs + ${codingDesc}`;
+                          } else if (mcq > 0) {
+                            return `${mcq} Multiple Choice Questions`;
+                          } else if (totalCoding > 0) {
+                            return codingDesc;
+                          }
+                          return 'Assessment Questions';
+                        })()}
                       </span>
                     </div>
                   </div>

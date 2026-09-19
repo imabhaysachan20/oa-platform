@@ -360,3 +360,27 @@ export interface CandidateDossierResponse {
   network_incidents?: NetworkIncidentItem[];
 }
 
+export interface DeviceTelemetryPayload {
+  browser?: string;
+  os?: string;
+  device_type?: string;
+  screen_resolution?: string;
+  device_fingerprint?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  accuracy?: number | null;
+  location_status?: string;
+}
+
+export interface ResumeExamRequest {
+  assignment_id: number;
+  telemetry?: DeviceTelemetryPayload;
+}
+
+export interface ResumeExamResponse {
+  status: string;
+  device_switch_detected: boolean;
+  message: string;
+}
+
+

@@ -1,3 +1,4 @@
+import json
 import hashlib
 import random
 from datetime import datetime, timedelta, timezone
@@ -32,7 +33,10 @@ from backend.app.schemas.exam import (
     CandidateDossierResponse,
     CandidateQuestionSubmissionDossier,
     ProctoringLogItem,
-    NetworkIncidentItem
+    NetworkIncidentItem,
+    DeviceTelemetryPayload,
+    ResumeExamRequest,
+    ResumeExamResponse
 )
 from backend.app.services.scoring_service import compute_and_save_exam_scores, calculate_difficulty_weight
 from backend.app.services.question_templates import (
@@ -44,16 +48,20 @@ from backend.app.services.question_templates import (
 async def start_exam_for_student(
     db: AsyncSession,
     exam_id: int,
-    user_id: int
+    user_id: int,
+    telemetry: Optional[DeviceTelemetryPayload] = None,
+    client_ip: Optional[str] = None,
+    redis: Optional[aioredis.Redis] = None
 ) -> ExamStartResponse:
     """
     Idempotently starts the exam for a student:
-    - If already assigned, returns existing assignment and locked questions.
+    - If already assigned, returns existing assignment and locked questions, and records resume telemetry.
     - If not assigned:
       - Randomly picks coding questions based on dynamic exam pattern (easy_count, medium_count, hard_count)
       - Fetches ALL fixed/MCQ questions (selection_mode='fixed') for this exam
       - Every student gets all fixed MCQs in the pool + the random coding draw
       - Sets started_at and deadline_at = started_at + duration_minutes.
+      - Logs initial device & geolocation telemetry in the proctoring audit log.
     """
     now = datetime.now(timezone.utc)
 
@@ -107,7 +115,19 @@ async def start_exam_for_student(
                 detail="Assessment time limit has expired and your test has been submitted."
             )
 
-        # If already started, return existing locked questions
+        # If already started, record resume telemetry if provided
+        if telemetry:
+            await record_exam_resume_telemetry(
+                db=db,
+                exam_id=exam_id,
+                user_id=user_id,
+                assignment_id=assignment.id,
+                telemetry=telemetry,
+                client_ip=client_ip,
+                redis=redis
+            )
+
+        # Return existing locked questions
         assigned_views = await _get_assigned_question_views(db, assignment.id)
         return ExamStartResponse(
             assignment_id=assignment.id,
@@ -142,22 +162,16 @@ async def start_exam_for_student(
             .join(Question, ExamQuestionPool.question_id == Question.id)
             .where(
                 ExamQuestionPool.exam_id == exam_id,
+                ExamQuestionPool.selection_mode == "fixed",
                 Question.question_type == "mcq"
             )
-            .order_by(ExamQuestionPool.id.asc())
         )
         mcq_q_ids = list((await db.execute(stmt_fixed)).scalars().all())
 
-    # B. Fetch random coding questions based on exam configuration (easy_count, medium_count, hard_count)
-    easy_target = getattr(exam, 'easy_count', 1)
-    if easy_target is None:
-        easy_target = 1
-    med_target = getattr(exam, 'medium_count', 2)
-    if med_target is None:
-        med_target = 2
-    hard_target = getattr(exam, 'hard_count', 0)
-    if hard_target is None:
-        hard_target = 0
+    # B. Fetch coding questions based on dynamic exam quotas
+    easy_target = getattr(exam, 'easy_count', None) or 0
+    med_target = getattr(exam, 'medium_count', None) or 0
+    hard_target = getattr(exam, 'hard_count', None) or 0
     total_coding_target = easy_target + med_target + hard_target
 
     easy_q_ids = []
@@ -268,8 +282,67 @@ async def start_exam_for_student(
         )
         db.add(assigned_q)
 
+    # Device and location telemetry parsing
+    browser_str = telemetry.browser if (telemetry and telemetry.browser) else "Unknown Browser"
+    os_str = telemetry.os if (telemetry and telemetry.os) else "Unknown OS"
+    res_str = telemetry.screen_resolution if (telemetry and telemetry.screen_resolution) else "Unknown Res"
+    ip_str = client_ip or "Unknown IP"
+    fp_str = telemetry.device_fingerprint if (telemetry and telemetry.device_fingerprint) else "N/A"
+
+    loc_str = "Location: Unavailable"
+    if telemetry and telemetry.latitude is not None and telemetry.longitude is not None:
+        acc = f" (±{telemetry.accuracy:.1f}m)" if telemetry.accuracy is not None else ""
+        loc_str = f"Location: {telemetry.latitude:.6f}, {telemetry.longitude:.6f}{acc}"
+    elif telemetry and telemetry.location_status:
+        loc_str = f"Location: {telemetry.location_status.capitalize()}"
+
+    start_meta = {
+        "event": "EXAM_START_DEVICE",
+        "browser": browser_str,
+        "os": os_str,
+        "device_type": telemetry.device_type if telemetry else "Desktop",
+        "screen_resolution": res_str,
+        "ip_address": ip_str,
+        "device_fingerprint": fp_str,
+        "latitude": telemetry.latitude if telemetry else None,
+        "longitude": telemetry.longitude if telemetry else None,
+        "accuracy": telemetry.accuracy if telemetry else None,
+        "location_status": telemetry.location_status if telemetry else "unknown",
+    }
+
+    start_log = ExamProctoringLog(
+        assignment_id=assignment.id,
+        event_type="EXAM_START_DEVICE",
+        title="Assessment Started - Device & Location Verified",
+        description=f"Assessment started on {browser_str} ({os_str}), Screen: {res_str}, IP: {ip_str}. {loc_str}.",
+        occurred_at=now,
+        meta_data=json.dumps(start_meta)
+    )
+    db.add(start_log)
+
     await db.commit()
     await db.refresh(assignment)
+
+    # Store initial device fingerprint & metadata in Redis for session tracking
+    if redis:
+        try:
+            device_data = {
+                "fingerprint": fp_str,
+                "ip": ip_str,
+                "browser": browser_str,
+                "os": os_str,
+                "screen_resolution": res_str,
+                "latitude": telemetry.latitude if telemetry else None,
+                "longitude": telemetry.longitude if telemetry else None,
+                "last_seen": str(now.isoformat()),
+            }
+            await redis.set(
+                f"exam:{exam_id}:assignment:{assignment.id}:device",
+                json.dumps(device_data),
+                ex=86400
+            )
+        except Exception:
+            pass
 
     assigned_views = await _get_assigned_question_views(db, assignment.id)
     return ExamStartResponse(
@@ -280,6 +353,150 @@ async def start_exam_for_student(
         deadline_at=assignment.deadline_at,
         duration_minutes=exam.duration_minutes,
         questions=assigned_views
+    )
+
+
+async def record_exam_resume_telemetry(
+    db: AsyncSession,
+    exam_id: int,
+    user_id: int,
+    assignment_id: int,
+    telemetry: Optional[DeviceTelemetryPayload],
+    client_ip: Optional[str] = None,
+    redis: Optional[aioredis.Redis] = None
+) -> ResumeExamResponse:
+    """
+    Records device details and geolocation each time a candidate resumes, refreshes, or reconnects.
+    Detects if the candidate resumed from a different device fingerprint or IP and logs a warning.
+    """
+    now = datetime.now(timezone.utc)
+    stmt = (
+        select(ExamAssignment)
+        .where(
+            ExamAssignment.id == assignment_id,
+            ExamAssignment.user_id == user_id,
+            ExamAssignment.exam_id == exam_id
+        )
+    )
+    assignment = (await db.execute(stmt)).scalar_one_or_none()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Exam assignment not found")
+
+    if assignment.status != AssignmentStatus.IN_PROGRESS:
+        return ResumeExamResponse(
+            status="ok",
+            device_switch_detected=False,
+            message="Assessment is not in progress."
+        )
+
+    browser_str = telemetry.browser if (telemetry and telemetry.browser) else "Unknown Browser"
+    os_str = telemetry.os if (telemetry and telemetry.os) else "Unknown OS"
+    res_str = telemetry.screen_resolution if (telemetry and telemetry.screen_resolution) else "Unknown Res"
+    ip_str = client_ip or "Unknown IP"
+    fp_str = telemetry.device_fingerprint if (telemetry and telemetry.device_fingerprint) else "N/A"
+
+    loc_str = "Location: Unavailable"
+    if telemetry and telemetry.latitude is not None and telemetry.longitude is not None:
+        acc = f" (±{telemetry.accuracy:.1f}m)" if telemetry.accuracy is not None else ""
+        loc_str = f"Location: {telemetry.latitude:.6f}, {telemetry.longitude:.6f}{acc}"
+    elif telemetry and telemetry.location_status:
+        loc_str = f"Location: {telemetry.location_status.capitalize()}"
+
+    device_switch_detected = False
+    old_device = None
+
+    if redis:
+        try:
+            stored_str = await redis.get(f"exam:{exam_id}:assignment:{assignment.id}:device")
+            if stored_str:
+                old_device = json.loads(stored_str)
+                stored_fp = old_device.get("fingerprint")
+                stored_ip = old_device.get("ip")
+                # Flag if device fingerprint or IP changed
+                if (stored_fp and fp_str != "N/A" and stored_fp != "N/A" and stored_fp != fp_str) or \
+                   (stored_ip and ip_str != "Unknown IP" and stored_ip != "Unknown IP" and stored_ip != ip_str):
+                    device_switch_detected = True
+        except Exception:
+            pass
+
+    if device_switch_detected and old_device:
+        switch_meta = {
+            "event": "DEVICE_SWITCH_DETECTED",
+            "previous_device": old_device,
+            "current_device": {
+                "browser": browser_str,
+                "os": os_str,
+                "screen_resolution": res_str,
+                "ip_address": ip_str,
+                "device_fingerprint": fp_str,
+                "latitude": telemetry.latitude if telemetry else None,
+                "longitude": telemetry.longitude if telemetry else None,
+                "accuracy": telemetry.accuracy if telemetry else None,
+            }
+        }
+        switch_log = ExamProctoringLog(
+            assignment_id=assignment.id,
+            event_type="DEVICE_SWITCH_DETECTED",
+            title="Potential Device Switch / IP Mismatch Detected",
+            description=(
+                f"Candidate resumed assessment from a different device or network. "
+                f"Previous: {old_device.get('browser', 'Unknown')} ({old_device.get('ip', 'Unknown IP')}) -> "
+                f"Current: {browser_str} ({ip_str}). {loc_str}."
+            ),
+            occurred_at=now,
+            meta_data=json.dumps(switch_meta)
+        )
+        db.add(switch_log)
+
+    resume_meta = {
+        "event": "EXAM_RESUME_DEVICE",
+        "browser": browser_str,
+        "os": os_str,
+        "device_type": telemetry.device_type if telemetry else "Desktop",
+        "screen_resolution": res_str,
+        "ip_address": ip_str,
+        "device_fingerprint": fp_str,
+        "latitude": telemetry.latitude if telemetry else None,
+        "longitude": telemetry.longitude if telemetry else None,
+        "accuracy": telemetry.accuracy if telemetry else None,
+        "location_status": telemetry.location_status if telemetry else "unknown",
+        "device_switch_detected": device_switch_detected
+    }
+    resume_log = ExamProctoringLog(
+        assignment_id=assignment.id,
+        event_type="EXAM_RESUME_DEVICE",
+        title="Assessment Resumed - Device & Location Verified",
+        description=f"Assessment resumed on {browser_str} ({os_str}), Screen: {res_str}, IP: {ip_str}. {loc_str}.",
+        occurred_at=now,
+        meta_data=json.dumps(resume_meta)
+    )
+    db.add(resume_log)
+    await db.commit()
+
+    if redis:
+        try:
+            device_data = {
+                "fingerprint": fp_str,
+                "ip": ip_str,
+                "browser": browser_str,
+                "os": os_str,
+                "screen_resolution": res_str,
+                "latitude": telemetry.latitude if telemetry else None,
+                "longitude": telemetry.longitude if telemetry else None,
+                "last_seen": str(now.isoformat()),
+            }
+            await redis.set(
+                f"exam:{exam_id}:assignment:{assignment.id}:device",
+                json.dumps(device_data),
+                ex=86400
+            )
+        except Exception:
+            pass
+
+    return ResumeExamResponse(
+        status="ok",
+        device_switch_detected=device_switch_detected,
+        message="Device switch recorded" if device_switch_detected else "Assessment resumed telemetry logged."
     )
 
 
@@ -744,8 +961,11 @@ async def get_live_exam_monitoring(
         count_stmt = select(func.count(Submission.id)).where(Submission.assignment_id == assign.id)
         submission_count = (await db.execute(count_stmt)).scalar() or 0
 
-        # Count proctoring flags / infractions (PURE ANTI-CHEAT ONLY)
-        flags_stmt = select(func.count(ExamProctoringLog.id)).where(ExamProctoringLog.assignment_id == assign.id)
+        # Count proctoring flags / infractions (PURE ANTI-CHEAT ONLY, excluding device audit logs)
+        flags_stmt = select(func.count(ExamProctoringLog.id)).where(
+            ExamProctoringLog.assignment_id == assign.id,
+            ExamProctoringLog.event_type.not_in(["EXAM_START_DEVICE", "EXAM_RESUME_DEVICE"])
+        )
         flags_count = (await db.execute(flags_stmt)).scalar() or 0
 
         remaining_sec = None
@@ -857,7 +1077,16 @@ async def get_candidate_dossier(
     )
     log_rows = (await db.execute(stmt_logs)).scalars().all()
 
-    total_flags = len(log_rows)
+    # Filter actual cheating/infraction flags (exclude normal informational device audit events)
+    INFRACTION_EVENT_TYPES = {
+        "TAB_SWITCH", "WINDOW_BLUR", "FULLSCREEN_EXIT", "PASTE_ATTEMPT",
+        "COPY_ATTEMPT", "DEVTOOLS_SHORTCUT", "PRINT_SAVE_SHORTCUT",
+        "DEVTOOLS_DOCK_OPENED", "MOUSE_LEAVE", "CONTEXT_MENU",
+        "DEVICE_SWITCH_DETECTED"
+    }
+    infraction_rows = [l for l in log_rows if l.event_type in INFRACTION_EVENT_TYPES]
+    total_flags = len(infraction_rows)
+
     flag_counts_by_type = {}
     for l in log_rows:
         flag_counts_by_type[l.event_type] = flag_counts_by_type.get(l.event_type, 0) + 1

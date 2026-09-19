@@ -17,6 +17,7 @@ import { useAuthStore } from '../store/authStore';
 import { useExamSecurity } from '../hooks/useExamSecurity';
 import { useCandidateHeartbeat } from '../hooks/useCandidateHeartbeat';
 import { useQuestionTimer } from '../hooks/useQuestionTimer';
+import { collectDeviceTelemetry } from '../utils/deviceInfo';
 
 export const StudentExamWorkspacePage: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
@@ -53,6 +54,30 @@ export const StudentExamWorkspacePage: React.FC = () => {
     setIsSubmittingCode,
     resetExamState,
   } = useExamStore();
+
+  // Mandatory Location & Device Verification Guard
+  // Candidate must pass through /instructions to verify geolocation before entering or resuming workspace
+  useEffect(() => {
+    if (!id) return;
+    const verifiedKey = `ubicode_verified_entry_${id}`;
+    const isVerified = sessionStorage.getItem(verifiedKey);
+    if (!isVerified) {
+      navigate(`/exam/${id}/instructions`, { replace: true });
+      return;
+    }
+  }, [id, navigate]);
+
+  // When refreshing the browser page or closing the tab, clear the verification token so reload forces re-verifying
+  useEffect(() => {
+    if (!id) return;
+    const handleBeforeUnload = () => {
+      sessionStorage.removeItem(`ubicode_verified_entry_${id}`);
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [id]);
 
   // Load exam questions & state (supports resume on reload)
   const { data: examData, isLoading, error, refetch } = useQuery({

@@ -5,6 +5,8 @@ import {
   MyQuestionsResponse,
   ExamResultDetail,
   LeaderboardEntry,
+  DeviceTelemetryPayload,
+  ResumeExamResponse,
 } from '../types';
 
 export const examsApi = {
@@ -18,8 +20,20 @@ export const examsApi = {
     return res.data;
   },
 
-  start: async (id: number): Promise<ExamStartResponse> => {
-    const res = await api.post<ExamStartResponse>(`/exams/${id}/start`);
+  start: async (id: number, telemetry?: DeviceTelemetryPayload): Promise<ExamStartResponse> => {
+    const res = await api.post<ExamStartResponse>(`/exams/${id}/start`, telemetry);
+    return res.data;
+  },
+
+  resume: async (
+    id: number,
+    assignmentId: number,
+    telemetry?: DeviceTelemetryPayload
+  ): Promise<ResumeExamResponse> => {
+    const res = await api.post<ResumeExamResponse>(`/exams/${id}/resume`, {
+      assignment_id: assignmentId,
+      telemetry,
+    });
     return res.data;
   },
 

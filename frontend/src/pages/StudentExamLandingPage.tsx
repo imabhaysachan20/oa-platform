@@ -229,11 +229,8 @@ export const StudentExamLandingPage: React.FC = () => {
                       <Button
                         variant="primary"
                         size="sm"
-                        onClick={async () => {
-                          if (!document.fullscreenElement) {
-                            await document.documentElement.requestFullscreen().catch(() => {});
-                          }
-                          navigate(`/exam/${exam.id}/workspace`);
+                        onClick={() => {
+                          navigate(`/exam/${exam.id}/instructions`);
                         }}
                         className="w-full sm:w-auto font-semibold gap-1.5 bg-amber-600 hover:bg-amber-700 text-white"
                       >

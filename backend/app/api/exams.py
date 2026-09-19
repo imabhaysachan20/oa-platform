@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,10 +20,14 @@ from backend.app.schemas.exam import (
     ExamResultDetail,
     BatchProctoringLogRequest,
     CandidateHeartbeatRequest,
-    CandidateHeartbeatResponse
+    CandidateHeartbeatResponse,
+    DeviceTelemetryPayload,
+    ResumeExamRequest,
+    ResumeExamResponse
 )
 from backend.app.services.exam_service import (
     start_exam_for_student,
+    record_exam_resume_telemetry,
     get_student_exam_questions,
     finish_exam_for_student,
     get_exam_leaderboard,
@@ -32,6 +36,17 @@ from backend.app.services.exam_service import (
 )
 
 router = APIRouter(prefix="/exams", tags=["exams"])
+
+
+def get_client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+    return request.client.host if request.client else "Unknown IP"
+
 
 
 @router.get("", response_model=List[ExamResponse])
@@ -139,16 +154,65 @@ async def get_exam_details(
 @router.post("/{exam_id}/start", response_model=ExamStartResponse)
 async def start_exam(
     exam_id: int,
+    request: Request,
+    body: Optional[DeviceTelemetryPayload] = None,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis)
 ):
     """
     Idempotently assigns questions based on exam configuration and starts the timer.
+    Enforces location provision before allowing exam start or resume.
     """
+    if body is None or body.latitude is None or body.longitude is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Device location is strictly required to start or resume this assessment. Please grant location access in your browser."
+        )
+
+    client_ip = get_client_ip(request)
     return await start_exam_for_student(
         db=db,
         exam_id=exam_id,
-        user_id=current_user.id
+        user_id=current_user.id,
+        telemetry=body,
+        client_ip=client_ip,
+        redis=redis
+    )
+
+
+@router.post("/{exam_id}/resume", response_model=ResumeExamResponse)
+async def resume_exam(
+    exam_id: int,
+    request: Request,
+    body: ResumeExamRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis)
+):
+    """
+    Records device details and geolocation each time candidate resumes, refreshes, or reconnects.
+    Enforces location provision on resume.
+    """
+    if (
+        body.telemetry is None
+        or body.telemetry.latitude is None
+        or body.telemetry.longitude is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Device location is strictly required to resume this assessment. Please grant location access in your browser."
+        )
+
+    client_ip = get_client_ip(request)
+    return await record_exam_resume_telemetry(
+        db=db,
+        exam_id=exam_id,
+        user_id=current_user.id,
+        assignment_id=body.assignment_id,
+        telemetry=body.telemetry,
+        client_ip=client_ip,
+        redis=redis
     )
 
 

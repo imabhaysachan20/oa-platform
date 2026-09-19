@@ -41,6 +41,194 @@ from backend.app.services.question_templates import (
 )
 
 
+async def sync_unsubmitted_assignments_for_exam(db: AsyncSession, exam_id: int):
+    """
+    Synchronizes active (unsubmitted) student assignments when an admin modifies an exam's
+    question pool, question pattern counts (easy, medium, hard, mcq), or weight rules.
+
+    - Preserves student progress (draft code, MCQ selections) for questions that remain valid.
+    - Removes assigned questions that were removed from the exam pool by admin.
+    - Adds new pool questions to complete the exam's pattern for active candidates.
+    """
+    exam = (await db.execute(select(Exam).where(Exam.id == exam_id))).scalar_one_or_none()
+    if not exam:
+        return
+
+    # Pool questions currently assigned to this exam
+    pool_stmt = select(ExamQuestionPool.question_id).where(ExamQuestionPool.exam_id == exam_id)
+    pool_q_ids = set((await db.execute(pool_stmt)).scalars().all())
+
+    # Get all unsubmitted assignments for this exam
+    assign_stmt = (
+        select(ExamAssignment)
+        .where(
+            ExamAssignment.exam_id == exam_id,
+            ExamAssignment.status.in_([AssignmentStatus.NOT_STARTED, AssignmentStatus.IN_PROGRESS])
+        )
+    )
+    assignments = (await db.execute(assign_stmt)).scalars().all()
+    if not assignments:
+        return
+
+    easy_target = getattr(exam, 'easy_count', 1)
+    if easy_target is None:
+        easy_target = 1
+    med_target = getattr(exam, 'medium_count', 2)
+    if med_target is None:
+        med_target = 2
+    hard_target = getattr(exam, 'hard_count', 0)
+    if hard_target is None:
+        hard_target = 0
+    mcq_target = getattr(exam, 'mcq_count', 0)
+    if mcq_target is None:
+        mcq_target = 0
+
+    for assignment in assignments:
+        # Get current assigned question objects for this candidate
+        aq_stmt = (
+            select(AssignedQuestion)
+            .where(AssignedQuestion.assignment_id == assignment.id)
+            .order_by(AssignedQuestion.order_index.asc())
+        )
+        assigned_qs = list((await db.execute(aq_stmt)).scalars().all())
+
+        # Remove assigned questions that are no longer in pool
+        if pool_q_ids:
+            for aq in assigned_qs:
+                if aq.question_id not in pool_q_ids:
+                    await db.delete(aq)
+                    await db.flush()
+
+        # Re-query remaining assigned question IDs
+        rem_aq_stmt = (
+            select(AssignedQuestion.question_id)
+            .where(AssignedQuestion.assignment_id == assignment.id)
+        )
+        current_assigned_q_ids = set((await db.execute(rem_aq_stmt)).scalars().all())
+
+        # Determine missing questions per category (MCQs and Coding)
+        # 1. MCQs missing count
+        curr_mcq_stmt = (
+            select(AssignedQuestion.question_id)
+            .join(Question, AssignedQuestion.question_id == Question.id)
+            .where(
+                AssignedQuestion.assignment_id == assignment.id,
+                Question.question_type == "mcq"
+            )
+        )
+        curr_mcq_ids = set((await db.execute(curr_mcq_stmt)).scalars().all())
+        missing_mcqs = max(0, mcq_target - len(curr_mcq_ids))
+
+        new_mcq_ids = []
+        if missing_mcqs > 0:
+            avail_mcq_stmt = (
+                select(ExamQuestionPool.question_id)
+                .join(Question, ExamQuestionPool.question_id == Question.id)
+                .where(
+                    ExamQuestionPool.exam_id == exam_id,
+                    Question.question_type == "mcq",
+                    ExamQuestionPool.question_id.not_in(current_assigned_q_ids) if current_assigned_q_ids else True
+                )
+                .order_by(func.random())
+                .limit(missing_mcqs)
+            )
+            new_mcq_ids = list((await db.execute(avail_mcq_stmt)).scalars().all())
+
+        # 2. Coding missing counts (Easy, Med, Hard)
+        async def get_missing_coding(difficulty_val: QuestionDifficulty, target_count: int, exclude_set: set) -> List[int]:
+            if target_count <= 0:
+                return []
+            curr_c_stmt = (
+                select(AssignedQuestion.question_id)
+                .join(Question, AssignedQuestion.question_id == Question.id)
+                .where(
+                    AssignedQuestion.assignment_id == assignment.id,
+                    Question.question_type != "mcq",
+                    Question.difficulty == difficulty_val
+                )
+            )
+            curr_c_ids = set((await db.execute(curr_c_stmt)).scalars().all())
+            missing = max(0, target_count - len(curr_c_ids))
+            if missing <= 0:
+                return []
+            avail_c_stmt = (
+                select(ExamQuestionPool.question_id)
+                .join(Question, ExamQuestionPool.question_id == Question.id)
+                .where(
+                    ExamQuestionPool.exam_id == exam_id,
+                    Question.question_type != "mcq",
+                    ExamQuestionPool.difficulty == difficulty_val,
+                    ExamQuestionPool.question_id.not_in(exclude_set) if exclude_set else True
+                )
+                .order_by(func.random())
+                .limit(missing)
+            )
+            return list((await db.execute(avail_c_stmt)).scalars().all())
+
+        all_exclude = set(current_assigned_q_ids).union(set(new_mcq_ids))
+        new_easy_ids = await get_missing_coding(QuestionDifficulty.EASY, easy_target, all_exclude)
+        all_exclude.update(new_easy_ids)
+        new_med_ids = await get_missing_coding(QuestionDifficulty.MEDIUM, med_target, all_exclude)
+        all_exclude.update(new_med_ids)
+        new_hard_ids = await get_missing_coding(QuestionDifficulty.HARD, hard_target, all_exclude)
+        all_exclude.update(new_hard_ids)
+
+        new_q_ids_to_add = new_mcq_ids + new_easy_ids + new_med_ids + new_hard_ids
+
+        # If total coding target is still not met (due to difficulty shortage in pool), pick fallback coding questions
+        total_coding_target = easy_target + med_target + hard_target
+        curr_total_coding_stmt = (
+            select(AssignedQuestion.question_id)
+            .join(Question, AssignedQuestion.question_id == Question.id)
+            .where(
+                AssignedQuestion.assignment_id == assignment.id,
+                Question.question_type != "mcq"
+            )
+        )
+        curr_total_coding_count = len((await db.execute(curr_total_coding_stmt)).scalars().all()) + len(new_easy_ids) + len(new_med_ids) + len(new_hard_ids)
+        if curr_total_coding_count < total_coding_target:
+            shortage = total_coding_target - curr_total_coding_count
+            fb_stmt = (
+                select(ExamQuestionPool.question_id)
+                .join(Question, ExamQuestionPool.question_id == Question.id)
+                .where(
+                    ExamQuestionPool.exam_id == exam_id,
+                    Question.question_type != "mcq",
+                    ExamQuestionPool.question_id.not_in(all_exclude) if all_exclude else True
+                )
+                .order_by(func.random())
+                .limit(shortage)
+            )
+            fb_ids = list((await db.execute(fb_stmt)).scalars().all())
+            new_q_ids_to_add.extend(fb_ids)
+
+        # Add newly assigned questions
+        if new_q_ids_to_add:
+            existing_count = len(current_assigned_q_ids)
+            for idx, q_id in enumerate(new_q_ids_to_add):
+                q_stmt = select(Question.difficulty).where(Question.id == q_id)
+                q_diff = (await db.execute(q_stmt)).scalar_one_or_none() or QuestionDifficulty.EASY
+                db.add(AssignedQuestion(
+                    assignment_id=assignment.id,
+                    question_id=q_id,
+                    difficulty=q_diff,
+                    order_index=existing_count + idx
+                ))
+            await db.flush()
+
+        # Re-index order_index for all assigned questions cleanly
+        final_aq_stmt = (
+            select(AssignedQuestion)
+            .where(AssignedQuestion.assignment_id == assignment.id)
+            .order_by(AssignedQuestion.id.asc())
+        )
+        final_aqs = list((await db.execute(final_aq_stmt)).scalars().all())
+        for idx, aq in enumerate(final_aqs):
+            aq.order_index = idx
+
+    await db.commit()
+
+
 async def start_exam_for_student(
     db: AsyncSession,
     exam_id: int,
@@ -106,6 +294,9 @@ async def start_exam_for_student(
                 status_code=400,
                 detail="Assessment time limit has expired and your test has been submitted."
             )
+
+        # Sync assigned questions if exam pool/pattern changed by admin
+        await sync_unsubmitted_assignments_for_exam(db, exam_id)
 
         # If already started, return existing locked questions
         assigned_views = await _get_assigned_question_views(db, assignment.id)
@@ -367,7 +558,9 @@ async def get_student_exam_questions(
         assignment.submitted_at = assignment.deadline_at
         await db.commit()
         await compute_and_save_exam_scores(db, assignment.id)
-        await db.refresh(assignment)
+    # Sync assignment questions if admin updated pool/pattern
+    if assignment.status in [AssignmentStatus.NOT_STARTED, AssignmentStatus.IN_PROGRESS]:
+        await sync_unsubmitted_assignments_for_exam(db, exam_id)
 
     assigned_views = await _get_assigned_question_views(db, assignment.id)
 

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../api/admin';
 import { Exam } from '../types';
@@ -7,6 +7,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Badge } from '../components/ui/Badge';
+import { AdminExamDetailsModal } from '../components/admin/AdminExamDetailsModal';
 import {
   Plus,
   Activity,
@@ -23,11 +24,16 @@ import {
   Sliders,
   Filter,
   Sparkles,
+  Eye,
 } from 'lucide-react';
 
 export const AdminExamsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { examId } = useParams<{ examId?: string }>();
+
+  // Viewing Details Modal state
+  const [viewingExam, setViewingExam] = useState<Exam | null>(null);
 
   // Delete Modal state
   const [deletingExam, setDeletingExam] = useState<Exam | null>(null);
@@ -63,6 +69,16 @@ export const AdminExamsPage: React.FC = () => {
     queryKey: ['adminExams'],
     queryFn: adminApi.listExams,
   });
+
+  // Auto-open exam details if examId is provided in URL params
+  useEffect(() => {
+    if (examId && exams && exams.length > 0) {
+      const found = exams.find((e) => e.id === Number(examId));
+      if (found) {
+        setViewingExam(found);
+      }
+    }
+  }, [examId, exams]);
 
   // Fetch available questions for pool selection
   const { data: questions } = useQuery({
@@ -118,6 +134,10 @@ export const AdminExamsPage: React.FC = () => {
       adminApi.updateExam(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['adminExams'] });
+      queryClient.invalidateQueries({ queryKey: ['availableExams'] });
+      queryClient.invalidateQueries({ queryKey: ['examDetails'] });
+      queryClient.invalidateQueries({ queryKey: ['adminExamPool'] });
+      queryClient.invalidateQueries({ queryKey: ['myQuestions'] });
       setEditingExam(null);
     },
     onError: (err: any) => {
@@ -275,10 +295,19 @@ export const AdminExamsPage: React.FC = () => {
             const isExpired = hasSchedule && now > new Date(exam.end_time!).getTime();
 
             return (
-              <Card key={exam.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-ubi-300 dark:hover:border-ubi-700">
-                <div className="space-y-1.5">
+              <Card key={exam.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-ubi-300 dark:hover:border-ubi-700 transition">
+                <div
+                  className="space-y-1.5 cursor-pointer flex-1 group"
+                  onClick={() => setViewingExam(exam)}
+                  title="Click to view full assessment details"
+                >
                   <div className="flex flex-wrap items-center gap-2.5">
-                    <h3 className="text-base font-bold text-slate-900 dark:text-white">{exam.title}</h3>
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white group-hover:text-ubi-800 dark:group-hover:text-ubi-400 transition flex items-center gap-2">
+                      <span>{exam.title}</span>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 group-hover:bg-ubi-50 group-hover:text-ubi-800 dark:group-hover:bg-ubi-950 dark:group-hover:text-ubi-300 transition flex items-center gap-1">
+                        <Eye size={12} /> View Details
+                      </span>
+                    </h3>
                     <span className="text-xs px-2.5 py-0.5 bg-ubi-50 border border-ubi-200 text-ubi-800 dark:bg-ubi-950 dark:border-ubi-800 dark:text-ubi-300 rounded-md font-mono font-semibold">
                       Pool: {exam.pool_count || 0} Questions
                     </span>
@@ -342,7 +371,17 @@ export const AdminExamsPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setViewingExam(exam)}
+                    className="gap-1.5 font-semibold text-ubi-800 dark:text-ubi-300 border-ubi-200 dark:border-ubi-800 hover:bg-ubi-50 dark:hover:bg-ubi-950"
+                    title="View Full Exam Details"
+                  >
+                    <Eye size={14} />
+                    <span>View Details</span>
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -890,6 +929,13 @@ export const AdminExamsPage: React.FC = () => {
           </div>
         </Modal>
       )}
+      {/* View Exam Details Modal */}
+      <AdminExamDetailsModal
+        exam={viewingExam}
+        isOpen={!!viewingExam}
+        onClose={() => setViewingExam(null)}
+        onEdit={handleOpenEdit}
+      />
     </div>
   );
 };

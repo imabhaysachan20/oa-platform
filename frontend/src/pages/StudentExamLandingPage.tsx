@@ -231,7 +231,7 @@ export const StudentExamLandingPage: React.FC = () => {
                         size="sm"
                         onClick={async () => {
                           if (!document.fullscreenElement) {
-                            await document.documentElement.requestFullscreen().catch(() => {});
+                            await document.documentElement.requestFullscreen().catch(() => { });
                           }
                           navigate(`/exam/${exam.id}/workspace`);
                         }}

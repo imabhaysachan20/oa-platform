@@ -15,6 +15,11 @@ export const adminApi = {
     return res.data;
   },
 
+  getExam: async (id: number): Promise<Exam> => {
+    const res = await api.get<Exam>(`/admin/exams/${id}`);
+    return res.data;
+  },
+
   createExam: async (examData: Partial<Exam> & { question_ids?: number[] }): Promise<Exam> => {
     const res = await api.post<Exam>('/admin/exams', examData);
     return res.data;

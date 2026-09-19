@@ -117,6 +117,14 @@ const AppContent: React.FC = () => {
             }
           />
           <Route
+            path="/admin/exams/:examId"
+            element={
+              <ProtectedRoute adminOnly>
+                <AdminExamsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/admin/exams/create"
             element={
               <ProtectedRoute adminOnly>

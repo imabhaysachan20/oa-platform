@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import redis.asyncio as aioredis
@@ -9,7 +9,7 @@ from backend.app.core.database import get_db
 from backend.app.core.redis import get_redis
 from backend.app.core.security import get_current_user, get_current_admin
 from backend.app.models.user import User, UserRole
-from backend.app.models.exam import Exam, ExamAssignment, AssignmentStatus
+from backend.app.models.exam import Exam, ExamQuestionPool, ExamAssignment, AssignmentStatus
 from backend.app.models.proctoring import ExamProctoringLog
 from backend.app.models.network_incident import ExamNetworkIncident
 from backend.app.schemas.exam import (
@@ -68,10 +68,20 @@ async def list_available_exams(
     assignments = (await db.execute(assign_stmt)).scalars().all()
     assignments_by_exam_id = {a.exam_id: a for a in assignments}
 
+    # Fetch pool counts for all available exams
+    pool_counts_stmt = (
+        select(ExamQuestionPool.exam_id, func.count(ExamQuestionPool.id))
+        .where(ExamQuestionPool.exam_id.in_(exam_ids))
+        .group_by(ExamQuestionPool.exam_id)
+    )
+    pool_counts_rows = (await db.execute(pool_counts_stmt)).all()
+    pool_counts_by_exam_id = {row[0]: row[1] for row in pool_counts_rows}
+
     now = datetime.now(timezone.utc)
     results = []
     for exam in exams:
         resp = ExamResponse.model_validate(exam)
+        resp.pool_count = pool_counts_by_exam_id.get(exam.id, 0)
         resp.server_time = now
         resp.is_upcoming = bool(exam.start_time and now < exam.start_time)
         resp.is_expired = bool(exam.end_time and now > exam.end_time)
@@ -109,6 +119,8 @@ async def get_exam_details(
 
     now = datetime.now(timezone.utc)
     resp = ExamResponse.model_validate(exam)
+    pool_stmt = select(func.count(ExamQuestionPool.id)).where(ExamQuestionPool.exam_id == exam.id)
+    resp.pool_count = (await db.execute(pool_stmt)).scalar() or 0
     resp.server_time = now
     resp.is_upcoming = bool(exam.start_time and now < exam.start_time)
     resp.is_expired = bool(exam.end_time and now > exam.end_time)

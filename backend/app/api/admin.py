@@ -34,7 +34,7 @@ from backend.app.schemas.question import (
 )
 from backend.app.schemas.submission import AdminPlaygroundRunRequest, RunCodeResponse
 from backend.app.schemas.auth import UserResponse, CandidateImportResponse, ImportedCandidateCredential
-from backend.app.services.exam_service import get_live_exam_monitoring, get_candidate_dossier
+from backend.app.services.exam_service import get_live_exam_monitoring, get_candidate_dossier, sync_unsubmitted_assignments_for_exam
 from backend.app.services.submission_service import execute_judge0_test_cases
 from backend.app.services.universal_driver_service import generate_all_templates
 from backend.app.services.question_templates import wrap_code_with_driver
@@ -216,6 +216,7 @@ async def update_exam(
 
     await db.commit()
     await db.refresh(exam)
+    await sync_unsubmitted_assignments_for_exam(db, exam.id)
     count_stmt = select(func.count(ExamQuestionPool.id)).where(ExamQuestionPool.exam_id == exam.id)
     pool_count = (await db.execute(count_stmt)).scalar() or 0
     resp = ExamResponse.model_validate(exam)
@@ -247,7 +248,7 @@ async def get_exam_pool_questions(
         select(Question)
         .join(ExamQuestionPool, ExamQuestionPool.question_id == Question.id)
         .where(ExamQuestionPool.exam_id == exam_id)
-        .options(selectinload(Question.test_cases))
+        .options(selectinload(Question.test_cases), selectinload(Question.mcq_options))
     )
     questions = (await db.execute(stmt)).scalars().all()
     return questions
@@ -280,6 +281,7 @@ async def add_question_to_pool(
             selection_mode=selection_mode
         ))
         await db.commit()
+        await sync_unsubmitted_assignments_for_exam(db, exam_id)
     return {"message": "Question added to exam pool"}
 
 
@@ -299,6 +301,7 @@ async def remove_question_from_pool(
     if existing:
         await db.delete(existing)
         await db.commit()
+        await sync_unsubmitted_assignments_for_exam(db, exam_id)
     return {"message": "Question removed from exam pool"}
 
 

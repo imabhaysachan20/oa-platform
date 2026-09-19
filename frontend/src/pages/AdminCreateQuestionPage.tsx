@@ -607,29 +607,6 @@ export const AdminCreateQuestionPage: React.FC = () => {
                 <div>
                   <div className="flex items-center gap-1.5 mb-1">
                     <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
-                      Marks Awarded *
-                    </label>
-                    <InfoTooltip
-                      title="Marks Awarded"
-                      content="The total score points added to the candidate's total exam score when answered correctly."
-                      example="e.g. 5, 10, or 20 marks."
-                    />
-                  </div>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0.5"
-                    value={mcqMarks}
-                    onChange={(e) => setMcqMarks(parseFloat(e.target.value) || 0)}
-                    placeholder="10"
-                    className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-ubi-800 focus:outline-none font-mono"
-                  />
-                  <span className="text-[10px] text-slate-400">Awarded if fully correct.</span>
-                </div>
-
-                <div>
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
                       Time Limit (seconds, optional)
                     </label>
                     <InfoTooltip

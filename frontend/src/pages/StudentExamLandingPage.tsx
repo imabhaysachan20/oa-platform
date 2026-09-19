@@ -1,35 +1,23 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { examsApi } from '../api/exams';
-import { useExamStore } from '../store/examStore';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Modal } from '../components/ui/Modal';
 import {
   Clock,
-  Award,
   ShieldAlert,
   Play,
   CheckCircle2,
+  Check,
   FileCode2,
   AlertTriangle,
-  Eye,
-  EyeOff,
   Scale,
-  ShieldCheck,
-  Check,
   Calendar
 } from 'lucide-react';
 
 export const StudentExamLandingPage: React.FC = () => {
   const navigate = useNavigate();
-  const setExamSession = useExamStore((s) => s.setExamSession);
-
-
-  const [selectedExam, setSelectedExam] = useState<any | null>(null);
-  const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [isStarting, setIsStarting] = useState(false);
 
   const { data: exams, isLoading, error } = useQuery({
     queryKey: ['availableExams'],
@@ -70,44 +58,7 @@ export const StudentExamLandingPage: React.FC = () => {
       navigate(`/exam/${exam.id}/waiting-room`);
       return;
     }
-    setSelectedExam(exam);
-    setAgreedToTerms(false);
-  };
-
-  const handleStartConfirmed = async () => {
-    if (!selectedExam || !agreedToTerms || isStarting) return;
-    const now = new Date().getTime();
-    if (selectedExam.start_time && now < new Date(selectedExam.start_time).getTime()) {
-      navigate(`/exam/${selectedExam.id}/waiting-room`);
-      return;
-    }
-    // Request fullscreen immediately on candidate click gesture
-    try {
-      if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen();
-      }
-    } catch (fsErr) {
-      console.warn('Fullscreen request prompt failed or declined:', fsErr);
-    }
-    setIsStarting(true);
-    try {
-      const res = await examsApi.start(selectedExam.id);
-      setExamSession(
-        res.exam_id,
-        res.assignment_id,
-        selectedExam.title || 'Exam in Progress',
-        res.status,
-        res.started_at,
-        res.deadline_at,
-        res.questions
-      );
-      setSelectedExam(null);
-      navigate(`/exam/${selectedExam.id}/workspace`);
-    } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to start exam');
-    } finally {
-      setIsStarting(false);
-    }
+    navigate(`/exam/${exam.id}/instructions`);
   };
 
   return (
@@ -293,7 +244,7 @@ export const StudentExamLandingPage: React.FC = () => {
                       <Button
                         variant="primary"
                         size="sm"
-                        onClick={() => navigate(`/exam/${exam.id}/waiting-room`)}
+                        onClick={() => navigate(`/exam/${exam.id}/instructions`)}
                         className="w-full sm:w-auto font-semibold gap-1.5"
                       >
                         <Play size={14} fill="currentColor" />
@@ -332,149 +283,6 @@ export const StudentExamLandingPage: React.FC = () => {
           </Card>
         )}
       </div>
-
-      {/* Pre-Test Instructions & Proctoring Modal */}
-      {selectedExam && (
-        <Modal
-          isOpen={!!selectedExam}
-          onClose={() => !isStarting && setSelectedExam(null)}
-          title="Assessment Instructions & Proctoring Guidelines"
-          maxWidth="3xl"
-        >
-          <div className="space-y-5 text-slate-700 dark:text-slate-300 text-xs sm:text-sm">
-            {/* Header info bar */}
-            <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-ubi-50/70 border border-ubi-200 dark:bg-ubi-950/40 dark:border-ubi-800 rounded-xl">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-ubi-800 dark:text-ubi-400 tracking-wider block">
-                  Assessment
-                </span>
-                <span className="font-bold text-slate-900 dark:text-white text-base">
-                  {selectedExam.title}
-                </span>
-              </div>
-              <div className="flex items-center gap-4 text-xs font-semibold">
-                <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
-                  <Clock size={15} className="text-ubi-700 dark:text-ubi-400" />
-                  {selectedExam.duration_minutes} Minutes
-                </span>
-                <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
-                  <FileCode2 size={15} className="text-ubi-700 dark:text-ubi-400" />
-                  {((selectedExam.easy_count ?? 1) + (selectedExam.medium_count ?? 2) + (selectedExam.hard_count ?? 0) + (selectedExam.mcq_count ?? 0))} Assigned Questions
-                </span>
-              </div>
-            </div>
-
-            {/* Instruction Items List */}
-            <div className="space-y-3.5 max-h-[50vh] overflow-y-auto pr-1">
-              {/* 1. Visible vs Hidden Test Cases */}
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5">
-                <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
-                  <Eye size={16} className="text-ubi-700 dark:text-ubi-400" />
-                  <span>1. Visible vs. Hidden Test Cases</span>
-                </div>
-                <p className="text-slate-600 dark:text-slate-400 leading-relaxed pl-6">
-                  • <strong>Run Code (Visible Cases):</strong> Executes your code against visible sample test cases shown on screen. You can run code multiple times with no limit or score penalty to test logic and debug.<br />
-                  • <strong>Submit Solution (Hidden Cases):</strong> Evaluates your code against all comprehensive hidden test cases, including performance constraints, edge cases, and boundary values.
-                </p>
-              </div>
-
-              {/* 2. Partial Marking System */}
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5">
-                <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
-                  <Scale size={16} className="text-emerald-600 dark:text-emerald-400" />
-                  <span>2. Proportional Partial Marking System</span>
-                </div>
-                <p className="text-slate-600 dark:text-slate-400 leading-relaxed pl-6">
-                  • Marks are directly proportional to the number of test cases passed.<br />
-                  • <em>Example:</em> On a 10-mark question with 4 test cases, if you pass 2 test cases you receive <strong>5 marks</strong>. Passing 3 test cases awards <strong>7.5 marks</strong>, and passing all 4 awards the full <strong>10 marks</strong>.
-                </p>
-              </div>
-
-              {/* 3. Timer & Auto-Submit */}
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5">
-                <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
-                  <Clock size={16} className="text-amber-600 dark:text-amber-400" />
-                  <span>3. Server-Synchronized Timer & Auto-Submit</span>
-                </div>
-                <p className="text-slate-600 dark:text-slate-400 leading-relaxed pl-6">
-                  • The countdown timer starts immediately when you enter the workspace and runs on server time.<br />
-                  • Closing the browser or refreshing will not pause the clock.<br />
-                  • When the timer reaches 00:00:00, your exam will automatically conclude and submit your latest code.
-                </p>
-              </div>
-
-              {/* 4. Strict Tab-Switch Monitoring & Malpractice Warning */}
-              <div className="p-3.5 bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 rounded-xl space-y-1.5">
-                <div className="flex items-center gap-2 font-bold text-rose-800 dark:text-rose-300">
-                  <ShieldAlert size={16} className="text-rose-600 dark:text-rose-400" />
-                  <span>4. Anti-Cheat Monitoring: DO NOT SWITCH TABS</span>
-                </div>
-                <div className="text-rose-700 dark:text-rose-300/90 leading-relaxed pl-6 space-y-1">
-                  <p>
-                    • <strong>Strict Tab-Switch Prohibition:</strong> We are actively monitoring your exam session. Navigating away from the exam tab, minimizing the browser, or switching windows will be flagged and recorded.
-                  </p>
-                  <p>
-                    • <strong>Zero Malicious Activity:</strong> Use of developer tools, browser extensions, generative AI tools, external monitors, or multi-tab searching is strictly prohibited and constitutes an integrity breach.
-                  </p>
-                  <p>
-                    • Repeated infractions will result in immediate disqualification and reporting to the recruiting committee.
-                  </p>
-                </div>
-              </div>
-
-              {/* 5. Final Submission */}
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5">
-                <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
-                  <CheckCircle2 size={16} className="text-ubi-700 dark:text-ubi-400" />
-                  <span>5. Submission Rules</span>
-                </div>
-                <p className="text-slate-600 dark:text-slate-400 leading-relaxed pl-6">
-                  • You can switch between your 3 assigned questions anytime.<br />
-                  • Make sure to click <strong>Submit Solution</strong> on each problem before clicking <strong>Finish Exam</strong>.<br />
-                  • Results are confidential; individual candidate score breakdowns are finalized upon submission.
-                </p>
-              </div>
-            </div>
-
-            {/* Acknowledgment Checkbox */}
-            <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl flex items-start gap-3 shadow-sm">
-              <input
-                id="ack-rules"
-                type="checkbox"
-                checked={agreedToTerms}
-                onChange={(e) => setAgreedToTerms(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-ubi-700 focus:ring-ubi-500 cursor-pointer"
-              />
-              <label htmlFor="ack-rules" className="text-xs text-slate-800 dark:text-slate-200 cursor-pointer font-medium select-none">
-                I have carefully read the assessment instructions above. I understand that tab switching and window focus are continuously monitored, and I agree not to switch tabs or engage in any malicious activities during this assessment.
-              </label>
-            </div>
-
-            {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelectedExam(null)}
-                disabled={isStarting}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleStartConfirmed}
-                disabled={!agreedToTerms || isStarting}
-                isLoading={isStarting}
-                className="font-semibold gap-1.5"
-              >
-                <ShieldCheck size={16} />
-                <span>Proceed to Assessment</span>
-              </Button>
-            </div>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 };

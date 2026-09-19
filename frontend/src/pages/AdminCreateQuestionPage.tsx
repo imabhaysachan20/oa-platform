@@ -434,14 +434,6 @@ export const AdminCreateQuestionPage: React.FC = () => {
     // Use activeStarterCode (dynamically derived from current signature if not manually overridden)
     const finalStarterCode = Object.keys(activeStarterCode).length > 0 ? activeStarterCode : clientStarters;
 
-    // Use activeStarterCode (dynamically derived from current signature if not manually overridden)
-    const finalStarterCode = Object.keys(activeStarterCode).length > 0 ? activeStarterCode : clientStarters;
-
-    const effectiveStarterCode =
-      Object.keys(starterCode).length > 0
-        ? starterCode
-        : generateClientStarterTemplates(functionName.trim(), parameters, returnType).starters;
-
     const payload: any = {
       title: title.trim(),
       description: description.trim(),
@@ -459,7 +451,7 @@ export const AdminCreateQuestionPage: React.FC = () => {
       function_signature: clientSignature,
       parameters: parameters,
       return_type: returnType,
-      starter_code: Object.keys(starterCode).length > 0 ? starterCode : undefined,
+      starter_code: Object.keys(finalStarterCode).length > 0 ? finalStarterCode : undefined,
     };
 
     if (!isEditMode && localTestCases.length > 0) {

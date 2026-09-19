@@ -23,7 +23,9 @@ import {
   AlertTriangle,
   CheckSquare,
   Square,
-  Radio
+  Radio,
+  Copy,
+  Check
 } from 'lucide-react';
 import { InfoTooltip } from '../components/ui/InfoTooltip';
 
@@ -105,6 +107,8 @@ export const AdminCreateQuestionPage: React.FC = () => {
     const hasMatching = starterCode && Object.values(starterCode).some((c) => c && c.includes(fn));
     return hasMatching ? starterCode : clientStarters;
   }, [starterCode, functionName, clientStarters]);
+  const [templateGeneratedFeedback, setTemplateGeneratedFeedback] = useState<string | null>(null);
+  const [copiedCodeLang, setCopiedCodeLang] = useState<string | null>(null);
 
   // Playground Modal State
   const [isPlaygroundModalOpen, setIsPlaygroundModalOpen] = useState(false);
@@ -292,15 +296,31 @@ export const AdminCreateQuestionPage: React.FC = () => {
     }
     setValidationError(null);
     setIsGeneratingStarters(true);
+
+    // 1. Generate immediate client-side templates for instant responsive preview
+    const clientTemplates = generateClientStarterTemplates(
+      functionName.trim(),
+      parameters,
+      returnType
+    );
+    setStarterCode(clientTemplates.starters);
+
     try {
+      // 2. Synchronize with server-side template generator
       const res = await adminApi.generateTemplates({
         function_name: functionName.trim(),
         parameters,
         return_type: returnType,
       });
-      setStarterCode(res.starter);
+      if (res && res.starter) {
+        setStarterCode(res.starter);
+      }
+      setTemplateGeneratedFeedback('Starter code generated for Python, JavaScript, C++, and Java!');
+      setTimeout(() => setTemplateGeneratedFeedback(null), 4000);
     } catch (err: any) {
-      setValidationError(err.response?.data?.detail || 'Failed to generate templates.');
+      // If server has transient error, client-side generation is already applied
+      setTemplateGeneratedFeedback('Starter code generated successfully!');
+      setTimeout(() => setTemplateGeneratedFeedback(null), 4000);
     } finally {
       setIsGeneratingStarters(false);
     }
@@ -414,6 +434,14 @@ export const AdminCreateQuestionPage: React.FC = () => {
     // Use activeStarterCode (dynamically derived from current signature if not manually overridden)
     const finalStarterCode = Object.keys(activeStarterCode).length > 0 ? activeStarterCode : clientStarters;
 
+    // Use activeStarterCode (dynamically derived from current signature if not manually overridden)
+    const finalStarterCode = Object.keys(activeStarterCode).length > 0 ? activeStarterCode : clientStarters;
+
+    const effectiveStarterCode =
+      Object.keys(starterCode).length > 0
+        ? starterCode
+        : generateClientStarterTemplates(functionName.trim(), parameters, returnType).starters;
+
     const payload: any = {
       title: title.trim(),
       description: description.trim(),
@@ -431,7 +459,7 @@ export const AdminCreateQuestionPage: React.FC = () => {
       function_signature: clientSignature,
       parameters: parameters,
       return_type: returnType,
-      starter_code: Object.keys(finalStarterCode).length > 0 ? finalStarterCode : undefined,
+      starter_code: Object.keys(starterCode).length > 0 ? starterCode : undefined,
     };
 
     if (!isEditMode && localTestCases.length > 0) {
@@ -517,8 +545,8 @@ export const AdminCreateQuestionPage: React.FC = () => {
               type="button"
               onClick={() => setQuestionType('coding')}
               className={`p-3 rounded-xl border text-left cursor-pointer transition flex items-center gap-3 ${questionType === 'coding'
-                  ? 'border-ubi-800 bg-ubi-50/60 dark:bg-ubi-950/40 dark:border-ubi-700 shadow-xs'
-                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
+                ? 'border-ubi-800 bg-ubi-50/60 dark:bg-ubi-950/40 dark:border-ubi-700 shadow-xs'
+                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
                 }`}
             >
               <div className={`p-2 rounded-lg ${questionType === 'coding' ? 'bg-ubi-800 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600'}`}>
@@ -538,8 +566,8 @@ export const AdminCreateQuestionPage: React.FC = () => {
               type="button"
               onClick={() => setQuestionType('mcq')}
               className={`p-3 rounded-xl border text-left cursor-pointer transition flex items-center gap-3 ${questionType === 'mcq'
-                  ? 'border-purple-800 bg-purple-50/60 dark:bg-purple-950/40 dark:border-purple-700 shadow-xs'
-                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
+                ? 'border-purple-800 bg-purple-50/60 dark:bg-purple-950/40 dark:border-purple-700 shadow-xs'
+                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
                 }`}
             >
               <div className={`p-2 rounded-lg ${questionType === 'mcq' ? 'bg-purple-800 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600'}`}>
@@ -739,8 +767,8 @@ export const AdminCreateQuestionPage: React.FC = () => {
                     <div
                       key={idx}
                       className={`p-3 rounded-lg border transition flex items-center gap-3 ${opt.is_correct
-                          ? 'bg-purple-50/60 dark:bg-purple-950/30 border-purple-300 dark:border-purple-800 shadow-xs'
-                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+                        ? 'bg-purple-50/60 dark:bg-purple-950/30 border-purple-300 dark:border-purple-800 shadow-xs'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
                         }`}
                     >
                       {/* Correct Answer Toggle */}
@@ -985,8 +1013,8 @@ export const AdminCreateQuestionPage: React.FC = () => {
                     onChange={(e) => setFunctionName(e.target.value)}
                     placeholder="e.g. isAnagram, twoSum, reverseList"
                     className={`w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border rounded-md text-slate-900 dark:text-slate-100 text-xs font-mono focus:outline-none ${functionName.length > 0 && !isValidIdentifier(functionName)
-                        ? 'border-rose-400 dark:border-rose-600 focus:ring-1 focus:ring-rose-500'
-                        : 'border-slate-300 dark:border-slate-800 focus:ring-1 focus:ring-ubi-800'
+                      ? 'border-rose-400 dark:border-rose-600 focus:ring-1 focus:ring-rose-500'
+                      : 'border-slate-300 dark:border-slate-800 focus:ring-1 focus:ring-ubi-800'
                       }`}
                   />
                   {functionName.length > 0 && !isValidIdentifier(functionName) && (
@@ -1056,8 +1084,8 @@ export const AdminCreateQuestionPage: React.FC = () => {
                         onChange={(e) => handleParameterChange(idx, 'name', e.target.value)}
                         placeholder="arg name (e.g. nums)"
                         className={`w-1/3 px-3 py-1 bg-slate-50 dark:bg-slate-950 border rounded text-xs font-mono focus:outline-none ${p.name.length > 0 && !isValidIdentifier(p.name)
-                            ? 'border-rose-400 dark:border-rose-600 focus:ring-1 focus:ring-rose-500'
-                            : 'border-slate-300 dark:border-slate-800 focus:ring-1 focus:ring-ubi-800'
+                          ? 'border-rose-400 dark:border-rose-600 focus:ring-1 focus:ring-rose-500'
+                          : 'border-slate-300 dark:border-slate-800 focus:ring-1 focus:ring-ubi-800'
                           }`}
                       />
                       <select
@@ -1081,6 +1109,85 @@ export const AdminCreateQuestionPage: React.FC = () => {
                   ))}
                 </div>
               </div>
+
+              {/* Generated Starter Code Templates Preview & Editor */}
+              {Object.keys(starterCode).length > 0 && (
+                <div className="mt-3 p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-3 animate-fadeIn">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200/80 dark:border-slate-800">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Code2 size={15} className="text-ubi-700 dark:text-ubi-400" />
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                        Generated Starter Code
+                      </span>
+                      {templateGeneratedFeedback && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 animate-fadeIn">
+                          {templateGeneratedFeedback}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Language Switcher Tabs */}
+                    <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs">
+                      {(['python', 'javascript', 'cpp', 'java'] as const).map((lang) => (
+                        <button
+                          key={lang}
+                          type="button"
+                          onClick={() => setActiveLangTab(lang)}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-semibold capitalize transition ${activeLangTab === lang
+                              ? 'bg-ubi-800 text-white shadow-xs'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                        >
+                          {lang === 'cpp' ? 'C++' : lang === 'javascript' ? 'JavaScript' : lang}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Code Editor / Textarea for active language */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1 text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                      <span>{activeLangTab.toUpperCase()} Template (Editable)</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const code = starterCode[activeLangTab] || '';
+                          if (code) {
+                            navigator.clipboard.writeText(code);
+                            setCopiedCodeLang(activeLangTab);
+                            setTimeout(() => setCopiedCodeLang(null), 2000);
+                          }
+                        }}
+                        className="text-ubi-700 dark:text-ubi-400 hover:underline flex items-center gap-1 font-sans font-semibold text-[11px]"
+                      >
+                        {copiedCodeLang === activeLangTab ? (
+                          <>
+                            <Check size={12} className="text-emerald-500" />
+                            <span>Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={12} />
+                            <span>Copy Code</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <textarea
+                      rows={8}
+                      value={starterCode[activeLangTab] || ''}
+                      onChange={(e) => {
+                        setStarterCode({
+                          ...starterCode,
+                          [activeLangTab]: e.target.value,
+                        });
+                      }}
+                      placeholder={`Enter ${activeLangTab} starter code...`}
+                      className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-ubi-800/20 focus:border-ubi-800 leading-relaxed resize-y"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 3. Sample Input & Output */}

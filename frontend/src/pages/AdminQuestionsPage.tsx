@@ -619,40 +619,113 @@ export const AdminQuestionsPage: React.FC = () => {
             {/* Header Metadata Banner */}
             <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl">
               <div className="flex items-center gap-3">
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase ${
+                    viewingQuestion.question_type === 'mcq'
+                      ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                      : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                  }`}
+                >
+                  {viewingQuestion.question_type === 'mcq' ? 'MCQ' : 'Coding'}
+                </span>
                 <Badge variant={viewingQuestion.difficulty}>{viewingQuestion.difficulty}</Badge>
                 <span className="text-xs text-slate-500 font-mono font-semibold">ID: #{viewingQuestion.id}</span>
               </div>
 
               <div className="flex items-center gap-3 text-xs font-mono text-slate-600 dark:text-slate-400">
-                <span className="flex items-center gap-1">
-                  <Clock size={13} className="text-slate-400" />
-                  {viewingQuestion.time_limit_ms}ms limit
-                </span>
-                <span>•</span>
-                <span className="flex items-center gap-1">
-                  <HardDrive size={13} className="text-slate-400" />
-                  {Math.round(viewingQuestion.memory_limit_kb / 1024)}MB memory
-                </span>
-                <span>•</span>
-                <span className="flex items-center gap-1 font-semibold text-ubi-800 dark:text-ubi-400">
-                  <ListChecks size={13} />
-                  {viewingQuestion.test_cases?.length || 0} Test Cases
-                </span>
+                {viewingQuestion.question_type === 'mcq' ? (
+                  <>
+                    <span className="font-semibold text-purple-700 dark:text-purple-300">
+                      {viewingQuestion.mcq_options?.length || viewingQuestion.options?.length || 0} Options
+                    </span>
+                    <span>•</span>
+                    <span>{viewingQuestion.marks ? `${viewingQuestion.marks} Marks` : 'Exam Weight'}</span>
+                    {viewingQuestion.is_multi_select && (
+                      <>
+                        <span>•</span>
+                        <span className="text-purple-600 dark:text-purple-400 font-semibold">Multi-select</span>
+                      </>
+                    )}
+                    {viewingQuestion.mcq_time_limit_seconds ? (
+                      <>
+                        <span>•</span>
+                        <span>{viewingQuestion.mcq_time_limit_seconds}s limit</span>
+                      </>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <span className="flex items-center gap-1">
+                      <Clock size={13} className="text-slate-400" />
+                      {viewingQuestion.time_limit_ms}ms limit
+                    </span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1">
+                      <HardDrive size={13} className="text-slate-400" />
+                      {Math.round(viewingQuestion.memory_limit_kb / 1024)}MB memory
+                    </span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1 font-semibold text-ubi-800 dark:text-ubi-400">
+                      <ListChecks size={13} />
+                      {viewingQuestion.test_cases?.length || 0} Test Cases
+                    </span>
+                  </>
+                )}
               </div>
             </div>
 
             {/* Main Problem Statement */}
             <div className="space-y-2">
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Problem Statement
+                {viewingQuestion.question_type === 'mcq' ? 'Question Prompt' : 'Problem Statement'}
               </h4>
               <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed">
                 <MarkdownRenderer content={viewingQuestion.description} />
               </div>
             </div>
 
-            {/* Input Format */}
-            {viewingQuestion.input_format && (
+            {/* MCQ Options Display */}
+            {viewingQuestion.question_type === 'mcq' && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                  <CheckCircle2 size={13} className="text-purple-600 dark:text-purple-400" />
+                  <span>Configured Options ({viewingQuestion.mcq_options?.length || viewingQuestion.options?.length || 0})</span>
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {(viewingQuestion.mcq_options || viewingQuestion.options || []).map((opt, idx) => (
+                    <div
+                      key={opt.id || idx}
+                      className={`p-3 rounded-xl border text-xs flex items-start justify-between gap-2.5 ${
+                        opt.is_correct
+                          ? 'bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-700/80 text-emerald-900 dark:text-emerald-200 font-medium'
+                          : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2 min-w-0">
+                        <span
+                          className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${
+                            opt.is_correct
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          {String.fromCharCode(65 + idx)}
+                        </span>
+                        <span className="break-words">{opt.option_text}</span>
+                      </div>
+                      {opt.is_correct && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
+                          Correct Answer
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Input Format (Coding questions only) */}
+            {viewingQuestion.question_type !== 'mcq' && viewingQuestion.input_format && (
               <div className="space-y-2">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
                   <AlignLeft size={13} className="text-ubi-800 dark:text-ubi-400" />
@@ -664,8 +737,8 @@ export const AdminQuestionsPage: React.FC = () => {
               </div>
             )}
 
-            {/* Test Cases Summary */}
-            {viewingQuestion.test_cases && viewingQuestion.test_cases.length > 0 && (
+            {/* Test Cases Summary (Coding questions only) */}
+            {viewingQuestion.question_type !== 'mcq' && viewingQuestion.test_cases && viewingQuestion.test_cases.length > 0 && (
               <div className="space-y-2">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Test Cases ({viewingQuestion.test_cases.length})
@@ -722,19 +795,21 @@ export const AdminQuestionsPage: React.FC = () => {
                   <Pencil size={14} />
                   <span>Edit Question</span>
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    const qForTc = viewingQuestion;
-                    setViewingQuestion(null);
-                    setSelectedQuestionForTestCases(qForTc);
-                  }}
-                  className="gap-1.5 font-semibold text-xs"
-                >
-                  <ListChecks size={14} className="text-ubi-800 dark:text-ubi-400" />
-                  <span>Manage Test Cases</span>
-                </Button>
+                {viewingQuestion.question_type !== 'mcq' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const qForTc = viewingQuestion;
+                      setViewingQuestion(null);
+                      setSelectedQuestionForTestCases(qForTc);
+                    }}
+                    className="gap-1.5 font-semibold text-xs"
+                  >
+                    <ListChecks size={14} className="text-ubi-800 dark:text-ubi-400" />
+                    <span>Manage Test Cases</span>
+                  </Button>
+                )}
               </div>
 
               <Button

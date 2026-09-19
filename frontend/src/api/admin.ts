@@ -10,8 +10,13 @@ import {
 
 export const adminApi = {
   // Exams
-  listExams: async (): Promise<Exam[]> => {
-    const res = await api.get<Exam[]>('/admin/exams');
+  listExams: async (params?: {
+    search?: string;
+    status?: string;
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
+  }): Promise<Exam[]> => {
+    const res = await api.get<Exam[]>('/admin/exams', { params });
     return res.data;
   },
 
@@ -38,8 +43,17 @@ export const adminApi = {
     return res.data;
   },
 
-  getExamPool: async (examId: number): Promise<Question[]> => {
-    const res = await api.get<Question[]>(`/admin/exams/${examId}/pool`);
+  getExamPool: async (
+    examId: number,
+    params?: {
+      search?: string;
+      difficulty?: string;
+      question_type?: string;
+      sort_by?: string;
+      sort_order?: 'asc' | 'desc';
+    }
+  ): Promise<Question[]> => {
+    const res = await api.get<Question[]>(`/admin/exams/${examId}/pool`, { params });
     return res.data;
   },
 
@@ -54,8 +68,14 @@ export const adminApi = {
   },
 
   // Questions
-  listQuestions: async (): Promise<Question[]> => {
-    const res = await api.get<Question[]>('/admin/questions');
+  listQuestions: async (params?: {
+    search?: string;
+    difficulty?: string;
+    question_type?: string;
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
+  }): Promise<Question[]> => {
+    const res = await api.get<Question[]>('/admin/questions', { params });
     return res.data;
   },
 

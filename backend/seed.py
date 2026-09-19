@@ -1,279 +1,283 @@
+"""
+Database seed script:
+1. Cleans existing questions, test cases, MCQ options, exams, assignments, and results.
+2. Seeds default admin and student users.
+3. Seeds 30 Easy DSA problems (10 test cases each: 2 visible, 8 hidden with edge cases) with full multi-language driver code.
+4. Seeds 40 Medium DSA problems (10 test cases each: 2 visible, 8 hidden with edge cases) with full multi-language driver code.
+5. Seeds 20 Hard DSA problems (10 test cases each: 2 visible, 8 hidden with edge cases) with full multi-language driver code.
+6. Seeds 150 Computer Science fundamental MCQs (CN, OS, DBMS, OOPs) with accurate timers (7s-13s) and options.
+7. Creates 6 distinct exams with dynamic pooling quotas and populated question pools.
+"""
+
 import asyncio
 from datetime import datetime, timezone
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import AsyncSessionLocal, engine
 from backend.app.core.security import get_password_hash
 from backend.app.models.base import Base
 from backend.app.models.user import User, UserRole
-from backend.app.models.question import Question, TestCase, QuestionDifficulty
-from backend.app.models.exam import Exam, ExamQuestionPool
+from backend.app.models.question import Question, TestCase, MCQOption, QuestionDifficulty
+from backend.app.models.exam import Exam, ExamQuestionPool, ExamAssignment, AssignedQuestion
+from backend.app.models.submission import Submission, MCQResponse
+from backend.app.models.result import ExamResult, QuestionScore
+from backend.app.models.proctoring import ExamProctoringLog
+from backend.app.models.network_incident import ExamNetworkIncident
+from backend.app.services.universal_driver_service import generate_all_templates, generate_universal_driver
+
+from backend.seeds.dsa_easy import DSA_EASY_QUESTIONS
+from backend.seeds.dsa_medium import DSA_MEDIUM_QUESTIONS
+from backend.seeds.dsa_hard import DSA_HARD_QUESTIONS
+from backend.seeds.mcqs import ALL_MCQS
+from backend.seeds.exams_data import EXAMS_DATA
 
 
-SAMPLE_QUESTIONS = [
-    # EASY QUESTIONS (4)
-    {
-        "title": "Two Sum Target",
-        "description": "Given an array of integers `nums` and an integer `target`, return the 0-indexed positions of the two numbers such that they add up to `target`. Output the two indices separated by a space in ascending order.\n\nInput format: First line contains space-separated integers for nums. Second line contains target.",
-        "difficulty": QuestionDifficulty.EASY,
-        "time_limit_ms": 2000,
-        "memory_limit_kb": 128000,
-        "sample_input": "2 7 11 15\n9",
-        "sample_output": "0 1",
-        "test_cases": [
-            {"input": "2 7 11 15\n9", "expected_output": "0 1", "is_hidden": False, "weight": 1.0},
-            {"input": "3 2 4\n6", "expected_output": "1 2", "is_hidden": False, "weight": 1.0},
-            {"input": "3 3\n6", "expected_output": "0 1", "is_hidden": True, "weight": 1.0},
-            {"input": "1 5 8 10 14\n19", "expected_output": "1 4", "is_hidden": True, "weight": 1.0},
-        ]
-    },
-    {
-        "title": "Palindrome String Checker",
-        "description": "A phrase is a palindrome if, after converting all uppercase letters into lowercase letters and removing all non-alphanumeric characters, it reads the same forward and backward.\n\nPrint 'true' if it is a palindrome, or 'false' otherwise.",
-        "difficulty": QuestionDifficulty.EASY,
-        "time_limit_ms": 2000,
-        "memory_limit_kb": 128000,
-        "sample_input": "A man, a plan, a canal: Panama",
-        "sample_output": "true",
-        "test_cases": [
-            {"input": "A man, a plan, a canal: Panama", "expected_output": "true", "is_hidden": False, "weight": 1.0},
-            {"input": "race a car", "expected_output": "false", "is_hidden": False, "weight": 1.0},
-            {"input": " ", "expected_output": "true", "is_hidden": True, "weight": 1.0},
-            {"input": "0P", "expected_output": "false", "is_hidden": True, "weight": 1.0},
-        ]
-    },
-    {
-        "title": "Valid Parentheses",
-        "description": "Given a string `s` containing just the characters '(', ')', '{', '}', '[' and ']', determine if the input string is valid.\n\nAn input string is valid if open brackets are closed by the same type of brackets and in the correct order.\n\nPrint 'true' or 'false'.",
-        "difficulty": QuestionDifficulty.EASY,
-        "time_limit_ms": 2000,
-        "memory_limit_kb": 128000,
-        "sample_input": "()[]{}",
-        "sample_output": "true",
-        "test_cases": [
-            {"input": "()[]{}", "expected_output": "true", "is_hidden": False, "weight": 1.0},
-            {"input": "(]", "expected_output": "false", "is_hidden": False, "weight": 1.0},
-            {"input": "{[]}", "expected_output": "true", "is_hidden": True, "weight": 1.0},
-            {"input": "([)]", "expected_output": "false", "is_hidden": True, "weight": 1.0},
-        ]
-    },
-    {
-        "title": "Fibonacci Number",
-        "description": "The Fibonacci numbers, commonly denoted F(n) form a sequence, such that each number is the sum of the two preceding ones, starting from 0 and 1. That is:\nF(0) = 0, F(1) = 1\nF(n) = F(n - 1) + F(n - 2), for n > 1.\n\nGiven integer n, calculate F(n).",
-        "difficulty": QuestionDifficulty.EASY,
-        "time_limit_ms": 2000,
-        "memory_limit_kb": 128000,
-        "sample_input": "4",
-        "sample_output": "3",
-        "test_cases": [
-            {"input": "2", "expected_output": "1", "is_hidden": False, "weight": 1.0},
-            {"input": "4", "expected_output": "3", "is_hidden": False, "weight": 1.0},
-            {"input": "7", "expected_output": "13", "is_hidden": True, "weight": 1.0},
-            {"input": "10", "expected_output": "55", "is_hidden": True, "weight": 1.0},
-        ]
-    },
+async def clean_database(db: AsyncSession):
+    """Purge existing questions, exams, assignments and cascade references in safe FK order."""
+    print("Cleaning existing examination and question records...")
+    await db.execute(delete(ExamNetworkIncident))
+    await db.execute(delete(ExamProctoringLog))
+    await db.execute(delete(QuestionScore))
+    await db.execute(delete(ExamResult))
+    await db.execute(delete(Submission))
+    await db.execute(delete(MCQResponse))
+    await db.execute(delete(AssignedQuestion))
+    await db.execute(delete(ExamAssignment))
+    await db.execute(delete(ExamQuestionPool))
+    await db.execute(delete(Exam))
+    await db.execute(delete(TestCase))
+    await db.execute(delete(MCQOption))
+    await db.execute(delete(Question))
+    await db.flush()
+    print("All previous questions, test cases, MCQs, exams, and results cleared.")
 
-    # MEDIUM QUESTIONS (4)
-    {
-        "title": "Longest Substring Without Repeating Characters",
-        "description": "Given a string `s`, find the length of the longest substring without repeating characters.\n\nInput format: A single line containing the string.\nOutput format: A single integer denoting length.",
-        "difficulty": QuestionDifficulty.MEDIUM,
-        "time_limit_ms": 2000,
-        "memory_limit_kb": 128000,
-        "sample_input": "abcabcbb",
-        "sample_output": "3",
-        "test_cases": [
-            {"input": "abcabcbb", "expected_output": "3", "is_hidden": False, "weight": 1.0},
-            {"input": "bbbbb", "expected_output": "1", "is_hidden": False, "weight": 1.0},
-            {"input": "pwwkew", "expected_output": "3", "is_hidden": True, "weight": 1.0},
-            {"input": "au", "expected_output": "2", "is_hidden": True, "weight": 1.0},
-            {"input": "dvdf", "expected_output": "3", "is_hidden": True, "weight": 1.0},
-        ]
-    },
-    {
-        "title": "Maximum Subarray Sum (Kadane's)",
-        "description": "Given an integer array `nums`, find the subarray with the largest sum, and return its sum.\n\nInput format: Space-separated integers on a single line.",
-        "difficulty": QuestionDifficulty.MEDIUM,
-        "time_limit_ms": 2000,
-        "memory_limit_kb": 128000,
-        "sample_input": "-2 1 -3 4 -1 2 1 -5 4",
-        "sample_output": "6",
-        "test_cases": [
-            {"input": "-2 1 -3 4 -1 2 1 -5 4", "expected_output": "6", "is_hidden": False, "weight": 1.0},
-            {"input": "1", "expected_output": "1", "is_hidden": False, "weight": 1.0},
-            {"input": "5 4 -1 7 8", "expected_output": "23", "is_hidden": True, "weight": 1.0},
-            {"input": "-5 -2 -8 -1", "expected_output": "-1", "is_hidden": True, "weight": 1.0},
-        ]
-    },
-    {
-        "title": "Coin Change Minimum",
-        "description": "You are given an integer array `coins` representing coins of different denominations and an integer `amount` representing a total amount of money.\n\nReturn the fewest number of coins that you need to make up that amount. If that amount of money cannot be made up by any combination of the coins, return -1.\n\nInput format: Line 1 has space-separated coin values. Line 2 has target amount.",
-        "difficulty": QuestionDifficulty.MEDIUM,
-        "time_limit_ms": 2000,
-        "memory_limit_kb": 128000,
-        "sample_input": "1 2 5\n11",
-        "sample_output": "3",
-        "test_cases": [
-            {"input": "1 2 5\n11", "expected_output": "3", "is_hidden": False, "weight": 1.0},
-            {"input": "2\n3", "expected_output": "-1", "is_hidden": False, "weight": 1.0},
-            {"input": "1\n0", "expected_output": "0", "is_hidden": True, "weight": 1.0},
-            {"input": "186 419 83 408\n6249", "expected_output": "20", "is_hidden": True, "weight": 1.0},
-        ]
-    },
-    {
-        "title": "Merge Intervals",
-        "description": "Given an array of intervals where intervals[i] = [start_i, end_i], merge all overlapping intervals, and return an array of the non-overlapping intervals that cover all the intervals in the input.\n\nInput: First line integer N. Next N lines each contain start and end separated by space.\nOutput: Merged intervals sorted by start time, each interval on a line separated by space.",
-        "difficulty": QuestionDifficulty.MEDIUM,
-        "time_limit_ms": 2000,
-        "memory_limit_kb": 128000,
-        "sample_input": "4\n1 3\n2 6\n8 10\n15 18",
-        "sample_output": "1 6\n8 10\n15 18",
-        "test_cases": [
-            {"input": "4\n1 3\n2 6\n8 10\n15 18", "expected_output": "1 6\n8 10\n15 18", "is_hidden": False, "weight": 1.0},
-            {"input": "2\n1 4\n4 5", "expected_output": "1 5", "is_hidden": False, "weight": 1.0},
-            {"input": "3\n1 4\n0 4\n2 3", "expected_output": "0 4", "is_hidden": True, "weight": 1.0},
-            {"input": "2\n1 4\n2 3", "expected_output": "1 4", "is_hidden": True, "weight": 1.0},
-        ]
-    },
 
-    # HARD QUESTIONS (2)
-    {
-        "title": "Trapping Rain Water",
-        "description": "Given `n` non-negative integers representing an elevation map where the width of each bar is 1, compute how much water it can trap after raining.\n\nInput: Space-separated non-negative integers.\nOutput: Single integer representing total trapped water.",
-        "difficulty": QuestionDifficulty.HARD,
-        "time_limit_ms": 2000,
-        "memory_limit_kb": 128000,
-        "sample_input": "0 1 0 2 1 0 1 3 2 1 2 1",
-        "sample_output": "6",
-        "test_cases": [
-            {"input": "0 1 0 2 1 0 1 3 2 1 2 1", "expected_output": "6", "is_hidden": False, "weight": 1.0},
-            {"input": "4 2 0 3 2 5", "expected_output": "9", "is_hidden": False, "weight": 1.0},
-            {"input": "3 0 2 0 4", "expected_output": "7", "is_hidden": True, "weight": 1.0},
-        ]
-    },
-    {
-        "title": "Median of Two Sorted Arrays",
-        "description": "Given two sorted arrays nums1 and nums2 of size m and n respectively, return the median of the two sorted arrays.\n\nInput: Line 1 contains space separated elements of nums1. Line 2 contains space separated elements of nums2.\nOutput: The median printed to 1 decimal place (e.g. 2.0 or 2.5).",
-        "difficulty": QuestionDifficulty.HARD,
-        "time_limit_ms": 2000,
-        "memory_limit_kb": 128000,
-        "sample_input": "1 3\n2",
-        "sample_output": "2.0",
-        "test_cases": [
-            {"input": "1 3\n2", "expected_output": "2.0", "is_hidden": False, "weight": 1.0},
-            {"input": "1 2\n3 4", "expected_output": "2.5", "is_hidden": False, "weight": 1.0},
-            {"input": "0 0\n0 0", "expected_output": "0.0", "is_hidden": True, "weight": 1.0},
-        ]
-    }
-]
+async def seed_users(db: AsyncSession):
+    """Seed default admin and student users if they don't already exist."""
+    print("Seeding default platform users...")
+    admin_email = "admin@usefulbi.com"
+    admin = (await db.execute(select(User).where(User.email == admin_email))).scalar_one_or_none()
+    if not admin:
+        admin = User(
+            name="UBI Administrator",
+            email=admin_email,
+            roll_no="ADMIN001",
+            password_hash=get_password_hash("Admin@12345"),
+            role=UserRole.ADMIN
+        )
+        db.add(admin)
+        print(f"Created admin: {admin_email}")
+
+    students = [
+        ("Alex Chen", "student1@usefulbi.com", "UBI2026001", "Student@12345"),
+        ("Priya Sharma", "student2@usefulbi.com", "UBI2026002", "Student@12345"),
+        ("Michael Brown", "student3@usefulbi.com", "UBI2026003", "Student@12345"),
+    ]
+    for name, email, roll_no, password in students:
+        std = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+        if not std:
+            std = User(
+                name=name,
+                email=email,
+                roll_no=roll_no,
+                password_hash=get_password_hash(password),
+                role=UserRole.STUDENT
+            )
+            db.add(std)
+            print(f"Created student: {email}")
+
+    await db.flush()
+
+
+async def seed_dsa_questions(db: AsyncSession, questions_data: list, category_label: str) -> list[Question]:
+    """Seed DSA questions with generated templates, drivers, and 10 test cases each."""
+    created_questions = []
+    for q_data in questions_data:
+        tmpl = generate_all_templates(
+            q_data["function_name"],
+            q_data["parameters"],
+            q_data["return_type"]
+        )
+        driver_code = {
+            lang: generate_universal_driver(
+                q_data["function_name"],
+                q_data["parameters"],
+                q_data["return_type"],
+                lang
+            )
+            for lang in ["python", "javascript", "cpp", "java"]
+        }
+
+        q = Question(
+            title=q_data["title"],
+            description=q_data["description"],
+            difficulty=q_data["difficulty"],
+            question_type="coding",
+            time_limit_ms=2000,
+            memory_limit_kb=128000,
+            sample_input=q_data.get("sample_input"),
+            sample_output=q_data.get("sample_output"),
+            input_format=q_data.get("input_format"),
+            function_name=q_data["function_name"],
+            function_signature=tmpl.get("function_signature"),
+            parameters=q_data["parameters"],
+            return_type=q_data["return_type"],
+            starter_code=tmpl.get("starter"),
+            driver_code=driver_code,
+        )
+        db.add(q)
+        await db.flush()
+
+        for tc_data in q_data["test_cases"]:
+            tc = TestCase(
+                question_id=q.id,
+                input=tc_data["input"],
+                expected_output=tc_data["expected_output"],
+                is_hidden=tc_data["is_hidden"],
+                weight=tc_data["weight"]
+            )
+            db.add(tc)
+
+        created_questions.append(q)
+
+    await db.flush()
+    print(f"Seeded {len(created_questions)} {category_label} DSA questions (each with 10 test cases & multi-lang drivers).")
+    return created_questions
+
+
+async def seed_mcqs(db: AsyncSession) -> list[Question]:
+    """Seed 150 computer science MCQs with options and timers."""
+    created_mcqs = []
+    for q_data in ALL_MCQS:
+        q = Question(
+            title=q_data["title"],
+            description=q_data["description"],
+            difficulty=q_data["difficulty"],
+            question_type="mcq",
+            mcq_time_limit_seconds=q_data["mcq_time_limit_seconds"],
+            is_multi_select=q_data["is_multi_select"],
+            marks=1.0,
+            time_limit_ms=2000,
+            memory_limit_kb=128000,
+        )
+        db.add(q)
+        await db.flush()
+
+        for idx, opt_data in enumerate(q_data["options"]):
+            opt = MCQOption(
+                question_id=q.id,
+                option_text=opt_data["text"],
+                is_correct=opt_data["is_correct"],
+                order_index=idx
+            )
+            db.add(opt)
+
+        created_mcqs.append(q)
+
+    await db.flush()
+    print(f"Seeded {len(created_mcqs)} Computer Science MCQs (CN, OS, DBMS, OOPs) with accurate timers.")
+    return created_mcqs
+
+
+async def seed_exams(
+    db: AsyncSession,
+    easy_dsa: list[Question],
+    med_dsa: list[Question],
+    hard_dsa: list[Question],
+    mcqs: list[Question]
+):
+    """Seed 6 configured exams and populate their question pools."""
+    print("Creating exams and populating question pools...")
+    for ex_data in EXAMS_DATA:
+        exam = Exam(
+            title=ex_data["title"],
+            duration_minutes=ex_data["duration_minutes"],
+            easy_weight=ex_data["easy_weight"],
+            medium_weight=ex_data["medium_weight"],
+            hard_weight=ex_data["hard_weight"],
+            mcq_weight=ex_data["mcq_weight"],
+            mcq_count=ex_data["mcq_count"],
+            easy_count=ex_data["easy_count"],
+            medium_count=ex_data["medium_count"],
+            hard_count=ex_data["hard_count"],
+            is_published=ex_data["is_published"],
+            target_groups=ex_data["target_groups"]
+        )
+        db.add(exam)
+        await db.flush()
+
+        # Populate Pool
+        selector = ex_data["pool_selector"]
+        e_start, e_end = selector["easy_slice"]
+        m_start, m_end = selector["medium_slice"]
+        h_start, h_end = selector["hard_slice"]
+        mcq_start, mcq_end = selector["mcq_slice"]
+
+        pool_questions = []
+        if e_end > e_start:
+            pool_questions.extend(easy_dsa[e_start:e_end])
+        if m_end > m_start:
+            pool_questions.extend(med_dsa[m_start:m_end])
+        if h_end > h_start:
+            pool_questions.extend(hard_dsa[h_start:h_end])
+        if mcq_end > mcq_start:
+            pool_questions.extend(mcqs[mcq_start:mcq_end])
+
+        for q in pool_questions:
+            pool_entry = ExamQuestionPool(
+                exam_id=exam.id,
+                question_id=q.id,
+                difficulty=q.difficulty,
+                selection_mode="random"
+            )
+            db.add(pool_entry)
+
+        await db.flush()
+        print(f"Created Exam #{exam.id}: '{exam.title}' with {len(pool_questions)} pooled questions.")
 
 
 async def seed_database():
-    print("Connecting to database and creating tables if not present...")
+    """Main database seeding routine."""
+    print("=" * 70)
+    print("STARTING DATABASE SEED PROCESS")
+    print("=" * 70)
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
     async with AsyncSessionLocal() as db:
-        # 1. Admin User
-        admin_email = "admin@usefulbi.com"
-        admin = (await db.execute(select(User).where(User.email == admin_email))).scalar_one_or_none()
-        if not admin:
-            admin = User(
-                name="UBI Administrator",
-                email=admin_email,
-                roll_no="ADMIN001",
-                password_hash=get_password_hash("Admin@12345"),
-                role=UserRole.ADMIN
-            )
-            db.add(admin)
-            print(f"Created admin user: {admin_email} / Admin@12345")
+        # Step 1: Clean database
+        await clean_database(db)
 
-        # 2. Sample Students
-        students = [
-            ("Alex Chen", "student1@usefulbi.com", "UBI2026001", "Student@12345"),
-            ("Priya Sharma", "student2@usefulbi.com", "UBI2026002", "Student@12345"),
-            ("Michael Brown", "student3@usefulbi.com", "UBI2026003", "Student@12345"),
-        ]
-        for name, email, roll_no, password in students:
-            std = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
-            if not std:
-                std = User(
-                    name=name,
-                    email=email,
-                    roll_no=roll_no,
-                    password_hash=get_password_hash(password),
-                    role=UserRole.STUDENT
-                )
-                db.add(std)
-                print(f"Created student user: {email} / {password}")
+        # Step 2: Seed users
+        await seed_users(db)
 
-        await db.flush()
+        # Step 3: Seed DSA questions
+        easy_questions = await seed_dsa_questions(db, DSA_EASY_QUESTIONS, "Easy")
+        medium_questions = await seed_dsa_questions(db, DSA_MEDIUM_QUESTIONS, "Medium")
+        hard_questions = await seed_dsa_questions(db, DSA_HARD_QUESTIONS, "Hard")
 
-        # 3. Questions and Test Cases
-        created_question_objects = []
-        for q_data in SAMPLE_QUESTIONS:
-            existing_q = (await db.execute(
-                select(Question).where(Question.title == q_data["title"])
-            )).scalar_one_or_none()
+        # Step 4: Seed MCQs
+        mcq_questions = await seed_mcqs(db)
 
-            if not existing_q:
-                q = Question(
-                    title=q_data["title"],
-                    description=q_data["description"],
-                    difficulty=q_data["difficulty"],
-                    time_limit_ms=q_data["time_limit_ms"],
-                    memory_limit_kb=q_data["memory_limit_kb"],
-                    sample_input=q_data["sample_input"],
-                    sample_output=q_data["sample_output"],
-                    input_format=q_data.get("input_format"),
-                )
-                db.add(q)
-                await db.flush()
+        # Step 5: Seed Exams & Question Pools
+        await seed_exams(db, easy_questions, medium_questions, hard_questions, mcq_questions)
 
-                for tc_data in q_data["test_cases"]:
-                    tc = TestCase(
-                        question_id=q.id,
-                        input=tc_data["input"],
-                        expected_output=tc_data["expected_output"],
-                        is_hidden=tc_data["is_hidden"],
-                        weight=tc_data["weight"]
-                    )
-                    db.add(tc)
-                created_question_objects.append(q)
-            else:
-                created_question_objects.append(existing_q)
-
-        await db.flush()
-        print(f"Verified/Created {len(created_question_objects)} questions in bank.")
-
-        # 4. Exam and Question Pool
-        exam_title = "UsefulBI Engineering Assessment 2026"
-        exam = (await db.execute(select(Exam).where(Exam.title == exam_title))).scalar_one_or_none()
-        if not exam:
-            exam = Exam(
-                title=exam_title,
-                duration_minutes=60,
-                easy_weight=10.0,
-                medium_weight=20.0,
-                hard_weight=30.0,
-                is_published=True
-            )
-            db.add(exam)
-            await db.flush()
-            print(f"Created exam: {exam_title} (ID: {exam.id})")
-
-            for q in created_question_objects:
-                pool_entry = ExamQuestionPool(
-                    exam_id=exam.id,
-                    question_id=q.id,
-                    difficulty=q.difficulty
-                )
-                db.add(pool_entry)
-            print(f"Populated exam question pool with {len(created_question_objects)} questions.")
-
+        # Final commit
         await db.commit()
-        print("Database seed completed successfully!")
+
+    print("=" * 70)
+    print("DATABASE SEED COMPLETED SUCCESSFULLY")
+    print(f"Summary:")
+    print(f"- Easy DSA Questions:   {len(easy_questions)}")
+    print(f"- Medium DSA Questions: {len(medium_questions)}")
+    print(f"- Hard DSA Questions:   {len(hard_questions)}")
+    print(f"- Total DSA Questions:  {len(easy_questions) + len(medium_questions) + len(hard_questions)}")
+    print(f"- Total MCQs:           {len(mcq_questions)}")
+    print(f"- Total Questions:      {len(easy_questions) + len(medium_questions) + len(hard_questions) + len(mcq_questions)}")
+    print(f"- Total Exams Created:  {len(EXAMS_DATA)}")
+    print("=" * 70)
 
 
 if __name__ == "__main__":

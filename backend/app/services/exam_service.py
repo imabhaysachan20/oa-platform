@@ -247,8 +247,24 @@ async def start_exam_for_student(
         fallback_ids = (await db.execute(stmt_fallback)).scalars().all()
         coding_selected_ids.extend(fallback_ids)
 
-    # Total assigned questions: selected random MCQs + selected coding questions
-    final_assigned_q_ids = mcq_q_ids + coding_selected_ids
+    # Partition MCQs: Timed MCQs first, then untimed MCQs
+    timed_mcq_ids = []
+    untimed_mcq_ids = []
+    if mcq_q_ids:
+        stmt_timed = (
+            select(Question.id, Question.mcq_time_limit_seconds)
+            .where(Question.id.in_(mcq_q_ids))
+        )
+        mcq_time_rows = (await db.execute(stmt_timed)).all()
+        timed_set = {r[0] for r in mcq_time_rows if r[1] and r[1] > 0}
+        for q_id in mcq_q_ids:
+            if q_id in timed_set:
+                timed_mcq_ids.append(q_id)
+            else:
+                untimed_mcq_ids.append(q_id)
+
+    # Total assigned questions: timed MCQs first, then untimed MCQs, then coding questions
+    final_assigned_q_ids = timed_mcq_ids + untimed_mcq_ids + coding_selected_ids
 
     if not final_assigned_q_ids:
         raise HTTPException(
@@ -551,6 +567,55 @@ async def mark_question_viewed(
     return assigned_q.question_deadline_at
 
 
+async def lock_assigned_question(
+    db: AsyncSession,
+    exam_id: int,
+    question_id: int,
+    user_id: int
+) -> dict:
+    """
+    Explicitly locks a timed MCQ when the candidate advances to the next question or when its timer expires.
+    Sets assigned_questions.is_locked = True, adjusts question_deadline_at to now,
+    and also updates mcq_responses.is_locked = True if a response exists.
+    """
+    now = datetime.now(timezone.utc)
+
+    # 1. Fetch assignment
+    assign_stmt = select(ExamAssignment).where(
+        ExamAssignment.exam_id == exam_id,
+        ExamAssignment.user_id == user_id
+    )
+    assignment = (await db.execute(assign_stmt)).scalar_one_or_none()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Exam assignment not found")
+
+    # 2. Fetch assigned question
+    stmt = select(AssignedQuestion).where(
+        AssignedQuestion.assignment_id == assignment.id,
+        AssignedQuestion.question_id == question_id
+    )
+    assigned_q = (await db.execute(stmt)).scalar_one_or_none()
+    if not assigned_q:
+        raise HTTPException(status_code=404, detail="Question is not assigned to this exam")
+
+    assigned_q.is_locked = True
+    if assigned_q.question_deadline_at is None or assigned_q.question_deadline_at > now:
+        assigned_q.question_deadline_at = now
+
+    # Also lock mcq_responses row if present
+    from backend.app.models.submission import MCQResponse
+    stmt_resp = select(MCQResponse).where(
+        MCQResponse.assignment_id == assignment.id,
+        MCQResponse.question_id == question_id
+    )
+    mcq_resp = (await db.execute(stmt_resp)).scalar_one_or_none()
+    if mcq_resp:
+        mcq_resp.is_locked = True
+
+    await db.commit()
+    return {"locked": True, "question_id": question_id}
+
+
 async def get_student_exam_questions(
     db: AsyncSession,
     exam_id: int,
@@ -691,7 +756,7 @@ async def _get_assigned_question_views(db: AsyncSession, assignment_id: int) -> 
             mcq_resp = (await db.execute(resp_stmt)).scalar_one_or_none()
 
             selected_ids = mcq_resp.selected_option_ids if mcq_resp else None
-            is_locked = mcq_resp.is_locked if mcq_resp else False
+            is_locked = (mcq_resp.is_locked if mcq_resp else False) or assigned_q.is_locked
 
             # Check if per-question deadline has passed (with 7s grace period for network transit)
             now = datetime.now(timezone.utc)

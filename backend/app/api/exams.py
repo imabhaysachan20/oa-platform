@@ -32,7 +32,8 @@ from backend.app.services.exam_service import (
     finish_exam_for_student,
     get_exam_leaderboard,
     get_exam_result_detail,
-    mark_question_viewed
+    mark_question_viewed,
+    lock_assigned_question
 )
 
 router = APIRouter(prefix="/exams", tags=["exams"])
@@ -350,6 +351,24 @@ async def mark_question_as_viewed(
     """
     deadline = await mark_question_viewed(db, exam_id, question_id, current_user.id)
     return {"question_deadline_at": deadline}
+
+
+@router.post("/{exam_id}/questions/{question_id}/lock")
+async def lock_question(
+    exam_id: int,
+    question_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Explicitly locks an assigned timed MCQ when candidate advances or time expires.
+    """
+    return await lock_assigned_question(
+        db=db,
+        exam_id=exam_id,
+        question_id=question_id,
+        user_id=current_user.id
+    )
 
 
 @router.post("/{exam_id}/heartbeat", response_model=CandidateHeartbeatResponse)

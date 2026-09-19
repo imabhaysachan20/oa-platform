@@ -14,6 +14,8 @@ interface QuestionPanelProps {
   onSelectIndex: (idx: number) => void;
   lockedQuestionIds?: Set<number>;
   serverTime?: string | null;
+  isSequentialTimedPhase?: boolean;
+  activeTimedQuestionId?: number;
 }
 
 export const QuestionPanel: React.FC<QuestionPanelProps> = ({
@@ -24,6 +26,8 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({
   onSelectIndex,
   lockedQuestionIds,
   serverTime,
+  isSequentialTimedPhase,
+  activeTimedQuestionId,
 }) => {
   const currentQ = questions[activeIndex];
   const timer = useQuestionTimer(userId, examId, currentQ, undefined, serverTime);
@@ -44,6 +48,8 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({
           const isSelected = activeIndex === idx;
           const isMCQ = q.question_type === 'mcq';
           const isLocked = isMCQ && (Boolean(lockedQuestionIds?.has(q.id)) || Boolean(q.is_mcq_locked));
+          const isRestrictedInTimedPhase = isSequentialTimedPhase && q.id !== activeTimedQuestionId;
+          const isTabDisabled = isLocked ? !isSelected : isRestrictedInTimedPhase;
           const isSubmitted = isMCQ
             ? (q.selected_option_ids && q.selected_option_ids.length > 0)
             : (q.status && q.status !== 'unattempted');
@@ -51,18 +57,24 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({
           return (
             <button
               key={q.id}
-              disabled={isLocked && !isSelected}
+              disabled={isTabDisabled}
               onClick={() => {
-                if (isLocked && !isSelected) return;
+                if (isTabDisabled) return;
                 onSelectIndex(idx);
               }}
-              title={isLocked && !isSelected ? 'This question is locked and cannot be reopened' : undefined}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+              title={
                 isLocked && !isSelected
+                  ? 'This question is completed and locked'
+                  : isRestrictedInTimedPhase
+                  ? 'Sequential Phase: Complete active timed question first'
+                  : undefined
+              }
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+                isTabDisabled
                   ? 'opacity-40 cursor-not-allowed bg-slate-100 dark:bg-slate-900/60 text-slate-400 border border-slate-200/50 dark:border-slate-800/50'
                   : isSelected
                   ? 'bg-ubi-800 text-white shadow-sm'
-                  : 'bg-white dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-transparent'
+                  : 'bg-white dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:white hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-transparent'
               }`}
             >
               <span className="flex items-center gap-1.5">

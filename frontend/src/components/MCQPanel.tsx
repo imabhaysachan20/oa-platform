@@ -13,6 +13,10 @@ interface MCQPanelProps {
   saveError: string | null;
   onQuestionExpire?: () => void;
   serverTime?: string | null;
+  isTimedMCQ?: boolean;
+  hasMoreTimedMCQs?: boolean;
+  onAdvanceTimedQuestion?: () => void;
+  isAdvancing?: boolean;
 }
 
 import { useQuestionTimer } from '../hooks/useQuestionTimer';
@@ -28,6 +32,10 @@ export const MCQPanel: React.FC<MCQPanelProps> = ({
   saveError,
   onQuestionExpire,
   serverTime,
+  isTimedMCQ,
+  hasMoreTimedMCQs,
+  onAdvanceTimedQuestion,
+  isAdvancing,
 }) => {
   const isMultiSelect = !!question.is_multi_select;
   const options = question.mcq_options || [];
@@ -95,11 +103,33 @@ export const MCQPanel: React.FC<MCQPanelProps> = ({
         )}
       </div>
 
-      {/* Lock Notice if expired */}
-      {timer.hasExpired && (
+      {/* Sequential Timed Section Notice Banner */}
+      {isTimedMCQ && !isLocked && (
+        <div className="bg-purple-50/90 dark:bg-purple-950/50 border-b border-purple-200 dark:border-purple-800 px-6 py-2.5 flex items-center justify-between gap-3 text-xs shrink-0">
+          <div className="flex items-center gap-2 text-purple-900 dark:text-purple-200 font-medium">
+            <Clock size={14} className="text-purple-700 dark:text-purple-400 shrink-0" />
+            <span>
+              <strong>Sequential Timed Mode:</strong> Complete questions in order. Advancing or timer expiry locks this question permanently.
+            </span>
+          </div>
+          {onAdvanceTimedQuestion && (
+            <button
+              type="button"
+              onClick={onAdvanceTimedQuestion}
+              disabled={isAdvancing}
+              className="px-3.5 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs transition-colors shrink-0 shadow-sm flex items-center gap-1 cursor-pointer disabled:opacity-50"
+            >
+              <span>{hasMoreTimedMCQs ? 'Next Question →' : 'Complete Timed Section →'}</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Lock Notice if locked or expired */}
+      {isLocked && (
         <div className="bg-rose-50 dark:bg-rose-950/60 border-b border-rose-200 dark:border-rose-900/60 px-6 py-2.5 flex items-center gap-2 text-xs font-semibold text-rose-800 dark:text-rose-200 shrink-0">
           <ShieldAlert size={16} className="text-rose-600 dark:text-rose-400 shrink-0" />
-          <span>This question's individual timer has expired. Your responses have been locked and submitted.</span>
+          <span>This question is completed and locked. Responses are sealed and cannot be reopened.</span>
         </div>
       )}
 
@@ -190,7 +220,7 @@ export const MCQPanel: React.FC<MCQPanelProps> = ({
           <span>Responses are autosaved instantly. You can change your selection anytime before time expires.</span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {saveError ? (
             <span className="flex items-center gap-1.5 text-rose-600 dark:text-rose-400 font-medium">
               <AlertCircle size={14} />
@@ -210,6 +240,17 @@ export const MCQPanel: React.FC<MCQPanelProps> = ({
             <span className="text-slate-400 dark:text-slate-500 font-medium">
               No option selected
             </span>
+          )}
+
+          {isTimedMCQ && !isLocked && onAdvanceTimedQuestion && (
+            <button
+              type="button"
+              onClick={onAdvanceTimedQuestion}
+              disabled={isAdvancing}
+              className="px-4 py-2 rounded-lg font-bold text-xs bg-ubi-800 hover:bg-ubi-900 text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 ml-2"
+            >
+              <span>{hasMoreTimedMCQs ? 'Next Question →' : 'Complete Timed Section & Proceed →'}</span>
+            </button>
           )}
         </div>
       </div>

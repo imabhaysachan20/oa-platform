@@ -69,6 +69,11 @@ export const examsApi = {
     return res.data;
   },
 
+  lockQuestion: async (examId: number, questionId: number): Promise<{ locked: boolean; question_id: number }> => {
+    const res = await api.post<{ locked: boolean; question_id: number }>(`/exams/${examId}/questions/${questionId}/lock`);
+    return res.data;
+  },
+
   sendHeartbeat: async (
     examId: number,
     assignmentId: number

@@ -405,7 +405,6 @@ export const AdminCreateQuestionPage: React.FC = () => {
       marks: null,
       mcq_time_limit_seconds: null,
       is_multi_select: false,
-      options: [],
       function_name: functionName.trim(),
       parameters: parameters,
       return_type: returnType,

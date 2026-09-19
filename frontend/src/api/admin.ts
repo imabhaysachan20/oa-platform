@@ -25,14 +25,6 @@ export const adminApi = {
     return res.data;
   },
 
-  updateExam: async (
-    id: number,
-    examData: Partial<Exam> & { question_ids?: number[] }
-  ): Promise<Exam> => {
-    const res = await api.put<Exam>(`/admin/exams/${id}`, examData);
-    return res.data;
-  },
-
   deleteExam: async (id: number): Promise<{ message: string }> => {
     const res = await api.delete(`/admin/exams/${id}`);
     return res.data;

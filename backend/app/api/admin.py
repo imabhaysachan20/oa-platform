@@ -20,7 +20,6 @@ from backend.app.models.submission import Submission
 from backend.app.models.result import QuestionScore
 from backend.app.schemas.exam import (
     ExamCreate,
-    ExamUpdate,
     ExamResponse,
     MonitoringStudentView,
     CandidateDossierResponse
@@ -175,72 +174,6 @@ async def get_admin_exam(
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
-    count_stmt = select(func.count(ExamQuestionPool.id)).where(ExamQuestionPool.exam_id == exam.id)
-    pool_count = (await db.execute(count_stmt)).scalar() or 0
-    resp = ExamResponse.model_validate(exam)
-    resp.pool_count = pool_count
-    return resp
-
-
-@router.put("/exams/{exam_id}", response_model=ExamResponse)
-async def update_exam(
-    exam_id: int,
-    body: ExamUpdate,
-    current_admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db)
-):
-    exam = (await db.execute(select(Exam).where(Exam.id == exam_id))).scalar_one_or_none()
-    if not exam:
-        raise HTTPException(status_code=404, detail="Exam not found")
-
-    if body.title is not None:
-        exam.title = body.title
-    if body.duration_minutes is not None:
-        exam.duration_minutes = body.duration_minutes
-    if body.start_time is not None:
-        exam.start_time = body.start_time
-    if body.end_time is not None:
-        exam.end_time = body.end_time
-    if body.easy_weight is not None:
-        exam.easy_weight = body.easy_weight
-    if body.medium_weight is not None:
-        exam.medium_weight = body.medium_weight
-    if body.hard_weight is not None:
-        exam.hard_weight = body.hard_weight
-    if body.mcq_weight is not None:
-        exam.mcq_weight = body.mcq_weight
-    if body.mcq_count is not None:
-        exam.mcq_count = body.mcq_count
-    if body.easy_count is not None:
-        exam.easy_count = body.easy_count
-    if body.medium_count is not None:
-        exam.medium_count = body.medium_count
-    if body.hard_count is not None:
-        exam.hard_count = body.hard_count
-    if body.is_published is not None:
-        exam.is_published = body.is_published
-    if body.target_groups is not None:
-        exam.target_groups = body.target_groups
-
-    if body.question_ids is not None:
-        # Clear existing pool using direct SQL delete and flush before inserting
-        await db.execute(delete(ExamQuestionPool).where(ExamQuestionPool.exam_id == exam.id))
-        await db.flush()
-
-        unique_q_ids = list(dict.fromkeys(body.question_ids))
-        for q_id in unique_q_ids:
-            q_obj = (await db.execute(select(Question).where(Question.id == q_id))).scalar_one_or_none()
-            if q_obj is not None:
-                db.add(ExamQuestionPool(
-                    exam_id=exam.id,
-                    question_id=q_id,
-                    difficulty=q_obj.difficulty,
-                    selection_mode="random"
-                ))
-        await db.flush()
-
-    await db.commit()
-    await db.refresh(exam)
     count_stmt = select(func.count(ExamQuestionPool.id)).where(ExamQuestionPool.exam_id == exam.id)
     pool_count = (await db.execute(count_stmt)).scalar() or 0
     resp = ExamResponse.model_validate(exam)
@@ -558,8 +491,10 @@ async def update_question(
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
 
-    # If modifying options or answer key, verify exam is not live or already started
-    if body.options is not None:
+    target_question_type = body.question_type if body.question_type is not None else q.question_type
+
+    # If modifying options or answer key for an MCQ question, verify exam is not live or already started
+    if target_question_type == "mcq" and body.options is not None:
         now = datetime.now(timezone.utc)
         attached_exams_stmt = (
             select(Exam)

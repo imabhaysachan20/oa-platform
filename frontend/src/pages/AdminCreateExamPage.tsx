@@ -32,6 +32,7 @@ export const AdminCreateExamPage: React.FC = () => {
   const [mediumWeight, setMediumWeight] = useState(20);
   const [hardWeight, setHardWeight] = useState(30);
   const [mcqWeight, setMcqWeight] = useState(2);
+  const [mcqCount, setMcqCount] = useState(0);
   const [easyCount, setEasyCount] = useState(1);
   const [mediumCount, setMediumCount] = useState(2);
   const [hardCount, setHardCount] = useState(0);
@@ -147,6 +148,7 @@ export const AdminCreateExamPage: React.FC = () => {
       medium_weight: mediumWeight,
       hard_weight: hardWeight,
       mcq_weight: mcqWeight,
+      mcq_count: mcqCount,
       easy_count: easyCount,
       medium_count: mediumCount,
       hard_count: hardCount,
@@ -393,22 +395,41 @@ export const AdminCreateExamPage: React.FC = () => {
                   <span className="w-2 h-2 rounded-full bg-purple-500"></span>
                   MCQ Questions
                 </span>
-                <span className="text-[10px] text-slate-500">Pool: {poolMcqCount} selected</span>
+                <span className="text-[10px] text-slate-500">Pool: {poolMcqCount} available</span>
               </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-0.5">
-                  Marks per MCQ
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  min={0.1}
-                  value={mcqWeight}
-                  onChange={(e) => setMcqWeight(Number(e.target.value))}
-                  className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none"
-                />
-                <span className="text-[10px] text-slate-400 mt-1 block">Uniform marks for all MCQs in exam</span>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-0.5">
+                    Count / Candidate
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={mcqCount}
+                    onChange={(e) => setMcqCount(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-0.5">
+                    Weight (Marks)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min={0.1}
+                    value={mcqWeight}
+                    onChange={(e) => setMcqWeight(Number(e.target.value))}
+                    className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none"
+                  />
+                </div>
               </div>
+              {selectedQuestionIds.length > 0 && mcqCount > poolMcqCount && (
+                <div className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 font-medium pt-0.5">
+                  <AlertTriangle size={11} className="shrink-0" />
+                  <span>Pool only has {poolMcqCount} MCQ(s). Fallback will apply.</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -418,11 +439,11 @@ export const AdminCreateExamPage: React.FC = () => {
               <Sparkles size={15} className="text-ubi-700 dark:text-ubi-400 shrink-0" />
               <span>
                 Candidate Exam Draw: <strong>{easyCount} Easy</strong> + <strong>{mediumCount} Medium</strong> + <strong>{hardCount} Hard</strong> = <strong>{easyCount + mediumCount + hardCount} Coding Questions</strong>
-                {poolMcqCount > 0 ? ` + ${poolMcqCount} Fixed MCQs (${mcqWeight}m each)` : ''}
+                {mcqCount > 0 ? ` + ${mcqCount} Random MCQs (${mcqWeight}m each)` : ''}
               </span>
             </div>
             <div className="text-ubi-800 dark:text-ubi-300 font-bold self-end sm:self-auto shrink-0">
-              Total Score: {easyCount * easyWeight + mediumCount * mediumWeight + hardCount * hardWeight + poolMcqCount * mcqWeight} pts
+              Total Score: {easyCount * easyWeight + mediumCount * mediumWeight + hardCount * hardWeight + mcqCount * mcqWeight} pts
             </div>
           </div>
         </Card>

@@ -241,14 +241,23 @@ export const StudentExamLandingPage: React.FC = () => {
                           const easy = exam.easy_count ?? 1;
                           const med = exam.medium_count ?? 2;
                           const hard = exam.hard_count ?? 0;
-                          const total = easy + med + hard;
+                          const mcq = exam.mcq_count ?? 0;
+                          const totalCoding = easy + med + hard;
                           const parts: string[] = [];
                           if (easy > 0) parts.push(`${easy} Easy`);
                           if (med > 0) parts.push(`${med} Medium`);
                           if (hard > 0) parts.push(`${hard} Hard`);
-                          return total > 0
-                            ? `${total} Coding Questions (${parts.join(', ')})`
-                            : 'Assessment Questions';
+                          const codingDesc = totalCoding > 0
+                            ? `${totalCoding} Coding Questions (${parts.join(', ')})`
+                            : '';
+                          if (mcq > 0 && totalCoding > 0) {
+                            return `${mcq} MCQs + ${codingDesc}`;
+                          } else if (mcq > 0) {
+                            return `${mcq} Multiple Choice Questions`;
+                          } else if (totalCoding > 0) {
+                            return codingDesc;
+                          }
+                          return 'Assessment Questions';
                         })()}
                       </span>
                     </div>
@@ -350,7 +359,7 @@ export const StudentExamLandingPage: React.FC = () => {
                 </span>
                 <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
                   <FileCode2 size={15} className="text-ubi-700 dark:text-ubi-400" />
-                  3 Assigned Questions
+                  {((selectedExam.easy_count ?? 1) + (selectedExam.medium_count ?? 2) + (selectedExam.hard_count ?? 0) + (selectedExam.mcq_count ?? 0))} Assigned Questions
                 </span>
               </div>
             </div>

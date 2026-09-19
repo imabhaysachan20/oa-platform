@@ -87,6 +87,7 @@ async def create_exam(
         medium_weight=body.medium_weight,
         hard_weight=body.hard_weight,
         mcq_weight=body.mcq_weight if body.mcq_weight is not None else 2.0,
+        mcq_count=body.mcq_count if body.mcq_count is not None else 0,
         easy_count=body.easy_count if body.easy_count is not None else 1,
         medium_count=body.medium_count if body.medium_count is not None else 2,
         hard_count=body.hard_count if body.hard_count is not None else 0,
@@ -100,12 +101,11 @@ async def create_exam(
         for q_id in body.question_ids:
             q = (await db.execute(select(Question).where(Question.id == q_id))).scalar_one_or_none()
             if q:
-                selection_mode = "fixed" if q.question_type == "mcq" else "random"
                 pool_entry = ExamQuestionPool(
                     exam_id=exam.id,
                     question_id=q.id,
                     difficulty=q.difficulty,
-                    selection_mode=selection_mode
+                    selection_mode="random"
                 )
                 db.add(pool_entry)
 
@@ -160,6 +160,8 @@ async def update_exam(
         exam.hard_weight = body.hard_weight
     if body.mcq_weight is not None:
         exam.mcq_weight = body.mcq_weight
+    if body.mcq_count is not None:
+        exam.mcq_count = body.mcq_count
     if body.easy_count is not None:
         exam.easy_count = body.easy_count
     if body.medium_count is not None:
@@ -180,12 +182,11 @@ async def update_exam(
         for q_id in unique_q_ids:
             q_obj = (await db.execute(select(Question).where(Question.id == q_id))).scalar_one_or_none()
             if q_obj is not None:
-                selection_mode = "fixed" if q_obj.question_type == "mcq" else "random"
                 db.add(ExamQuestionPool(
                     exam_id=exam.id,
                     question_id=q_id,
                     difficulty=q_obj.difficulty,
-                    selection_mode=selection_mode
+                    selection_mode="random"
                 ))
         await db.flush()
 

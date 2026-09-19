@@ -120,16 +120,33 @@ async def start_exam_for_student(
         )
 
     # 3. Create new assignment
-    # A. Fetch fixed questions (All MCQs added to pool with selection_mode='fixed')
-    stmt_fixed = (
-        select(ExamQuestionPool.question_id)
-        .where(
-            ExamQuestionPool.exam_id == exam_id,
-            ExamQuestionPool.selection_mode == "fixed"
+    # A. Fetch MCQ questions based on exam configuration (mcq_count)
+    mcq_target = getattr(exam, 'mcq_count', None)
+    mcq_q_ids = []
+    if mcq_target is not None and mcq_target > 0:
+        stmt_mcq = (
+            select(ExamQuestionPool.question_id)
+            .join(Question, ExamQuestionPool.question_id == Question.id)
+            .where(
+                ExamQuestionPool.exam_id == exam_id,
+                Question.question_type == "mcq"
+            )
+            .order_by(func.random())
+            .limit(mcq_target)
         )
-        .order_by(ExamQuestionPool.id.asc())
-    )
-    fixed_q_ids = list((await db.execute(stmt_fixed)).scalars().all())
+        mcq_q_ids = list((await db.execute(stmt_mcq)).scalars().all())
+    elif mcq_target is None:
+        # Fallback for unconfigured legacy exams: all fixed MCQs
+        stmt_fixed = (
+            select(ExamQuestionPool.question_id)
+            .join(Question, ExamQuestionPool.question_id == Question.id)
+            .where(
+                ExamQuestionPool.exam_id == exam_id,
+                Question.question_type == "mcq"
+            )
+            .order_by(ExamQuestionPool.id.asc())
+        )
+        mcq_q_ids = list((await db.execute(stmt_fixed)).scalars().all())
 
     # B. Fetch random coding questions based on exam configuration (easy_count, medium_count, hard_count)
     easy_target = getattr(exam, 'easy_count', 1)
@@ -147,10 +164,11 @@ async def start_exam_for_student(
     if easy_target > 0:
         stmt_easy = (
             select(ExamQuestionPool.question_id)
+            .join(Question, ExamQuestionPool.question_id == Question.id)
             .where(
                 ExamQuestionPool.exam_id == exam_id,
-                ExamQuestionPool.difficulty == QuestionDifficulty.EASY,
-                ExamQuestionPool.selection_mode == "random"
+                Question.question_type != "mcq",
+                ExamQuestionPool.difficulty == QuestionDifficulty.EASY
             )
             .order_by(func.random())
             .limit(easy_target)
@@ -161,10 +179,11 @@ async def start_exam_for_student(
     if med_target > 0:
         stmt_med = (
             select(ExamQuestionPool.question_id)
+            .join(Question, ExamQuestionPool.question_id == Question.id)
             .where(
                 ExamQuestionPool.exam_id == exam_id,
-                ExamQuestionPool.difficulty == QuestionDifficulty.MEDIUM,
-                ExamQuestionPool.selection_mode == "random"
+                Question.question_type != "mcq",
+                ExamQuestionPool.difficulty == QuestionDifficulty.MEDIUM
             )
             .order_by(func.random())
             .limit(med_target)
@@ -175,10 +194,11 @@ async def start_exam_for_student(
     if hard_target > 0:
         stmt_hard = (
             select(ExamQuestionPool.question_id)
+            .join(Question, ExamQuestionPool.question_id == Question.id)
             .where(
                 ExamQuestionPool.exam_id == exam_id,
-                ExamQuestionPool.difficulty == QuestionDifficulty.HARD,
-                ExamQuestionPool.selection_mode == "random"
+                Question.question_type != "mcq",
+                ExamQuestionPool.difficulty == QuestionDifficulty.HARD
             )
             .order_by(func.random())
             .limit(hard_target)
@@ -187,12 +207,13 @@ async def start_exam_for_student(
 
     coding_selected_ids = list(easy_q_ids) + list(med_q_ids) + list(hard_q_ids)
 
-    # Check if there are any random pool questions available to fallback from
+    # Check if there are any random coding pool questions available to fallback from
     stmt_random_pool = (
         select(ExamQuestionPool.question_id)
+        .join(Question, ExamQuestionPool.question_id == Question.id)
         .where(
             ExamQuestionPool.exam_id == exam_id,
-            ExamQuestionPool.selection_mode == "random"
+            Question.question_type != "mcq"
         )
     )
     all_random_count = len((await db.execute(stmt_random_pool)).scalars().all())
@@ -200,9 +221,10 @@ async def start_exam_for_student(
     if all_random_count > 0 and len(coding_selected_ids) < total_coding_target:
         stmt_fallback = (
             select(ExamQuestionPool.question_id)
+            .join(Question, ExamQuestionPool.question_id == Question.id)
             .where(
                 ExamQuestionPool.exam_id == exam_id,
-                ExamQuestionPool.selection_mode == "random",
+                Question.question_type != "mcq",
                 ExamQuestionPool.question_id.not_in(coding_selected_ids) if coding_selected_ids else True
             )
             .order_by(func.random())
@@ -211,8 +233,8 @@ async def start_exam_for_student(
         fallback_ids = (await db.execute(stmt_fallback)).scalars().all()
         coding_selected_ids.extend(fallback_ids)
 
-    # Total assigned questions: all fixed MCQs + selected coding questions
-    final_assigned_q_ids = fixed_q_ids + coding_selected_ids
+    # Total assigned questions: selected random MCQs + selected coding questions
+    final_assigned_q_ids = mcq_q_ids + coding_selected_ids
 
     if not final_assigned_q_ids:
         raise HTTPException(

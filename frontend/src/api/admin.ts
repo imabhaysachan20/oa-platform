@@ -6,6 +6,8 @@ import {
   MonitoringStudentView,
   CandidateDossierResponse,
   CandidateImportResponse,
+  StudentCreatePayload,
+  StudentUpdatePayload,
 } from '../types';
 
 export const adminApi = {
@@ -27,14 +29,6 @@ export const adminApi = {
 
   createExam: async (examData: Partial<Exam> & { question_ids?: number[] }): Promise<Exam> => {
     const res = await api.post<Exam>('/admin/exams', examData);
-    return res.data;
-  },
-
-  updateExam: async (
-    id: number,
-    examData: Partial<Exam> & { question_ids?: number[] }
-  ): Promise<Exam> => {
-    const res = await api.put<Exam>(`/admin/exams/${id}`, examData);
     return res.data;
   },
 
@@ -144,6 +138,21 @@ export const adminApi = {
 
   importStudentsCsv: async (file: File): Promise<CandidateImportResponse> => {
     return adminApi.importStudents({ file });
+  },
+
+  createStudent: async (payload: StudentCreatePayload): Promise<User> => {
+    const res = await api.post<User>('/admin/students', payload);
+    return res.data;
+  },
+
+  updateStudent: async (studentId: number, payload: StudentUpdatePayload): Promise<User> => {
+    const res = await api.put<User>(`/admin/students/${studentId}`, payload);
+    return res.data;
+  },
+
+  deleteStudent: async (studentId: number): Promise<{ message: string }> => {
+    const res = await api.delete<{ message: string }>(`/admin/students/${studentId}`);
+    return res.data;
   },
 
   // Monitoring & Candidate Dossier

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from pydantic import BaseModel, field_validator
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, or_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +20,6 @@ from backend.app.models.submission import Submission
 from backend.app.models.result import QuestionScore
 from backend.app.schemas.exam import (
     ExamCreate,
-    ExamUpdate,
     ExamResponse,
     MonitoringStudentView,
     CandidateDossierResponse
@@ -33,7 +32,13 @@ from backend.app.schemas.question import (
     TestCaseResponse
 )
 from backend.app.schemas.submission import AdminPlaygroundRunRequest, RunCodeResponse
-from backend.app.schemas.auth import UserResponse, CandidateImportResponse, ImportedCandidateCredential
+from backend.app.schemas.auth import (
+    UserResponse,
+    CandidateImportResponse,
+    ImportedCandidateCredential,
+    StudentCreate,
+    StudentUpdate
+)
 from backend.app.services.exam_service import get_live_exam_monitoring, get_candidate_dossier, sync_unsubmitted_assignments_for_exam
 from backend.app.services.submission_service import execute_judge0_test_cases
 from backend.app.services.universal_driver_service import generate_all_templates
@@ -247,8 +252,6 @@ async def update_exam(
     resp = ExamResponse.model_validate(exam)
     resp.pool_count = pool_count
     return resp
-
-
 @router.delete("/exams/{exam_id}")
 async def delete_exam(
     exam_id: int,
@@ -561,8 +564,10 @@ async def update_question(
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
 
-    # If modifying options or answer key, verify exam is not live or already started
-    if body.options is not None:
+    target_question_type = body.question_type if body.question_type is not None else q.question_type
+
+    # If modifying options or answer key for an MCQ question, verify exam is not live or already started
+    if target_question_type == "mcq" and body.options is not None:
         now = datetime.now(timezone.utc)
         attached_exams_stmt = (
             select(Exam)
@@ -636,16 +641,35 @@ async def update_question(
         q.is_multi_select = body.is_multi_select
     if body.function_name is not None:
         q.function_name = body.function_name
-    if body.function_signature is not None:
-        q.function_signature = body.function_signature
     if body.parameters is not None:
         q.parameters = body.parameters
     if body.return_type is not None:
         q.return_type = body.return_type
-    if body.starter_code is not None:
-        q.starter_code = body.starter_code
-    if body.driver_code is not None:
-        q.driver_code = body.driver_code
+
+    target_type = body.question_type if body.question_type is not None else q.question_type
+    fn_name = body.function_name if body.function_name is not None else q.function_name
+    params = body.parameters if body.parameters is not None else q.parameters
+    ret_type = body.return_type if body.return_type is not None else q.return_type
+
+    if target_type != "mcq" and fn_name and params is not None:
+        gen = generate_all_templates(fn_name, params, ret_type or "void")
+        if body.starter_code is not None:
+            q.starter_code = body.starter_code
+        elif body.function_name is not None or body.parameters is not None or body.return_type is not None:
+            q.starter_code = gen["starter"]
+            q.driver_code = gen.get("driver")
+
+        if body.function_signature is not None:
+            q.function_signature = body.function_signature
+        elif body.function_name is not None or body.parameters is not None or body.return_type is not None:
+            q.function_signature = gen["function_signature"]
+    else:
+        if body.starter_code is not None:
+            q.starter_code = body.starter_code
+        if body.driver_code is not None:
+            q.driver_code = body.driver_code
+        if body.function_signature is not None:
+            q.function_signature = body.function_signature
 
     await db.commit()
 
@@ -855,6 +879,122 @@ async def list_student_groups(
         "groups": sorted([g for g in groups if g]),
         "colleges": sorted([c for c in colleges if c])
     }
+
+
+@router.post("/students", response_model=UserResponse)
+async def create_student(
+    body: StudentCreate,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Manually creates a new student candidate profile."""
+    email = body.email.strip().lower()
+    existing_email = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    if existing_email:
+        raise HTTPException(status_code=400, detail=f"Email '{email}' is already registered to another user.")
+
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Candidate name cannot be empty.")
+
+    college = body.college.strip() if body.college and body.college.strip() else None
+    group = body.candidate_group.strip() if body.candidate_group and body.candidate_group.strip() else None
+
+    # Roll number check or auto-generation
+    existing_rolls_stmt = select(User.roll_no).where(User.roll_no != None)
+    existing_rolls = set((await db.execute(existing_rolls_stmt)).scalars().all())
+
+    roll_no = body.roll_no.strip() if body.roll_no and body.roll_no.strip() else None
+    if roll_no:
+        if roll_no in existing_rolls:
+            raise HTTPException(status_code=400, detail=f"Roll number '{roll_no}' is already in use by another user.")
+    else:
+        roll_no = generate_unique_roll_number(college, group, existing_rolls)
+
+    plain_password = body.password.strip() if body.password and body.password.strip() else generate_readable_password()
+    hashed = get_password_hash(plain_password)
+
+    new_user = User(
+        name=name,
+        email=email,
+        roll_no=roll_no,
+        password_hash=hashed,
+        role=UserRole.STUDENT,
+        college=college,
+        candidate_group=group,
+        temp_password=plain_password,
+    )
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
+    return UserResponse.model_validate(new_user)
+
+
+@router.put("/students/{student_id}", response_model=UserResponse)
+async def update_student(
+    student_id: int,
+    body: StudentUpdate,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Manually updates candidate email, college, batch group tag, name, roll no, or password."""
+    student = (await db.execute(select(User).where(User.id == student_id, User.role == UserRole.STUDENT))).scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student candidate not found")
+
+    if body.email is not None:
+        new_email = body.email.strip().lower()
+        if new_email != student.email:
+            existing_email = (await db.execute(select(User).where(User.email == new_email, User.id != student_id))).scalar_one_or_none()
+            if existing_email:
+                raise HTTPException(status_code=400, detail=f"Email '{new_email}' is already registered to another candidate.")
+            student.email = new_email
+
+    if body.roll_no is not None:
+        new_roll = body.roll_no.strip() or None
+        if new_roll and new_roll != student.roll_no:
+            existing_roll = (await db.execute(select(User).where(User.roll_no == new_roll, User.id != student_id))).scalar_one_or_none()
+            if existing_roll:
+                raise HTTPException(status_code=400, detail=f"Roll number '{new_roll}' is already assigned to another candidate.")
+        student.roll_no = new_roll
+
+    if body.name is not None:
+        cleaned_name = body.name.strip()
+        if not cleaned_name:
+            raise HTTPException(status_code=400, detail="Candidate name cannot be empty.")
+        student.name = cleaned_name
+
+    if body.college is not None:
+        student.college = body.college.strip() or None
+
+    if body.candidate_group is not None:
+        student.candidate_group = body.candidate_group.strip() or None
+
+    if body.password is not None and body.password.strip():
+        plain_pwd = body.password.strip()
+        student.password_hash = get_password_hash(plain_pwd)
+        student.temp_password = plain_pwd
+
+    await db.commit()
+    await db.refresh(student)
+    return UserResponse.model_validate(student)
+
+
+@router.delete("/students/{student_id}")
+async def delete_student(
+    student_id: int,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Deletes a student candidate and their associated test assignments."""
+    student = (await db.execute(select(User).where(User.id == student_id, User.role == UserRole.STUDENT))).scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student candidate not found")
+
+    candidate_name = student.name
+    await db.delete(student)
+    await db.commit()
+    return {"message": f"Candidate '{candidate_name}' deleted successfully"}
 
 
 # ==================== LIVE EXAM MONITORING ====================

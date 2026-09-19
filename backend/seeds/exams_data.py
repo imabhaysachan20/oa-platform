@@ -15,7 +15,7 @@ EXAMS_DATA = [
         "mcq_count": 20,
         "mcq_weight": 2.0,
         "is_published": True,
-        "target_groups": ["batch-2026", "campus-drive"],
+        "target_groups": [],
         "pool_selector": {
             "easy_slice": (0, 10),
             "medium_slice": (0, 15),
@@ -35,7 +35,7 @@ EXAMS_DATA = [
         "mcq_count": 10,
         "mcq_weight": 2.0,
         "is_published": True,
-        "target_groups": ["experienced-devs", "senior-swe"],
+        "target_groups": [],
         "pool_selector": {
             "easy_slice": (0, 0),
             "medium_slice": (10, 25),
@@ -55,7 +55,7 @@ EXAMS_DATA = [
         "mcq_count": 30,
         "mcq_weight": 2.0,
         "is_published": True,
-        "target_groups": ["cse-core", "qualifier-2026"],
+        "target_groups": [],
         "pool_selector": {
             "easy_slice": (10, 20),
             "medium_slice": (20, 30),
@@ -75,7 +75,7 @@ EXAMS_DATA = [
         "mcq_count": 10,
         "mcq_weight": 2.0,
         "is_published": True,
-        "target_groups": ["fullstack", "interns-2026"],
+        "target_groups": [],
         "pool_selector": {
             "easy_slice": (5, 18),
             "medium_slice": (15, 28),
@@ -95,7 +95,7 @@ EXAMS_DATA = [
         "mcq_count": 0,
         "mcq_weight": 0.0,
         "is_published": True,
-        "target_groups": ["olympiad", "icpc-track"],
+        "target_groups": [],
         "pool_selector": {
             "easy_slice": (15, 28),
             "medium_slice": (25, 40),
@@ -115,7 +115,7 @@ EXAMS_DATA = [
         "mcq_count": 15,
         "mcq_weight": 2.0,
         "is_published": True,
-        "target_groups": ["entry-level", "screening"],
+        "target_groups": [],
         "pool_selector": {
             "easy_slice": (12, 27),
             "medium_slice": (0, 0),

@@ -69,3 +69,32 @@ def test_parse_excel_xlsx_file():
     assert records[0]["email"] == "charlie@example.com"
     assert records[0]["college"] == "London Film School"
     assert records[0]["candidate_group"] == "2026 Batch"
+
+
+def test_student_create_and_update_schemas():
+    from backend.app.schemas.auth import StudentCreate, StudentUpdate
+
+    sc = StudentCreate(
+        name="John Doe",
+        email="john@example.com",
+        college="IIT Bombay",
+        candidate_group="2026 CS",
+        roll_no="IITB-2026-0001",
+        password="Password@123"
+    )
+    assert sc.name == "John Doe"
+    assert sc.email == "john@example.com"
+    assert sc.college == "IIT Bombay"
+    assert sc.candidate_group == "2026 CS"
+
+    su = StudentUpdate(
+        name="John Smith",
+        email="john.smith@example.com",
+        college="BITS Pilani",
+        candidate_group="Summer Drive"
+    )
+    assert su.name == "John Smith"
+    assert su.email == "john.smith@example.com"
+    assert su.college == "BITS Pilani"
+    assert su.candidate_group == "Summer Drive"
+    assert su.password is None

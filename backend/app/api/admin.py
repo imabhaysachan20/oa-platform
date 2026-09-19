@@ -1,9 +1,10 @@
 import csv
 import io
+import re
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select, func, delete
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,6 +51,29 @@ class TemplateGenerateRequest(BaseModel):
     function_name: str
     parameters: List[Dict[str, Any]]
     return_type: str = "void"
+
+    @field_validator("function_name")
+    @classmethod
+    def validate_function_name(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Function name cannot be empty.")
+        v_clean = v.strip()
+        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", v_clean):
+            raise ValueError(
+                f"Invalid function name '{v_clean}'. Function name must be a valid programming identifier with no spaces (e.g. isAnagram, twoSum)."
+            )
+        return v_clean
+
+    @field_validator("parameters")
+    @classmethod
+    def validate_parameters(cls, v: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        for p in v:
+            p_name = p.get("name", "").strip() if isinstance(p, dict) and "name" in p else ""
+            if p_name and not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", p_name):
+                raise ValueError(
+                    f"Invalid parameter name '{p_name}'. Parameter names must be valid identifiers without spaces (e.g. nums, target)."
+                )
+        return v
 
 
 # ==================== EXAMS ====================

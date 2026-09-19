@@ -1,7 +1,8 @@
 import uuid
+import re
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator, field_validator
 from backend.app.models.question import QuestionDifficulty
 
 
@@ -79,6 +80,29 @@ class QuestionBase(BaseModel):
     starter_code: Optional[Dict[str, str]] = None
     driver_code: Optional[Dict[str, str]] = None
 
+    @field_validator("function_name")
+    @classmethod
+    def validate_function_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v.strip():
+            v = v.strip()
+            if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", v):
+                raise ValueError(
+                    f"Invalid function name '{v}'. Function name must be a valid programming identifier with no spaces (e.g. isAnagram, twoSum)."
+                )
+        return v
+
+    @field_validator("parameters")
+    @classmethod
+    def validate_parameters(cls, v: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
+        if v is not None:
+            for p in v:
+                p_name = p.get("name", "").strip() if isinstance(p, dict) and "name" in p else ""
+                if p_name and not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", p_name):
+                    raise ValueError(
+                        f"Invalid parameter name '{p_name}'. Parameter names must be valid identifiers without spaces (e.g. nums, target)."
+                    )
+        return v
+
 
 class QuestionCreate(QuestionBase):
     test_cases: Optional[List[TestCaseCreate]] = None
@@ -125,6 +149,29 @@ class QuestionUpdate(BaseModel):
 
     test_cases: Optional[List[TestCaseCreate]] = None
     options: Optional[List[MCQOptionCreate]] = None
+
+    @field_validator("function_name")
+    @classmethod
+    def validate_update_function_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v.strip():
+            v = v.strip()
+            if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", v):
+                raise ValueError(
+                    f"Invalid function name '{v}'. Function name must be a valid programming identifier with no spaces (e.g. isAnagram, twoSum)."
+                )
+        return v
+
+    @field_validator("parameters")
+    @classmethod
+    def validate_update_parameters(cls, v: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
+        if v is not None:
+            for p in v:
+                p_name = p.get("name", "").strip() if isinstance(p, dict) and "name" in p else ""
+                if p_name and not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", p_name):
+                    raise ValueError(
+                        f"Invalid parameter name '{p_name}'. Parameter names must be valid identifiers without spaces (e.g. nums, target)."
+                    )
+        return v
 
 
 class QuestionResponse(QuestionBase):

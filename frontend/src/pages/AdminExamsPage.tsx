@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import React, { useState, useMemo } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../api/admin';
 import { Exam } from '../types';
@@ -7,7 +7,6 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Badge } from '../components/ui/Badge';
-import { AdminExamDetailsModal } from '../components/admin/AdminExamDetailsModal';
 import { Pagination } from '../components/ui/Pagination';
 import {
   Plus,
@@ -18,18 +17,12 @@ import {
   Search,
   Layers,
   Filter,
-  Sparkles,
-  Eye,
   ArrowUpDown,
 } from 'lucide-react';
 
 export const AdminExamsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const { examId } = useParams<{ examId?: string }>();
-
-  // Viewing Details Modal state
-  const [viewingExam, setViewingExam] = useState<Exam | null>(null);
 
   // Delete Modal state
   const [deletingExam, setDeletingExam] = useState<Exam | null>(null);
@@ -47,35 +40,6 @@ export const AdminExamsPage: React.FC = () => {
     queryFn: () => adminApi.listExams(),
   });
 
-  // Auto-open exam details if examId is provided in URL params
-  useEffect(() => {
-    if (examId && exams && exams.length > 0) {
-      const found = exams.find((e) => e.id === Number(examId));
-      if (found) {
-        setViewingExam(found);
-      }
-    }
-  }, [examId, exams]);
-
-  // Fetch available questions for pool selection
-  const { data: questions } = useQuery<Question[]>({
-    queryKey: ['adminQuestions'],
-    queryFn: () => adminApi.listQuestions(),
-  });
-
-  // Helper: Convert UTC ISO string to local datetime-local format (YYYY-MM-DDTHH:mm)
-  const toLocalDatetimeInput = (isoStr?: string) => {
-    if (!isoStr) return '';
-    const d = new Date(isoStr);
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  };
-
-  // Helper: Convert local datetime-local string to ISO UTC
-  const toISO = (localStr?: string) => {
-    if (!localStr) return undefined;
-    return new Date(localStr).toISOString();
-  };
   // Helper: Format IST
   const formatIST = (dateStr?: string) => {
     if (!dateStr) return '';
@@ -90,36 +54,6 @@ export const AdminExamsPage: React.FC = () => {
     }).format(date) + ' IST';
   };
 
-  // Auto-calculate end time when start time or duration changes in Edit Modal
-  const handleEditStartTimeChange = (newStartTime: string, duration: number = editDurationMinutes) => {
-    setEditStartTime(newStartTime);
-    if (newStartTime && duration > 0) {
-      const startMs = new Date(newStartTime).getTime();
-      if (!isNaN(startMs)) {
-        const endMs = startMs + duration * 60000;
-        const endDate = new Date(endMs);
-        const pad = (n: number) => String(n).padStart(2, '0');
-        setEditEndTime(`${endDate.getFullYear()}-${pad(endDate.getMonth() + 1)}-${pad(endDate.getDate())}T${pad(endDate.getHours())}:${pad(endDate.getMinutes())}`);
-      }
-    }
-  };
-
-  // Update Exam Mutation
-  const updateExamMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<Exam> & { question_ids?: number[] } }) =>
-      adminApi.updateExam(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['adminExams'] });
-      queryClient.invalidateQueries({ queryKey: ['availableExams'] });
-      queryClient.invalidateQueries({ queryKey: ['examDetails'] });
-      queryClient.invalidateQueries({ queryKey: ['adminExamPool'] });
-      queryClient.invalidateQueries({ queryKey: ['myQuestions'] });
-      setEditingExam(null);
-    },
-    onError: (err: any) => {
-      alert(err.response?.data?.detail || 'Failed to update exam');
-    },
-  });
   // Delete Exam Mutation
   const deleteExamMutation = useMutation({
     mutationFn: adminApi.deleteExam,
@@ -304,148 +238,124 @@ export const AdminExamsPage: React.FC = () => {
                 now <= new Date(exam.end_time!).getTime();
               const isExpired = hasSchedule && now > new Date(exam.end_time!).getTime();
 
-            return (
-              <Card key={exam.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-ubi-300 dark:hover:border-ubi-700 transition">
-                <div
-                  className="space-y-1.5 cursor-pointer flex-1 min-w-0 group"
-                  onClick={() => setViewingExam(exam)}
-                  title="Click to view full assessment details"
+              return (
+                <Card
+                  key={exam.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-ubi-300 dark:hover:border-ubi-700 transition"
                 >
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <h3 className="text-base font-bold text-slate-900 dark:text-white group-hover:text-ubi-800 dark:group-hover:text-ubi-400 transition flex items-center gap-2 truncate">
-                      <span>{exam.title}</span>
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 group-hover:bg-ubi-50 group-hover:text-ubi-800 dark:group-hover:bg-ubi-950 dark:group-hover:text-ubi-300 transition flex items-center gap-1 shrink-0">
-                        <Eye size={12} /> View Details
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <h3 className="text-base font-bold text-slate-900 dark:text-white truncate">
+                        {exam.title}
+                      </h3>
+                      <span className="text-xs px-2.5 py-0.5 bg-ubi-50 border border-ubi-200 text-ubi-800 dark:bg-ubi-950 dark:border-ubi-800 dark:text-ubi-300 rounded-md font-mono font-semibold">
+                        Pool: {exam.pool_count || 0} Questions
                       </span>
-                    </h3>
-                    <span className="text-xs px-2.5 py-0.5 bg-ubi-50 border border-ubi-200 text-ubi-800 dark:bg-ubi-950 dark:border-ubi-800 dark:text-ubi-300 rounded-md font-mono font-semibold">
-                      Pool: {exam.pool_count || 0} Questions
-                    </span>
-                    {hasSchedule ? (
-                      isUpcoming ? (
-                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-ubi-50 border border-ubi-200 text-ubi-800 dark:bg-ubi-950 dark:border-ubi-800 dark:text-ubi-300 flex items-center gap-1">
-                          <Clock size={10} /> Upcoming
-                        </span>
-                      ) : isLive ? (
-                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 dark:bg-emerald-950 dark:border-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live Window
-                        </span>
+                      {hasSchedule ? (
+                        isUpcoming ? (
+                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-ubi-50 border border-ubi-200 text-ubi-800 dark:bg-ubi-950 dark:border-ubi-800 dark:text-ubi-300 flex items-center gap-1">
+                            <Clock size={10} /> Upcoming
+                          </span>
+                        ) : isLive ? (
+                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 dark:bg-emerald-950 dark:border-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live Window
+                          </span>
+                        ) : (
+                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950 dark:border-rose-800 dark:text-rose-300">
+                            Expired
+                          </span>
+                        )
                       ) : (
-                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950 dark:border-rose-800 dark:text-rose-300">
-                          Expired
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                          Flexible / Always Open
                         </span>
-                      )
-                    ) : (
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                        Flexible / Always Open
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+                      <span className="flex items-center gap-1 font-medium">
+                        <Clock size={13} /> {exam.duration_minutes} min
                       </span>
-                    )}
+                      {hasSchedule && (
+                        <>
+                          <span>•</span>
+                          <span className="flex items-center gap-1 font-medium text-ubi-800 dark:text-ubi-300">
+                            <Calendar size={13} />
+                            {formatIST(exam.start_time)} – {formatIST(exam.end_time)}
+                          </span>
+                        </>
+                      )}
+                      <span>•</span>
+                      <span className="font-medium text-slate-700 dark:text-slate-300">
+                        Pattern: <strong>{exam.easy_count ?? 1}E</strong> • <strong>{exam.medium_count ?? 2}M</strong> •{' '}
+                        <strong>{exam.hard_count ?? 0}H</strong> (
+                        {(exam.easy_count ?? 1) + (exam.medium_count ?? 2) + (exam.hard_count ?? 0)} coding)
+                        {exam.mcq_count ? ` • ${exam.mcq_count} MCQ` : ''}
+                      </span>
+                      <span>•</span>
+                      <span>
+                        Weights: Easy({exam.easy_weight}) Med({exam.medium_weight}) Hard({exam.hard_weight}) MCQ(
+                        {exam.mcq_weight ?? 2})
+                      </span>
+                    </div>
+
+                    {/* Groups Assigned */}
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 pt-0.5">
+                      <Layers size={13} className="text-slate-400 shrink-0" />
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">Target Groups:</span>
+                      {exam.target_groups && exam.target_groups.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {exam.target_groups.map((grp) => (
+                            <Badge key={grp} variant="brand" className="text-[9px]">
+                              {grp}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 italic">Open to All Groups</span>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-                    <span className="flex items-center gap-1 font-medium">
-                      <Clock size={13} /> {exam.duration_minutes} min
-                    </span>
-                    {hasSchedule && (
-                      <>
-                        <span>•</span>
-                        <span className="flex items-center gap-1 font-medium text-ubi-800 dark:text-ubi-300">
-                          <Calendar size={13} />
-                          {formatIST(exam.start_time)} – {formatIST(exam.end_time)}
-                        </span>
-                      </>
-                    )}
-                    <span>•</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300">
-                      Pattern: <strong>{exam.easy_count ?? 1}E</strong> • <strong>{exam.medium_count ?? 2}M</strong> •{' '}
-                      <strong>{exam.hard_count ?? 0}H</strong> (
-                      {(exam.easy_count ?? 1) + (exam.medium_count ?? 2) + (exam.hard_count ?? 0)} coding)
-                      {exam.mcq_count ? ` • ${exam.mcq_count} MCQ` : ''}
-                    </span>
-                    <span>•</span>
-                    <span>
-                      Weights: Easy({exam.easy_weight}) Med({exam.medium_weight}) Hard({exam.hard_weight}) MCQ(
-                      {exam.mcq_weight ?? 2})
-                    </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate(`/admin/exams/${exam.id}/monitoring`)}
+                      className="gap-1.5 font-semibold"
+                    >
+                      <Activity size={14} className="text-ubi-800 dark:text-ubi-400" />
+                      <span>Live Monitoring</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setDeletingExam(exam)}
+                      className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:text-rose-300 dark:hover:bg-rose-500/10"
+                      title="Delete Assessment"
+                    >
+                      <Trash2 size={14} />
+                    </Button>
                   </div>
+                </Card>
+              );
+            })}
+          </div>
 
-                  {/* Groups Assigned */}
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 pt-0.5">
-                    <Layers size={13} className="text-slate-400 shrink-0" />
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Target Groups:</span>
-                    {exam.target_groups && exam.target_groups.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {exam.target_groups.map((grp) => (
-                          <Badge key={grp} variant="brand" className="text-[9px]">
-                            {grp}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-[11px] text-slate-400 italic">Open to All Groups</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setViewingExam(exam)}
-                    className="gap-1.5 font-semibold text-ubi-800 dark:text-ubi-300 border-ubi-200 dark:border-ubi-800 hover:bg-ubi-50 dark:hover:bg-ubi-950"
-                    title="View Full Exam Details"
-                  >
-                    <Eye size={14} />
-                    <span>View Details</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleOpenEdit(exam)}
-                    className="gap-1.5 font-semibold text-slate-700 dark:text-slate-200"
-                    title="Edit Assessment & Schedule"
-                  >
-                    <Pencil size={14} />
-                    <span>Edit</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => navigate(`/admin/exams/${exam.id}/monitoring`)}
-                    className="gap-1.5 font-semibold"
-                  >
-                    <Activity size={14} className="text-ubi-800 dark:text-ubi-400" />
-                    <span>Live Monitoring</span>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setDeletingExam(exam)}
-                    className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:text-rose-300 dark:hover:bg-rose-500/10"
-                    title="Delete Assessment"
-                  >
-                    <Trash2 size={14} />
-                  </Button>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-
-        {/* Pagination Controls */}
-        <Pagination
-          currentPage={examPage}
-          totalPages={totalExamPages}
-          totalItems={filteredAndSortedExams.length}
-          pageSize={examPageSize}
-          pageSizeOptions={[5, 10, 20]}
-          onPageChange={(p) => setExamPage(p)}
-          onPageSizeChange={(sz) => {
-            setExamPageSize(sz);
-            setExamPage(1);
-          }}
-          itemLabel="assessments"
-        />
+          {/* Pagination Controls */}
+          <Pagination
+            currentPage={examPage}
+            totalPages={totalExamPages}
+            totalItems={filteredAndSortedExams.length}
+            pageSize={examPageSize}
+            pageSizeOptions={[5, 10, 20]}
+            onPageChange={(p) => setExamPage(p)}
+            onPageSizeChange={(sz) => {
+              setExamPageSize(sz);
+              setExamPage(1);
+            }}
+            itemLabel="assessments"
+          />
         </div>
       ) : (
         <Card className="text-center py-16 text-slate-500 dark:text-slate-400 space-y-2">
@@ -502,13 +412,6 @@ export const AdminExamsPage: React.FC = () => {
           </div>
         </Modal>
       )}
-      {/* View Exam Details Modal */}
-      <AdminExamDetailsModal
-        exam={viewingExam}
-        isOpen={!!viewingExam}
-        onClose={() => setViewingExam(null)}
-        onEdit={handleOpenEdit}
-      />
     </div>
   );
 };

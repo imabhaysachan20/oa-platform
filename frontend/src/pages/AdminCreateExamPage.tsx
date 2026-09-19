@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../api/admin';
+import { Question } from '../types';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { Pagination } from '../components/ui/Pagination';
 import {
   ArrowLeft,
   Calendar,
@@ -19,6 +21,7 @@ import {
   Sliders,
   AlertTriangle,
   Filter,
+  ArrowUpDown,
 } from 'lucide-react';
 
 export const AdminCreateExamPage: React.FC = () => {
@@ -37,6 +40,10 @@ export const AdminCreateExamPage: React.FC = () => {
   const [mediumCount, setMediumCount] = useState(2);
   const [hardCount, setHardCount] = useState(0);
   const [difficultyFilter, setDifficultyFilter] = useState<'all' | 'easy' | 'medium' | 'hard' | 'mcq'>('all');
+  const [selectionFilter, setSelectionFilter] = useState<'all' | 'selected' | 'unselected'>('all');
+  const [questionSort, setQuestionSort] = useState<'selected_first' | 'title_asc' | 'title_desc' | 'difficulty'>('selected_first');
+  const [poolPage, setPoolPage] = useState(1);
+  const [poolPageSize, setPoolPageSize] = useState(20);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [customGroupInput, setCustomGroupInput] = useState('');
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<number[]>([]);
@@ -47,13 +54,13 @@ export const AdminCreateExamPage: React.FC = () => {
   // Fetch available student groups
   const { data: groupsData } = useQuery({
     queryKey: ['adminStudentGroups'],
-    queryFn: adminApi.listStudentGroups,
+    queryFn: () => adminApi.listStudentGroups(),
   });
 
   // Fetch available questions for pool selection
-  const { data: questions, isLoading: isLoadingQuestions } = useQuery({
+  const { data: questions, isLoading: isLoadingQuestions } = useQuery<Question[]>({
     queryKey: ['adminQuestions'],
-    queryFn: adminApi.listQuestions,
+    queryFn: () => adminApi.listQuestions(),
   });
 
   const handleToggleGroup = (groupName: string) => {
@@ -171,15 +178,65 @@ export const AdminCreateExamPage: React.FC = () => {
   const bankHardCount = questions?.filter((q) => q.question_type !== 'mcq' && q.difficulty === 'hard').length || 0;
   const bankMcqCount = questions?.filter((q) => q.question_type === 'mcq').length || 0;
 
-  const filteredQuestions = questions?.filter((q) => {
-    const matchesSearch =
-      q.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      q.difficulty.toLowerCase().includes(searchQuery.toLowerCase());
-    if (!matchesSearch) return false;
-    if (difficultyFilter === 'all') return true;
-    if (difficultyFilter === 'mcq') return q.question_type === 'mcq';
-    return q.question_type !== 'mcq' && q.difficulty === difficultyFilter;
-  });
+  const filteredAndSortedQuestions = useMemo(() => {
+    if (!questions) return [];
+    let result = questions.filter((q) => {
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const matchesTitle = q.title.toLowerCase().includes(query);
+        const matchesDesc = q.description ? q.description.toLowerCase().includes(query) : false;
+        const matchesFn = q.function_name ? q.function_name.toLowerCase().includes(query) : false;
+        if (!matchesTitle && !matchesDesc && !matchesFn) return false;
+      }
+
+      if (difficultyFilter === 'mcq') {
+        if (q.question_type !== 'mcq') return false;
+      } else if (difficultyFilter !== 'all') {
+        if (q.question_type === 'mcq' || q.difficulty !== difficultyFilter) return false;
+      }
+
+      const isSelected = selectedQuestionIds.includes(q.id);
+      if (selectionFilter === 'selected' && !isSelected) return false;
+      if (selectionFilter === 'unselected' && isSelected) return false;
+
+      return true;
+    });
+
+    result.sort((a, b) => {
+      if (questionSort === 'selected_first') {
+        const aSel = selectedQuestionIds.includes(a.id) ? 1 : 0;
+        const bSel = selectedQuestionIds.includes(b.id) ? 1 : 0;
+        if (bSel !== aSel) return bSel - aSel;
+        return a.title.localeCompare(b.title);
+      }
+      if (questionSort === 'title_desc') return b.title.localeCompare(a.title);
+      if (questionSort === 'difficulty') {
+        const rank = { easy: 1, medium: 2, hard: 3 };
+        const rA = rank[a.difficulty as keyof typeof rank] || 0;
+        const rB = rank[b.difficulty as keyof typeof rank] || 0;
+        if (rA !== rB) return rA - rB;
+        return a.title.localeCompare(b.title);
+      }
+      return a.title.localeCompare(b.title);
+    });
+
+    return result;
+  }, [questions, searchQuery, difficultyFilter, selectionFilter, questionSort, selectedQuestionIds]);
+
+  const paginatedQuestions = useMemo(() => {
+    const start = (poolPage - 1) * poolPageSize;
+    return filteredAndSortedQuestions.slice(start, start + poolPageSize);
+  }, [filteredAndSortedQuestions, poolPage, poolPageSize]);
+
+  const handleSelectFilteredQuestions = () => {
+    const idsToAdd = filteredAndSortedQuestions.map((q) => q.id);
+    setSelectedQuestionIds((prev) => Array.from(new Set([...prev, ...idsToAdd])));
+  };
+
+  const handleDeselectFilteredQuestions = () => {
+    const idsToRemove = new Set(filteredAndSortedQuestions.map((q) => q.id));
+    setSelectedQuestionIds((prev) => prev.filter((id) => !idsToRemove.has(id)));
+  };
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-6 animate-fadeIn">
@@ -613,19 +670,39 @@ export const AdminCreateExamPage: React.FC = () => {
             <div>
               <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
                 <Sparkles size={16} className="text-ubi-800 dark:text-ubi-400" />
-                <span>5. Select Questions for Pool ({selectedQuestionIds.length} selected)</span>
+                <span>5. Select Questions for Pool ({selectedQuestionIds.length} of {questions?.length || 0} selected)</span>
               </h2>
               <p className="text-[11px] text-slate-500 mt-0.5">
                 Select questions from the bank. Candidates will receive random draws from this pool matching your configured pattern.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={handleSelectAllQuestions}
-              className="text-ubi-800 dark:text-ubi-400 hover:underline text-xs font-bold self-start sm:self-auto"
-            >
-              Toggle All Questions
-            </button>
+            <div className="flex items-center gap-2 text-xs">
+              <button
+                type="button"
+                onClick={handleSelectFilteredQuestions}
+                className="text-ubi-700 dark:text-ubi-400 hover:underline font-semibold"
+                title="Select all questions matching current filter"
+              >
+                + Select Filtered ({filteredAndSortedQuestions.length})
+              </button>
+              <span className="text-slate-300 dark:text-slate-700">|</span>
+              <button
+                type="button"
+                onClick={handleDeselectFilteredQuestions}
+                className="text-rose-600 dark:text-rose-400 hover:underline font-semibold"
+                title="Deselect all questions matching current filter"
+              >
+                - Deselect Filtered
+              </button>
+              <span className="text-slate-300 dark:text-slate-700">|</span>
+              <button
+                type="button"
+                onClick={handleSelectAllQuestions}
+                className="text-slate-600 dark:text-slate-400 hover:underline font-medium"
+              >
+                Toggle All
+              </button>
+            </div>
           </div>
 
           {/* Selected Pool Composition Badges */}
@@ -666,73 +743,132 @@ export const AdminCreateExamPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Search Filter & Difficulty Filter Tabs */}
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-1.5 pt-1">
-              <span className="text-[11px] font-bold text-slate-500 mr-1 flex items-center gap-1">
-                <Filter size={12} /> Filter Bank:
-              </span>
-              {(['all', 'easy', 'medium', 'hard', 'mcq'] as const).map((filterKey) => {
-                const count =
-                  filterKey === 'all'
-                    ? questions?.length || 0
-                    : filterKey === 'easy'
-                    ? bankEasyCount
-                    : filterKey === 'medium'
-                    ? bankMedCount
-                    : filterKey === 'hard'
-                    ? bankHardCount
-                    : bankMcqCount;
-                const isActive = difficultyFilter === filterKey;
-                return (
-                  <button
-                    key={filterKey}
-                    type="button"
-                    onClick={() => setDifficultyFilter(filterKey)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition border ${
-                      isActive
-                        ? 'bg-ubi-800 text-white border-ubi-900 dark:bg-ubi-700 dark:border-ubi-600 shadow-2xs'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-300 dark:border-slate-800'
-                    }`}
-                  >
-                    {filterKey} ({count})
-                  </button>
-                );
-              })}
+          {/* Filters, Search & Sort Controls */}
+          <div className="space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              {/* Difficulty Tabs */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-500 mr-1 flex items-center gap-1">
+                  <Filter size={12} /> Bank:
+                </span>
+                {(['all', 'easy', 'medium', 'hard', 'mcq'] as const).map((filterKey) => {
+                  const count =
+                    filterKey === 'all'
+                      ? questions?.length || 0
+                      : filterKey === 'easy'
+                      ? bankEasyCount
+                      : filterKey === 'medium'
+                      ? bankMedCount
+                      : filterKey === 'hard'
+                      ? bankHardCount
+                      : bankMcqCount;
+                  const isActive = difficultyFilter === filterKey;
+                  return (
+                    <button
+                      key={filterKey}
+                      type="button"
+                      onClick={() => {
+                        setDifficultyFilter(filterKey);
+                        setPoolPage(1);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition border ${
+                        isActive
+                          ? 'bg-ubi-800 text-white border-ubi-900 dark:bg-ubi-700 dark:border-ubi-600 shadow-2xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-300 dark:border-slate-800'
+                      }`}
+                    >
+                      {filterKey} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Selection State Tabs */}
+              <div className="flex items-center gap-1">
+                {(['all', 'selected', 'unselected'] as const).map((sKey) => {
+                  const isActive = selectionFilter === sKey;
+                  return (
+                    <button
+                      key={sKey}
+                      type="button"
+                      onClick={() => {
+                        setSelectionFilter(sKey);
+                        setPoolPage(1);
+                      }}
+                      className={`px-2 py-0.5 rounded text-xs font-medium capitalize border transition ${
+                        isActive
+                          ? 'bg-slate-800 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 font-bold'
+                          : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-950 dark:hover:bg-slate-900 dark:text-slate-400 dark:border-slate-800'
+                      }`}
+                    >
+                      {sKey}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-              <input
-                type="text"
-                placeholder="Search questions by title or description..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-              />
+            {/* Search Input & Sort Dropdown */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-2.5 text-slate-400" size={15} />
+                <input
+                  type="text"
+                  placeholder="Search questions by title, description, or function name..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setPoolPage(1);
+                  }}
+                  className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <ArrowUpDown size={13} className="text-slate-400" />
+                <select
+                  value={questionSort}
+                  onChange={(e) => {
+                    setQuestionSort(e.target.value as any);
+                    setPoolPage(1);
+                  }}
+                  className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-200 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none cursor-pointer"
+                >
+                  <option value="selected_first">Selected First</option>
+                  <option value="title_asc">Title (A-Z)</option>
+                  <option value="title_desc">Title (Z-A)</option>
+                  <option value="difficulty">Difficulty (Easy → Hard)</option>
+                </select>
+              </div>
             </div>
           </div>
 
           {/* Question List */}
-          <div className="max-h-64 overflow-y-auto bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg p-2 space-y-1">
+          <div className="max-h-72 overflow-y-auto bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg p-2 space-y-1">
             {isLoadingQuestions ? (
               <div className="text-center py-6 text-xs text-slate-500">Loading question bank...</div>
-            ) : filteredQuestions && filteredQuestions.length > 0 ? (
-              filteredQuestions.map((q) => {
+            ) : paginatedQuestions && paginatedQuestions.length > 0 ? (
+              paginatedQuestions.map((q) => {
                 const isChecked = selectedQuestionIds.includes(q.id);
                 return (
                   <div
                     key={q.id}
                     onClick={() => handleToggleQuestion(q.id)}
-                    className="flex items-center justify-between p-2.5 rounded-lg hover:bg-slate-200/60 dark:hover:bg-slate-900 cursor-pointer transition text-xs"
+                    className={`flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition text-xs border ${
+                      isChecked
+                        ? 'bg-ubi-50/70 dark:bg-ubi-950/40 border-ubi-200 dark:border-ubi-800/80'
+                        : 'hover:bg-slate-200/60 dark:hover:bg-slate-900 border-transparent'
+                    }`}
                   >
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0 pr-2">
                       {isChecked ? (
                         <CheckSquare size={18} className="text-ubi-800 dark:text-ubi-400 flex-shrink-0" />
                       ) : (
                         <Square size={18} className="text-slate-400 dark:text-slate-600 flex-shrink-0" />
                       )}
-                      <span className="text-slate-900 dark:text-slate-200 font-semibold">{q.title}</span>
+                      <span className="text-slate-900 dark:text-slate-200 font-semibold truncate" title={q.title}>
+                        {q.title}
+                      </span>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {q.question_type === 'mcq' ? (
@@ -762,6 +898,21 @@ export const AdminCreateExamPage: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Pagination Controls */}
+          {filteredAndSortedQuestions.length > poolPageSize && (
+            <Pagination
+              currentPage={poolPage}
+              totalItems={filteredAndSortedQuestions.length}
+              pageSize={poolPageSize}
+              onPageChange={setPoolPage}
+              onPageSizeChange={(size) => {
+                setPoolPageSize(size);
+                setPoolPage(1);
+              }}
+              pageSizeOptions={[10, 20, 50, 100]}
+            />
+          )}
 
           <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-[11px] text-slate-600 dark:text-slate-400 space-y-1">
             <p className="font-semibold text-slate-800 dark:text-slate-200">

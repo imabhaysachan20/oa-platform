@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../api/admin';
-import { Exam } from '../types';
+import { Exam, Question } from '../types';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Badge } from '../components/ui/Badge';
+import { Pagination } from '../components/ui/Pagination';
 import {
   Plus,
   Activity,
@@ -23,6 +24,7 @@ import {
   Sliders,
   Filter,
   Sparkles,
+  ArrowUpDown,
 } from 'lucide-react';
 
 export const AdminExamsPage: React.FC = () => {
@@ -52,22 +54,35 @@ export const AdminExamsPage: React.FC = () => {
   const [editEndTime, setEditEndTime] = useState('');
   const [editSearchQuery, setEditSearchQuery] = useState('');
 
+  // Main Exam List Controls
+  const [examSearchQuery, setExamSearchQuery] = useState('');
+  const [examStatusFilter, setExamStatusFilter] = useState<'all' | 'live' | 'upcoming' | 'expired' | 'flexible'>('all');
+  const [examSortBy, setExamSortBy] = useState<'newest' | 'oldest' | 'title_asc' | 'title_desc' | 'duration_asc' | 'duration_desc' | 'pool_desc'>('newest');
+  const [examPage, setExamPage] = useState(1);
+  const [examPageSize, setExamPageSize] = useState(6);
+
+  // Edit Modal Question Pool Controls
+  const [editSelectionFilter, setEditSelectionFilter] = useState<'all' | 'selected' | 'unselected'>('all');
+  const [editQuestionSort, setEditQuestionSort] = useState<'title_asc' | 'title_desc' | 'difficulty' | 'selected_first'>('selected_first');
+  const [editQuestionPage, setEditQuestionPage] = useState(1);
+  const [editQuestionPageSize, setEditQuestionPageSize] = useState(15);
+
   // Fetch student groups
   const { data: groupsData } = useQuery({
     queryKey: ['adminStudentGroups'],
-    queryFn: adminApi.listStudentGroups,
+    queryFn: () => adminApi.listStudentGroups(),
   });
 
   // Fetch exams
-  const { data: exams, isLoading } = useQuery({
+  const { data: exams, isLoading } = useQuery<Exam[]>({
     queryKey: ['adminExams'],
-    queryFn: adminApi.listExams,
+    queryFn: () => adminApi.listExams(),
   });
 
   // Fetch available questions for pool selection
-  const { data: questions } = useQuery({
+  const { data: questions } = useQuery<Question[]>({
     queryKey: ['adminQuestions'],
-    queryFn: adminApi.listQuestions,
+    queryFn: () => adminApi.listQuestions(),
   });
 
   // Helper: Convert UTC ISO string to local datetime-local format (YYYY-MM-DDTHH:mm)
@@ -150,6 +165,9 @@ export const AdminExamsPage: React.FC = () => {
     setEditMediumCount(exam.medium_count ?? 2);
     setEditHardCount(exam.hard_count ?? 0);
     setEditDifficultyFilter('all');
+    setEditSelectionFilter('all');
+    setEditQuestionSort('selected_first');
+    setEditQuestionPage(1);
     setEditSelectedGroups(exam.target_groups || []);
     setEditCustomGroupInput('');
     setEditStartTime(toLocalDatetimeInput(exam.start_time));
@@ -230,15 +248,127 @@ export const AdminExamsPage: React.FC = () => {
   const bankHardCount = questions?.filter((q) => q.question_type !== 'mcq' && q.difficulty === 'hard').length || 0;
   const bankMcqCount = questions?.filter((q) => q.question_type === 'mcq').length || 0;
 
-  const filteredEditQuestions = questions?.filter((q) => {
-    const matchesSearch =
-      q.title.toLowerCase().includes(editSearchQuery.toLowerCase()) ||
-      q.difficulty.toLowerCase().includes(editSearchQuery.toLowerCase());
-    if (!matchesSearch) return false;
-    if (editDifficultyFilter === 'all') return true;
-    if (editDifficultyFilter === 'mcq') return q.question_type === 'mcq';
-    return q.question_type !== 'mcq' && q.difficulty === editDifficultyFilter;
-  });
+  // Memoized filtered & sorted exams
+  const filteredAndSortedExams = useMemo(() => {
+    if (!exams) return [];
+    const now = new Date().getTime();
+
+    let result = exams.filter((exam) => {
+      if (examSearchQuery.trim()) {
+        const q = examSearchQuery.toLowerCase();
+        const matchesTitle = exam.title.toLowerCase().includes(q);
+        const matchesGroups = exam.target_groups?.some((grp) => grp.toLowerCase().includes(q));
+        if (!matchesTitle && !matchesGroups) return false;
+      }
+
+      if (examStatusFilter !== 'all') {
+        const hasSchedule = !!(exam.start_time && exam.end_time);
+        if (examStatusFilter === 'flexible') {
+          if (hasSchedule) return false;
+        } else if (examStatusFilter === 'live') {
+          const isLive =
+            hasSchedule &&
+            now >= new Date(exam.start_time!).getTime() &&
+            now <= new Date(exam.end_time!).getTime();
+          if (!isLive) return false;
+        } else if (examStatusFilter === 'upcoming') {
+          const isUpcoming = hasSchedule && now < new Date(exam.start_time!).getTime();
+          if (!isUpcoming) return false;
+        } else if (examStatusFilter === 'expired') {
+          const isExpired = hasSchedule && now > new Date(exam.end_time!).getTime();
+          if (!isExpired) return false;
+        }
+      }
+
+      return true;
+    });
+
+    result.sort((a, b) => {
+      if (examSortBy === 'newest') return b.id - a.id;
+      if (examSortBy === 'oldest') return a.id - b.id;
+      if (examSortBy === 'title_asc') return a.title.localeCompare(b.title);
+      if (examSortBy === 'title_desc') return b.title.localeCompare(a.title);
+      if (examSortBy === 'duration_asc') return a.duration_minutes - b.duration_minutes;
+      if (examSortBy === 'duration_desc') return b.duration_minutes - a.duration_minutes;
+      if (examSortBy === 'pool_desc') return (b.pool_count || 0) - (a.pool_count || 0);
+      return b.id - a.id;
+    });
+
+    return result;
+  }, [exams, examSearchQuery, examStatusFilter, examSortBy]);
+
+  const totalExamPages = Math.ceil(filteredAndSortedExams.length / examPageSize) || 1;
+  const paginatedExams = useMemo(() => {
+    const start = (examPage - 1) * examPageSize;
+    return filteredAndSortedExams.slice(start, start + examPageSize);
+  }, [filteredAndSortedExams, examPage, examPageSize]);
+
+  // Question pool in edit modal: filtered & sorted & paginated
+  const filteredAndSortedEditQuestions = useMemo(() => {
+    if (!questions) return [];
+    let result = questions.filter((q) => {
+      const matchesSearch =
+        q.title.toLowerCase().includes(editSearchQuery.toLowerCase()) ||
+        q.difficulty.toLowerCase().includes(editSearchQuery.toLowerCase()) ||
+        (q.description && q.description.toLowerCase().includes(editSearchQuery.toLowerCase()));
+      if (!matchesSearch) return false;
+
+      if (editDifficultyFilter === 'mcq') {
+        if (q.question_type !== 'mcq') return false;
+      } else if (editDifficultyFilter !== 'all') {
+        if (q.question_type === 'mcq' || q.difficulty !== editDifficultyFilter) return false;
+      }
+
+      const isSelected = editSelectedQuestionIds.includes(q.id);
+      if (editSelectionFilter === 'selected' && !isSelected) return false;
+      if (editSelectionFilter === 'unselected' && isSelected) return false;
+
+      return true;
+    });
+
+    result.sort((a, b) => {
+      if (editQuestionSort === 'selected_first') {
+        const aSel = editSelectedQuestionIds.includes(a.id) ? 1 : 0;
+        const bSel = editSelectedQuestionIds.includes(b.id) ? 1 : 0;
+        if (bSel !== aSel) return bSel - aSel;
+        return a.title.localeCompare(b.title);
+      }
+      if (editQuestionSort === 'title_desc') return b.title.localeCompare(a.title);
+      if (editQuestionSort === 'difficulty') {
+        const rank = { easy: 1, medium: 2, hard: 3 };
+        const rA = rank[a.difficulty as keyof typeof rank] || 0;
+        const rB = rank[b.difficulty as keyof typeof rank] || 0;
+        if (rA !== rB) return rA - rB;
+        return a.title.localeCompare(b.title);
+      }
+      return a.title.localeCompare(b.title);
+    });
+
+    return result;
+  }, [
+    questions,
+    editSearchQuery,
+    editDifficultyFilter,
+    editSelectionFilter,
+    editQuestionSort,
+    editSelectedQuestionIds,
+  ]);
+
+  const totalEditQuestionPages = Math.ceil(filteredAndSortedEditQuestions.length / editQuestionPageSize) || 1;
+  const paginatedEditQuestions = useMemo(() => {
+    const start = (editQuestionPage - 1) * editQuestionPageSize;
+    return filteredAndSortedEditQuestions.slice(start, start + editQuestionPageSize);
+  }, [filteredAndSortedEditQuestions, editQuestionPage, editQuestionPageSize]);
+
+  const handleSelectFilteredEditQuestions = () => {
+    const idsToAdd = filteredAndSortedEditQuestions.map((q) => q.id);
+    setEditSelectedQuestionIds((prev) => Array.from(new Set([...prev, ...idsToAdd])));
+  };
+
+  const handleDeselectFilteredEditQuestions = () => {
+    const idsToRemove = new Set(filteredAndSortedEditQuestions.map((q) => q.id));
+    setEditSelectedQuestionIds((prev) => prev.filter((id) => !idsToRemove.has(id)));
+  };
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6 animate-fadeIn">
@@ -260,125 +390,240 @@ export const AdminExamsPage: React.FC = () => {
         </Link>
       </div>
 
+      {/* Filter, Search and Sorting Bar */}
+      <Card className="p-3.5 space-y-3 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xs">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          {/* Search Input */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-2.5 text-slate-400" size={15} />
+            <input
+              type="text"
+              placeholder="Search assessments by title or target group tag..."
+              value={examSearchQuery}
+              onChange={(e) => {
+                setExamSearchQuery(e.target.value);
+                setExamPage(1);
+              }}
+              className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
+            />
+          </div>
+
+          {/* Sort Dropdown */}
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+              <ArrowUpDown size={14} className="text-slate-400" />
+              <span className="font-medium text-[11px]">Sort:</span>
+            </div>
+            <select
+              value={examSortBy}
+              onChange={(e) => {
+                setExamSortBy(e.target.value as any);
+                setExamPage(1);
+              }}
+              className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-200 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none cursor-pointer"
+            >
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
+              <option value="title_asc">Title (A-Z)</option>
+              <option value="title_desc">Title (Z-A)</option>
+              <option value="duration_asc">Duration (Shortest)</option>
+              <option value="duration_desc">Duration (Longest)</option>
+              <option value="pool_desc">Most Questions in Pool</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Status Filter Chips */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-800/80">
+          <span className="text-[11px] font-bold text-slate-400 mr-1 flex items-center gap-1">
+            <Filter size={12} /> Status:
+          </span>
+          {(
+            [
+              { id: 'all', label: 'All Assessments' },
+              { id: 'live', label: 'Live Window' },
+              { id: 'upcoming', label: 'Upcoming' },
+              { id: 'expired', label: 'Expired' },
+              { id: 'flexible', label: 'Flexible / Always Open' },
+            ] as const
+          ).map((st) => {
+            const isActive = examStatusFilter === st.id;
+            return (
+              <button
+                key={st.id}
+                type="button"
+                onClick={() => {
+                  setExamStatusFilter(st.id);
+                  setExamPage(1);
+                }}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition border ${
+                  isActive
+                    ? 'bg-ubi-800 text-white border-ubi-900 dark:bg-ubi-700 dark:border-ubi-600 shadow-2xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 dark:bg-slate-950 dark:hover:bg-slate-800 dark:text-slate-300 dark:border-slate-800'
+                }`}
+              >
+                {st.label}
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
       {/* Exam List */}
       {isLoading ? (
         <div className="py-16 flex justify-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-ubi-800 dark:border-ubi-400"></div>
         </div>
-      ) : exams && exams.length > 0 ? (
-        <div className="grid grid-cols-1 gap-4">
-          {exams.map((exam) => {
-            const now = new Date().getTime();
-            const hasSchedule = !!(exam.start_time && exam.end_time);
-            const isUpcoming = hasSchedule && now < new Date(exam.start_time!).getTime();
-            const isLive = hasSchedule && now >= new Date(exam.start_time!).getTime() && now <= new Date(exam.end_time!).getTime();
-            const isExpired = hasSchedule && now > new Date(exam.end_time!).getTime();
+      ) : paginatedExams.length > 0 ? (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-3.5">
+            {paginatedExams.map((exam) => {
+              const now = new Date().getTime();
+              const hasSchedule = !!(exam.start_time && exam.end_time);
+              const isUpcoming = hasSchedule && now < new Date(exam.start_time!).getTime();
+              const isLive =
+                hasSchedule &&
+                now >= new Date(exam.start_time!).getTime() &&
+                now <= new Date(exam.end_time!).getTime();
+              const isExpired = hasSchedule && now > new Date(exam.end_time!).getTime();
 
-            return (
-              <Card key={exam.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-ubi-300 dark:hover:border-ubi-700">
-                <div className="space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <h3 className="text-base font-bold text-slate-900 dark:text-white">{exam.title}</h3>
-                    <span className="text-xs px-2.5 py-0.5 bg-ubi-50 border border-ubi-200 text-ubi-800 dark:bg-ubi-950 dark:border-ubi-800 dark:text-ubi-300 rounded-md font-mono font-semibold">
-                      Pool: {exam.pool_count || 0} Questions
-                    </span>
-                    {hasSchedule ? (
-                      isUpcoming ? (
-                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-ubi-50 border border-ubi-200 text-ubi-800 dark:bg-ubi-950 dark:border-ubi-800 dark:text-ubi-300 flex items-center gap-1">
-                          <Clock size={10} /> Upcoming
-                        </span>
-                      ) : isLive ? (
-                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 dark:bg-emerald-950 dark:border-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live Window
-                        </span>
-                      ) : (
-                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950 dark:border-rose-800 dark:text-rose-300">
-                          Expired
-                        </span>
-                      )
-                    ) : (
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                        Flexible / Always Open
+              return (
+                <Card
+                  key={exam.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-ubi-300 dark:hover:border-ubi-700 transition"
+                >
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <h3 className="text-base font-bold text-slate-900 dark:text-white truncate">
+                        {exam.title}
+                      </h3>
+                      <span className="text-xs px-2.5 py-0.5 bg-ubi-50 border border-ubi-200 text-ubi-800 dark:bg-ubi-950 dark:border-ubi-800 dark:text-ubi-300 rounded-md font-mono font-semibold">
+                        Pool: {exam.pool_count || 0} Questions
                       </span>
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-                    <span className="flex items-center gap-1 font-medium">
-                      <Clock size={13} /> {exam.duration_minutes} min
-                    </span>
-                    {hasSchedule && (
-                      <>
-                        <span>•</span>
-                        <span className="flex items-center gap-1 font-medium text-ubi-800 dark:text-ubi-300">
-                          <Calendar size={13} />
-                          {formatIST(exam.start_time)} – {formatIST(exam.end_time)}
+                      {hasSchedule ? (
+                        isUpcoming ? (
+                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-ubi-50 border border-ubi-200 text-ubi-800 dark:bg-ubi-950 dark:border-ubi-800 dark:text-ubi-300 flex items-center gap-1">
+                            <Clock size={10} /> Upcoming
+                          </span>
+                        ) : isLive ? (
+                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 dark:bg-emerald-950 dark:border-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live Window
+                          </span>
+                        ) : (
+                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950 dark:border-rose-800 dark:text-rose-300">
+                            Expired
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                          Flexible / Always Open
                         </span>
-                      </>
-                    )}
-                    <span>•</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300">
-                      Pattern: <strong>{exam.easy_count ?? 1}E</strong> • <strong>{exam.medium_count ?? 2}M</strong> • <strong>{exam.hard_count ?? 0}H</strong> ({(exam.easy_count ?? 1) + (exam.medium_count ?? 2) + (exam.hard_count ?? 0)} coding){exam.mcq_count ? ` • ${exam.mcq_count} MCQ` : ''}
-                    </span>
-                    <span>•</span>
-                    <span>Weights: Easy({exam.easy_weight}) Med({exam.medium_weight}) Hard({exam.hard_weight}) MCQ({exam.mcq_weight ?? 2})</span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+                      <span className="flex items-center gap-1 font-medium">
+                        <Clock size={13} /> {exam.duration_minutes} min
+                      </span>
+                      {hasSchedule && (
+                        <>
+                          <span>•</span>
+                          <span className="flex items-center gap-1 font-medium text-ubi-800 dark:text-ubi-300">
+                            <Calendar size={13} />
+                            {formatIST(exam.start_time)} – {formatIST(exam.end_time)}
+                          </span>
+                        </>
+                      )}
+                      <span>•</span>
+                      <span className="font-medium text-slate-700 dark:text-slate-300">
+                        Pattern: <strong>{exam.easy_count ?? 1}E</strong> • <strong>{exam.medium_count ?? 2}M</strong> •{' '}
+                        <strong>{exam.hard_count ?? 0}H</strong> (
+                        {(exam.easy_count ?? 1) + (exam.medium_count ?? 2) + (exam.hard_count ?? 0)} coding)
+                        {exam.mcq_count ? ` • ${exam.mcq_count} MCQ` : ''}
+                      </span>
+                      <span>•</span>
+                      <span>
+                        Weights: Easy({exam.easy_weight}) Med({exam.medium_weight}) Hard({exam.hard_weight}) MCQ(
+                        {exam.mcq_weight ?? 2})
+                      </span>
+                    </div>
+
+                    {/* Groups Assigned */}
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 pt-0.5">
+                      <Layers size={13} className="text-slate-400 shrink-0" />
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">Target Groups:</span>
+                      {exam.target_groups && exam.target_groups.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {exam.target_groups.map((grp) => (
+                            <Badge key={grp} variant="brand" className="text-[9px]">
+                              {grp}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 italic">Open to All Groups</span>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Groups Assigned */}
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 pt-0.5">
-                    <Layers size={13} className="text-slate-400 shrink-0" />
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Target Groups:</span>
-                    {exam.target_groups && exam.target_groups.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {exam.target_groups.map((grp) => (
-                          <Badge key={grp} variant="brand" className="text-[9px]">
-                            {grp}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-[11px] text-slate-400 italic">Open to All Groups</span>
-                    )}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleOpenEdit(exam)}
+                      className="gap-1.5 font-semibold text-slate-700 dark:text-slate-200"
+                      title="Edit Assessment & Schedule"
+                    >
+                      <Pencil size={14} />
+                      <span>Edit</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate(`/admin/exams/${exam.id}/monitoring`)}
+                      className="gap-1.5 font-semibold"
+                    >
+                      <Activity size={14} className="text-ubi-800 dark:text-ubi-400" />
+                      <span>Live Monitoring</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setDeletingExam(exam)}
+                      className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:text-rose-300 dark:hover:bg-rose-500/10"
+                      title="Delete Assessment"
+                    >
+                      <Trash2 size={14} />
+                    </Button>
                   </div>
-                </div>
+                </Card>
+              );
+            })}
+          </div>
 
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleOpenEdit(exam)}
-                    className="gap-1.5 font-semibold text-slate-700 dark:text-slate-200"
-                    title="Edit Assessment & Schedule"
-                  >
-                    <Pencil size={14} />
-                    <span>Edit</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => navigate(`/admin/exams/${exam.id}/monitoring`)}
-                    className="gap-1.5 font-semibold"
-                  >
-                    <Activity size={14} className="text-ubi-800 dark:text-ubi-400" />
-                    <span>Live Monitoring</span>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setDeletingExam(exam)}
-                    className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:text-rose-300 dark:hover:bg-rose-500/10"
-                    title="Delete Assessment"
-                  >
-                    <Trash2 size={14} />
-                  </Button>
-                </div>
-              </Card>
-            );
-          })}
+          {/* Pagination Controls */}
+          <Pagination
+            currentPage={examPage}
+            totalPages={totalExamPages}
+            totalItems={filteredAndSortedExams.length}
+            pageSize={examPageSize}
+            pageSizeOptions={[5, 10, 20]}
+            onPageChange={(p) => setExamPage(p)}
+            onPageSizeChange={(sz) => {
+              setExamPageSize(sz);
+              setExamPage(1);
+            }}
+            itemLabel="assessments"
+          />
         </div>
       ) : (
-        <Card className="text-center py-16 text-slate-500 dark:text-slate-400">
-          No assessments created yet. Click "Create New Assessment" to build one.
+        <Card className="text-center py-16 text-slate-500 dark:text-slate-400 space-y-2">
+          <p className="font-semibold text-slate-700 dark:text-slate-300">No assessments found.</p>
+          <p className="text-xs text-slate-500">
+            {examSearchQuery || examStatusFilter !== 'all'
+              ? 'Try changing your search keywords or status filter.'
+              : 'Click "Create New Assessment" to build one.'}
+          </p>
         </Card>
       )}
 
@@ -704,15 +949,27 @@ export const AdminExamsPage: React.FC = () => {
               <div className="space-y-2 flex flex-col h-full">
                 <div className="flex items-center justify-between">
                   <label className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider text-[11px]">
-                    Select Questions ({editSelectedQuestionIds.length} selected)
+                    Select Questions ({editSelectedQuestionIds.length} of {questions?.length || 0} selected)
                   </label>
-                  <button
-                    type="button"
-                    onClick={handleSelectAllEditQuestions}
-                    className="text-ubi-800 dark:text-ubi-400 hover:underline text-[11px] font-bold"
-                  >
-                    Toggle All
-                  </button>
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={handleSelectFilteredEditQuestions}
+                      className="text-ubi-700 dark:text-ubi-400 hover:underline font-semibold"
+                      title="Select all matching current filter"
+                    >
+                      + Select Filtered
+                    </button>
+                    <span className="text-slate-300 dark:text-slate-700">|</span>
+                    <button
+                      type="button"
+                      onClick={handleDeselectFilteredEditQuestions}
+                      className="text-rose-600 dark:text-rose-400 hover:underline font-semibold"
+                      title="Deselect all matching current filter"
+                    >
+                      - Deselect
+                    </button>
+                  </div>
                 </div>
 
                 {/* Pool breakdown and alerts */}
@@ -743,46 +1000,99 @@ export const AdminExamsPage: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Filter tabs */}
-                <div className="flex flex-wrap items-center gap-1">
-                  {(['all', 'easy', 'medium', 'hard', 'mcq'] as const).map((filterKey) => (
-                    <button
-                      key={filterKey}
-                      type="button"
-                      onClick={() => setEditDifficultyFilter(filterKey)}
-                      className={`px-2 py-0.5 rounded text-[10px] font-semibold capitalize border transition ${
-                        editDifficultyFilter === filterKey
-                          ? 'bg-ubi-800 text-white border-ubi-900 dark:bg-ubi-700 dark:border-ubi-600 shadow-2xs'
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-300 dark:border-slate-800'
-                      }`}
-                    >
-                      {filterKey}
-                    </button>
-                  ))}
-                </div>
+                {/* Filter & Sort Controls */}
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-1">
+                    {/* Difficulty tabs */}
+                    <div className="flex items-center gap-1">
+                      {(['all', 'easy', 'medium', 'hard', 'mcq'] as const).map((filterKey) => (
+                        <button
+                          key={filterKey}
+                          type="button"
+                          onClick={() => {
+                            setEditDifficultyFilter(filterKey);
+                            setEditQuestionPage(1);
+                          }}
+                          className={`px-2 py-0.5 rounded text-[10px] font-semibold capitalize border transition ${
+                            editDifficultyFilter === filterKey
+                              ? 'bg-ubi-800 text-white border-ubi-900 dark:bg-ubi-700 dark:border-ubi-600 shadow-2xs'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-300 dark:border-slate-800'
+                          }`}
+                        >
+                          {filterKey}
+                        </button>
+                      ))}
+                    </div>
 
-                {/* Search input */}
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2 text-slate-400" size={13} />
-                  <input
-                    type="text"
-                    placeholder="Search questions..."
-                    value={editSearchQuery}
-                    onChange={(e) => setEditSearchQuery(e.target.value)}
-                    className="w-full pl-8 pr-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-[11px] focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
-                  />
+                    {/* Selection state filter */}
+                    <div className="flex items-center gap-1">
+                      {(['all', 'selected', 'unselected'] as const).map((sKey) => (
+                        <button
+                          key={sKey}
+                          type="button"
+                          onClick={() => {
+                            setEditSelectionFilter(sKey);
+                            setEditQuestionPage(1);
+                          }}
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-medium capitalize border transition ${
+                            editSelectionFilter === sKey
+                              ? 'bg-slate-800 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900 font-bold'
+                              : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-950 dark:hover:bg-slate-900 dark:text-slate-400 dark:border-slate-800'
+                          }`}
+                        >
+                          {sKey}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {/* Search input */}
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2.5 top-2 text-slate-400" size={12} />
+                      <input
+                        type="text"
+                        placeholder="Search questions..."
+                        value={editSearchQuery}
+                        onChange={(e) => {
+                          setEditSearchQuery(e.target.value);
+                          setEditQuestionPage(1);
+                        }}
+                        className="w-full pl-7 pr-2 py-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-[11px] focus:ring-1 focus:ring-ubi-800 focus:outline-none transition"
+                      />
+                    </div>
+
+                    {/* Question Sort */}
+                    <select
+                      value={editQuestionSort}
+                      onChange={(e) => {
+                        setEditQuestionSort(e.target.value as any);
+                        setEditQuestionPage(1);
+                      }}
+                      className="px-2 py-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-700 dark:text-slate-300 text-[10px] focus:ring-1 focus:ring-ubi-800 focus:outline-none cursor-pointer"
+                    >
+                      <option value="selected_first">Selected First</option>
+                      <option value="title_asc">Title (A-Z)</option>
+                      <option value="title_desc">Title (Z-A)</option>
+                      <option value="difficulty">Difficulty (E→H)</option>
+                    </select>
+                  </div>
                 </div>
 
                 {/* Question List */}
                 <div className="max-h-[220px] overflow-y-auto bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg p-1.5 space-y-1">
-                  {filteredEditQuestions && filteredEditQuestions.length > 0 ? (
-                    filteredEditQuestions.map((q) => {
+                  {paginatedEditQuestions && paginatedEditQuestions.length > 0 ? (
+                    paginatedEditQuestions.map((q) => {
                       const isChecked = editSelectedQuestionIds.includes(q.id);
                       return (
                         <div
                           key={q.id}
                           onClick={() => handleToggleEditQuestion(q.id)}
-                          className="flex items-center justify-between p-2 rounded-md hover:bg-slate-200/60 dark:hover:bg-slate-900 cursor-pointer transition text-xs"
+                          className={`flex items-center justify-between p-2 rounded-md cursor-pointer transition text-xs border ${
+                            isChecked
+                              ? 'bg-ubi-50/60 dark:bg-ubi-950/40 border-ubi-200 dark:border-ubi-800/80'
+                              : 'hover:bg-slate-200/60 dark:hover:bg-slate-900 border-transparent'
+                          }`}
                         >
                           <div className="flex items-center gap-2 min-w-0 pr-2">
                             {isChecked ? (
@@ -816,10 +1126,42 @@ export const AdminExamsPage: React.FC = () => {
                     })
                   ) : (
                     <div className="text-center py-8 text-slate-500 text-xs">
-                      No questions found.
+                      No questions match filter.
                     </div>
                   )}
                 </div>
+
+                {/* Compact Pagination for Edit Question Pool */}
+                {filteredAndSortedEditQuestions.length > editQuestionPageSize && (
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 px-1 pt-1">
+                    <span>
+                      {(editQuestionPage - 1) * editQuestionPageSize + 1}-
+                      {Math.min(editQuestionPage * editQuestionPageSize, filteredAndSortedEditQuestions.length)} of{' '}
+                      {filteredAndSortedEditQuestions.length}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={editQuestionPage <= 1}
+                        onClick={() => setEditQuestionPage((p) => Math.max(1, p - 1))}
+                        className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold"
+                      >
+                        Prev
+                      </button>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 px-1">
+                        {editQuestionPage} / {totalEditQuestionPages}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={editQuestionPage >= totalEditQuestionPages}
+                        onClick={() => setEditQuestionPage((p) => Math.min(totalEditQuestionPages, p + 1))}
+                        className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

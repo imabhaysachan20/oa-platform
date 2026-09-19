@@ -80,10 +80,35 @@ class TemplateGenerateRequest(BaseModel):
 
 @router.get("/exams", response_model=List[ExamResponse])
 async def list_all_exams(
+    search: Optional[str] = None,
+    status: Optional[str] = None,
+    sort_by: Optional[str] = "id",
+    sort_order: Optional[str] = "desc",
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    stmt = select(Exam).order_by(Exam.id.desc())
+    stmt = select(Exam)
+
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        stmt = stmt.where(Exam.title.ilike(term))
+
+    now = datetime.now(timezone.utc)
+    if status == "live":
+        stmt = stmt.where(Exam.start_time <= now, Exam.end_time >= now)
+    elif status == "upcoming":
+        stmt = stmt.where(Exam.start_time > now)
+    elif status == "expired":
+        stmt = stmt.where(Exam.end_time < now)
+    elif status == "flexible":
+        stmt = stmt.where(Exam.start_time.is_(None))
+
+    sort_col = getattr(Exam, sort_by, Exam.id) if sort_by in ["id", "title", "duration_minutes", "created_at", "start_time"] else Exam.id
+    if sort_order and sort_order.lower() == "asc":
+        stmt = stmt.order_by(sort_col.asc())
+    else:
+        stmt = stmt.order_by(sort_col.desc())
+
     exams = (await db.execute(stmt)).scalars().all()
 
     response = []
@@ -240,6 +265,11 @@ async def delete_exam(
 @router.get("/exams/{exam_id}/pool", response_model=List[QuestionResponse])
 async def get_exam_pool_questions(
     exam_id: int,
+    search: Optional[str] = None,
+    difficulty: Optional[str] = None,
+    question_type: Optional[str] = None,
+    sort_by: Optional[str] = "id",
+    sort_order: Optional[str] = "asc",
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -247,10 +277,33 @@ async def get_exam_pool_questions(
         select(Question)
         .join(ExamQuestionPool, ExamQuestionPool.question_id == Question.id)
         .where(ExamQuestionPool.exam_id == exam_id)
-        .options(selectinload(Question.test_cases))
+        .options(selectinload(Question.test_cases), selectinload(Question.mcq_options))
     )
+
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        stmt = stmt.where(Question.title.ilike(term) | Question.description.ilike(term))
+    if difficulty and difficulty != "all":
+        stmt = stmt.where(Question.difficulty == difficulty)
+    if question_type and question_type != "all":
+        stmt = stmt.where(Question.question_type == question_type)
+
+    if sort_by == "title":
+        col = Question.title
+    elif sort_by == "difficulty":
+        col = Question.difficulty
+    elif sort_by == "question_type":
+        col = Question.question_type
+    else:
+        col = Question.id
+
+    if sort_order and sort_order.lower() == "desc":
+        stmt = stmt.order_by(col.desc())
+    else:
+        stmt = stmt.order_by(col.asc())
+
     questions = (await db.execute(stmt)).scalars().all()
-    return questions
+    return [QuestionResponse.model_validate(q) for q in questions]
 
 
 @router.post("/exams/{exam_id}/pool/{question_id}")
@@ -353,14 +406,47 @@ async def generate_templates_endpoint(
 
 @router.get("/questions", response_model=List[QuestionResponse])
 async def list_questions(
+    search: Optional[str] = None,
+    difficulty: Optional[str] = None,
+    question_type: Optional[str] = None,
+    sort_by: Optional[str] = "id",
+    sort_order: Optional[str] = "asc",
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
     stmt = (
         select(Question)
         .options(selectinload(Question.test_cases), selectinload(Question.mcq_options))
-        .order_by(Question.id.asc())
     )
+
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        stmt = stmt.where(
+            Question.title.ilike(term) |
+            Question.description.ilike(term) |
+            Question.function_name.ilike(term)
+        )
+    if difficulty and difficulty != "all":
+        stmt = stmt.where(Question.difficulty == difficulty)
+    if question_type and question_type != "all":
+        stmt = stmt.where(Question.question_type == question_type)
+
+    if sort_by == "title":
+        col = Question.title
+    elif sort_by == "difficulty":
+        col = Question.difficulty
+    elif sort_by == "question_type":
+        col = Question.question_type
+    elif sort_by == "created_at":
+        col = Question.created_at
+    else:
+        col = Question.id
+
+    if sort_order and sort_order.lower() == "desc":
+        stmt = stmt.order_by(col.desc())
+    else:
+        stmt = stmt.order_by(col.asc())
+
     questions = (await db.execute(stmt)).scalars().all()
     return [QuestionResponse.model_validate(q) for q in questions]
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Modal } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
@@ -245,19 +245,27 @@ export const AdminPlaygroundModal: React.FC<AdminPlaygroundModalProps> = ({
     derivedSignature: string;
     derivedStarters: Record<string, string>;
   }>(() => {
-    if (formData.functionName && formData.functionName.trim()) {
+    const fnName = formData.functionName?.trim();
+    if (fnName) {
       const generated = generateClientStarterTemplates(
-        formData.functionName.trim(),
+        fnName,
         formData.parameters || [],
         formData.returnType || 'void'
       );
+
+      // Verify if starterCode actually matches current functionName
+      const starterMatches = (lang: string) => {
+        const code = formData.starterCode?.[lang];
+        return Boolean(code && code.includes(fnName));
+      };
+
       return {
-        derivedSignature: formData.functionSignature || generated.signature,
+        derivedSignature: generated.signature,
         derivedStarters: {
-          python: formData.starterCode?.python || generated.starters.python || '',
-          javascript: formData.starterCode?.javascript || generated.starters.javascript || '',
-          cpp: formData.starterCode?.cpp || generated.starters.cpp || '',
-          java: formData.starterCode?.java || generated.starters.java || '',
+          python: starterMatches('python') ? formData.starterCode!.python : generated.starters.python,
+          javascript: starterMatches('javascript') ? formData.starterCode!.javascript : generated.starters.javascript,
+          cpp: starterMatches('cpp') ? formData.starterCode!.cpp : generated.starters.cpp,
+          java: starterMatches('java') ? formData.starterCode!.java : generated.starters.java,
         },
       };
     }
@@ -279,33 +287,50 @@ export const AdminPlaygroundModal: React.FC<AdminPlaygroundModalProps> = ({
     formData.starterCode,
   ]);
 
+  // Unique signature key to detect when functionName, parameters, or returnType change
+  const signatureKey = useMemo(() => {
+    return `${questionData.id || 0}_${questionData.functionName || ''}_${JSON.stringify(questionData.parameters || [])}_${questionData.returnType || ''}`;
+  }, [questionData.id, questionData.functionName, questionData.parameters, questionData.returnType]);
+
+  const prevSignatureKeyRef = useRef<string>('');
+
   // Sync incoming question data & initialize code drafts
   useEffect(() => {
     setFormData(questionData);
 
-    const initialDrafts: Record<string, string> = {};
-    const languages = ['python', 'javascript', 'cpp', 'java'];
+    const isSignatureChanged = prevSignatureKeyRef.current !== '' && prevSignatureKeyRef.current !== signatureKey;
+    prevSignatureKeyRef.current = signatureKey;
 
-    languages.forEach((lang) => {
-      if (questionData.starterCode?.[lang]) {
-        initialDrafts[lang] = questionData.starterCode[lang];
-      } else if (questionData.functionName) {
-        const gen = generateClientStarterTemplates(
-          questionData.functionName,
+    const languages = ['python', 'javascript', 'cpp', 'java'];
+    const fnName = questionData.functionName?.trim();
+    const gen = fnName
+      ? generateClientStarterTemplates(
+          fnName,
           questionData.parameters || [],
           questionData.returnType || 'void'
-        );
-        initialDrafts[lang] = gen.starters[lang] || STARTER_CODE[lang] || '';
-      } else {
-        initialDrafts[lang] = STARTER_CODE[lang] || '';
-      }
-    });
+        )
+      : null;
 
-    setCodeDrafts((prev) => ({
-      ...initialDrafts,
-      ...prev,
-    }));
-  }, [questionData]);
+    setCodeDrafts((prev) => {
+      const nextDrafts: Record<string, string> = {};
+
+      languages.forEach((lang) => {
+        const starter = questionData.starterCode?.[lang];
+        const starterMatches = Boolean(starter && fnName && starter.includes(fnName));
+        const prevCode = prev[lang];
+        const prevMatches = Boolean(prevCode && fnName && prevCode.includes(fnName));
+
+        // If signature changed, or previous code does not match current function name:
+        if (isSignatureChanged || !prevMatches) {
+          nextDrafts[lang] = (starterMatches ? starter : gen?.starters[lang]) || STARTER_CODE[lang] || '';
+        } else {
+          nextDrafts[lang] = prevCode || (starterMatches ? starter : gen?.starters[lang]) || STARTER_CODE[lang] || '';
+        }
+      });
+
+      return nextDrafts;
+    });
+  }, [questionData, signatureKey]);
 
   // Async server-side template generation for exact canonical sync if needed
   useEffect(() => {

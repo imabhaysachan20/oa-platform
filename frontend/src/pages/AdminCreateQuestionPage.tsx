@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../api/admin';
@@ -6,7 +6,7 @@ import { QuestionDifficulty, ParameterDef, QuestionType } from '../types';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { RichTextEditor } from '../components/ui/RichTextEditor';
-import { AdminPlaygroundModal, TestCaseItem } from '../components/AdminPlaygroundModal';
+import { AdminPlaygroundModal, TestCaseItem, generateClientStarterTemplates } from '../components/AdminPlaygroundModal';
 import {
   ArrowLeft,
   Code2,
@@ -86,6 +86,25 @@ export const AdminCreateQuestionPage: React.FC = () => {
   const [starterCode, setStarterCode] = useState<Record<string, string>>({});
   const [activeLangTab, setActiveLangTab] = useState<'python' | 'javascript' | 'cpp' | 'java'>('python');
   const [isGeneratingStarters, setIsGeneratingStarters] = useState(false);
+
+  // Dynamically derived signature and starter templates matching current inputs
+  const clientSignature = useMemo(() => {
+    if (!functionName.trim()) return '';
+    const sigParams = parameters.map((p) => `${p.name}: ${p.type}`).join(', ');
+    return `${functionName.trim()}(${sigParams}) -> ${returnType || 'void'}`;
+  }, [functionName, parameters, returnType]);
+
+  const clientStarters = useMemo(() => {
+    if (!functionName.trim()) return {};
+    return generateClientStarterTemplates(functionName.trim(), parameters, returnType).starters;
+  }, [functionName, parameters, returnType]);
+
+  const activeStarterCode = useMemo(() => {
+    const fn = functionName.trim();
+    if (!fn) return starterCode;
+    const hasMatching = starterCode && Object.values(starterCode).some((c) => c && c.includes(fn));
+    return hasMatching ? starterCode : clientStarters;
+  }, [starterCode, functionName, clientStarters]);
 
   // Playground Modal State
   const [isPlaygroundModalOpen, setIsPlaygroundModalOpen] = useState(false);
@@ -392,6 +411,9 @@ export const AdminCreateQuestionPage: React.FC = () => {
       }
     }
 
+    // Use activeStarterCode (dynamically derived from current signature if not manually overridden)
+    const finalStarterCode = Object.keys(activeStarterCode).length > 0 ? activeStarterCode : clientStarters;
+
     const payload: any = {
       title: title.trim(),
       description: description.trim(),
@@ -406,9 +428,10 @@ export const AdminCreateQuestionPage: React.FC = () => {
       mcq_time_limit_seconds: null,
       is_multi_select: false,
       function_name: functionName.trim(),
+      function_signature: clientSignature,
       parameters: parameters,
       return_type: returnType,
-      starter_code: Object.keys(starterCode).length > 0 ? starterCode : undefined,
+      starter_code: Object.keys(finalStarterCode).length > 0 ? finalStarterCode : undefined,
     };
 
     if (!isEditMode && localTestCases.length > 0) {
@@ -426,6 +449,10 @@ export const AdminCreateQuestionPage: React.FC = () => {
   const handleOpenPlayground = () => {
     if (!title.trim()) {
       setValidationError('Please enter a Question Title before launching Playground.');
+      return;
+    }
+    if (!functionName.trim()) {
+      setValidationError('Please enter a Function Name before launching Playground.');
       return;
     }
     setValidationError(null);
@@ -932,6 +959,13 @@ export const AdminCreateQuestionPage: React.FC = () => {
                 </Button>
               </div>
 
+              {functionName.trim() && (
+                <div className="flex items-center gap-2 p-2 px-3 bg-slate-100/80 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Method Signature:</span>
+                  <span className="text-ubi-700 dark:text-ubi-300 font-semibold">{clientSignature}</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <div className="flex items-center gap-1.5 mb-1">
@@ -1324,11 +1358,11 @@ export const AdminCreateQuestionPage: React.FC = () => {
             sampleInput,
             sampleOutput,
             inputFormat,
-            functionName: functionName,
-            functionSignature: existingQuestion?.function_signature,
+            functionName: functionName.trim(),
+            functionSignature: clientSignature,
             parameters: parameters,
             returnType: returnType,
-            starterCode,
+            starterCode: activeStarterCode,
             testCases: activeTestCases,
           }}
           onChangeQuestionData={(updated) => {
@@ -1340,6 +1374,9 @@ export const AdminCreateQuestionPage: React.FC = () => {
             setSampleInput(updated.sampleInput);
             setSampleOutput(updated.sampleOutput);
             setInputFormat(updated.inputFormat || '');
+            if (updated.starterCode) {
+              setStarterCode(updated.starterCode);
+            }
             if (updated.testCases) {
               setLocalTestCases(updated.testCases);
             }

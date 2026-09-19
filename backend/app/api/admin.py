@@ -574,16 +574,35 @@ async def update_question(
         q.is_multi_select = body.is_multi_select
     if body.function_name is not None:
         q.function_name = body.function_name
-    if body.function_signature is not None:
-        q.function_signature = body.function_signature
     if body.parameters is not None:
         q.parameters = body.parameters
     if body.return_type is not None:
         q.return_type = body.return_type
-    if body.starter_code is not None:
-        q.starter_code = body.starter_code
-    if body.driver_code is not None:
-        q.driver_code = body.driver_code
+
+    target_type = body.question_type if body.question_type is not None else q.question_type
+    fn_name = body.function_name if body.function_name is not None else q.function_name
+    params = body.parameters if body.parameters is not None else q.parameters
+    ret_type = body.return_type if body.return_type is not None else q.return_type
+
+    if target_type != "mcq" and fn_name and params is not None:
+        gen = generate_all_templates(fn_name, params, ret_type or "void")
+        if body.starter_code is not None:
+            q.starter_code = body.starter_code
+        elif body.function_name is not None or body.parameters is not None or body.return_type is not None:
+            q.starter_code = gen["starter"]
+            q.driver_code = gen.get("driver")
+
+        if body.function_signature is not None:
+            q.function_signature = body.function_signature
+        elif body.function_name is not None or body.parameters is not None or body.return_type is not None:
+            q.function_signature = gen["function_signature"]
+    else:
+        if body.starter_code is not None:
+            q.starter_code = body.starter_code
+        if body.driver_code is not None:
+            q.driver_code = body.driver_code
+        if body.function_signature is not None:
+            q.function_signature = body.function_signature
 
     await db.commit()
 

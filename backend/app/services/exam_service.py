@@ -34,7 +34,7 @@ from backend.app.schemas.exam import (
     ProctoringLogItem,
     NetworkIncidentItem
 )
-from backend.app.services.scoring_service import compute_and_save_exam_scores
+from backend.app.services.scoring_service import compute_and_save_exam_scores, calculate_difficulty_weight
 from backend.app.services.question_templates import (
     get_question_starter_templates,
     get_question_signature
@@ -611,6 +611,9 @@ async def get_exam_result_detail(
             final_score=qs.final_score
         ))
 
+    raw_score = round(sum(b.final_score for b in breakdown), 2) if breakdown else None
+    max_score = round(sum(b.difficulty_weight for b in breakdown), 2) if breakdown else None
+
     return ExamResultDetail(
         assignment_id=assignment.id,
         exam_id=exam.id,
@@ -619,6 +622,8 @@ async def get_exam_result_detail(
         roll_no=user.roll_no,
         status=assignment.status.value,
         total_score=result.total_score if result else 0.0,
+        raw_score=raw_score,
+        max_score=max_score,
         rank=result.rank if result else None,
         submitted_at=assignment.submitted_at,
         question_scores=breakdown
@@ -685,6 +690,46 @@ async def get_live_exam_monitoring(
     inc_counts = {r[0]: int(r[1]) for r in inc_rows}
     inc_durations = {r[0]: int(r[2]) for r in inc_rows}
 
+    # 3. Fetch Exam details for difficulty weights
+    stmt_exam = select(Exam).where(Exam.id == exam_id)
+    exam = (await db.execute(stmt_exam)).scalar_one_or_none()
+
+    # 4. Fetch QuestionScores aggregated (raw_score and max_score)
+    scores_stmt = (
+        select(
+            QuestionScore.assignment_id,
+            func.coalesce(func.sum(QuestionScore.final_score), 0.0).label("raw_score"),
+            func.coalesce(func.sum(QuestionScore.difficulty_weight), 0.0).label("max_score")
+        )
+        .join(ExamAssignment, QuestionScore.assignment_id == ExamAssignment.id)
+        .where(ExamAssignment.exam_id == exam_id)
+        .group_by(QuestionScore.assignment_id)
+    )
+    scores_res = (await db.execute(scores_stmt)).all()
+    scores_map = {r[0]: (float(r[1]), float(r[2])) for r in scores_res}
+
+    # 5. Fetch assigned questions to compute max_score for every candidate
+    assigned_stmt = (
+        select(
+            AssignedQuestion.assignment_id,
+            AssignedQuestion.difficulty,
+            Question.question_type
+        )
+        .join(Question, AssignedQuestion.question_id == Question.id)
+        .join(ExamAssignment, AssignedQuestion.assignment_id == ExamAssignment.id)
+        .where(ExamAssignment.exam_id == exam_id)
+    )
+    assigned_res = (await db.execute(assigned_stmt)).all()
+    assigned_max_map = {}
+    mcq_w = float(getattr(exam, 'mcq_weight', 2.0) if exam and getattr(exam, 'mcq_weight', None) is not None else 2.0)
+    for a_id, diff, q_type in assigned_res:
+        if a_id not in assigned_max_map:
+            assigned_max_map[a_id] = 0.0
+        if q_type == "mcq":
+            assigned_max_map[a_id] += mcq_w
+        else:
+            assigned_max_map[a_id] += calculate_difficulty_weight(exam, diff) if exam else 10.0
+
     stmt_assigns = (
         select(ExamAssignment, User, ExamResult)
         .join(User, ExamAssignment.user_id == User.id)
@@ -732,6 +777,19 @@ async def get_live_exam_monitoring(
         elif assign.status in (AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED):
             network_status = "submitted"
 
+        raw_s = None
+        max_s = assigned_max_map.get(assign.id, None)
+        cur_s = result.total_score if result else None
+
+        if assign.id in scores_map:
+            raw_s, computed_max = scores_map[assign.id]
+            if computed_max > 0:
+                max_s = computed_max
+            if cur_s is None and max_s and max_s > 0:
+                cur_s = round((raw_s / max_s) * 100.0, 1)
+        elif result and max_s:
+            raw_s = round((result.total_score / 100.0) * max_s, 1)
+
         monitoring_list.append(MonitoringStudentView(
             assignment_id=assign.id,
             user_id=user.id,
@@ -747,7 +805,9 @@ async def get_live_exam_monitoring(
             time_remaining_sec=remaining_sec,
             submissions_count=submission_count,
             flags_count=flags_count,
-            current_score=result.total_score if result else None,
+            current_score=cur_s,
+            raw_score=raw_s,
+            max_score=max_s,
             network_status=network_status,
             seconds_since_last_ping=seconds_since_last_ping,
             disconnect_incidents_count=inc_counts.get(assign.id, 0),
@@ -925,14 +985,18 @@ async def get_candidate_dossier(
             if not time_taken and sub and assignment.started_at:
                 time_taken = max(0.0, (sub.submitted_at - assignment.started_at).total_seconds())
 
+            diff_w = q_score.difficulty_weight if q_score else calculate_difficulty_weight(exam, assigned_q.difficulty)
+            corr = q_score.correctness if q_score else (float(sub.test_cases_passed) / float(sub.total_test_cases) if sub and sub.total_test_cases else 0.0)
+            fin_score = q_score.final_score if q_score else round(diff_w * corr, 2)
+
             question_dossiers.append(CandidateQuestionSubmissionDossier(
                 question_id=q.id,
                 question_title=q.title,
                 difficulty=assigned_q.difficulty.value,
                 order_index=assigned_q.order_index,
-                correctness=q_score.correctness if q_score else (float(sub.test_cases_passed) / float(sub.total_test_cases) if sub and sub.total_test_cases else 0.0),
-                difficulty_weight=q_score.difficulty_weight if q_score else 10.0,
-                final_score=q_score.final_score if q_score else 0.0,
+                correctness=corr,
+                difficulty_weight=diff_w,
+                final_score=fin_score,
                 time_taken_sec=round(time_taken, 1),
                 has_submission=bool(sub),
                 code=sub.code if sub else None,
@@ -947,6 +1011,11 @@ async def get_candidate_dossier(
                 is_multi_select=False,
             ))
 
+    raw_score = round(sum(qd.final_score for qd in question_dossiers), 2)
+    max_score = round(sum(qd.difficulty_weight for qd in question_dossiers), 2)
+    computed_percentage = round((raw_score / max_score) * 100.0, 2) if max_score > 0 else 0.0
+    total_score = result.total_score if result else (computed_percentage if assignment.status in (AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED) else None)
+
     return CandidateDossierResponse(
         assignment_id=assignment.id,
         exam_id=exam.id,
@@ -959,7 +1028,9 @@ async def get_candidate_dossier(
         started_at=assignment.started_at,
         submitted_at=assignment.submitted_at,
         total_time_sec=round(total_time_sec, 1) if total_time_sec is not None else None,
-        total_score=result.total_score if result else None,
+        total_score=total_score,
+        raw_score=raw_score,
+        max_score=max_score,
         rank=result.rank if result else None,
         total_flags=total_flags,
         flag_counts_by_type=flag_counts_by_type,

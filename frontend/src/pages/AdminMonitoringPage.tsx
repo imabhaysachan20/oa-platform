@@ -237,7 +237,7 @@ export const AdminMonitoringPage: React.FC = () => {
                   <th className="py-3.5 px-4 font-bold">Disconnects</th>
                   <th className="py-3.5 px-4 font-bold">Time Left</th>
                   <th className="py-3.5 px-4 font-bold">Submissions</th>
-                  <th className="py-3.5 px-4 font-bold">Current Score</th>
+                  <th className="py-3.5 px-4 font-bold">Score (Pts / %)</th>
                   <th className="py-3.5 px-4 font-bold">Anti-Cheat Flags</th>
                   <th className="py-3.5 px-4 font-bold">Started At</th>
                   <th className="py-3.5 px-4 font-bold text-right">Actions</th>
@@ -351,10 +351,23 @@ export const AdminMonitoringPage: React.FC = () => {
                     </td>
 
                     {/* Current Score */}
-                    <td className="py-3.5 px-4 font-extrabold text-ubi-800 dark:text-ubi-400 text-sm">
-                      {row.current_score !== null && row.current_score !== undefined
-                        ? row.current_score.toFixed(1)
-                        : '—'}
+                    <td className="py-3.5 px-4 font-sans">
+                      {row.raw_score !== null && row.raw_score !== undefined && row.max_score !== null && row.max_score !== undefined ? (
+                        <div className="flex flex-col font-mono">
+                          <span className="font-extrabold text-ubi-800 dark:text-ubi-400 text-sm">
+                            {row.raw_score.toFixed(1)} <span className="text-slate-400 font-medium text-xs">/ {row.max_score.toFixed(1)}</span>
+                          </span>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
+                            {row.current_score !== null && row.current_score !== undefined ? `${row.current_score.toFixed(1)}%` : ''}
+                          </span>
+                        </div>
+                      ) : row.current_score !== null && row.current_score !== undefined ? (
+                        <span className="font-extrabold text-ubi-800 dark:text-ubi-400 text-sm font-mono">
+                          {row.current_score.toFixed(1)}%
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
 
                     {/* Anti-Cheat Flags (Pure security violations) */}

@@ -11,11 +11,13 @@ from backend.app.models.result import QuestionScore, ExamResult
 
 
 def calculate_difficulty_weight(exam: Exam, difficulty: QuestionDifficulty) -> float:
-    if difficulty == QuestionDifficulty.EASY:
+    val = difficulty.value if hasattr(difficulty, 'value') else str(difficulty)
+    val = str(val).lower()
+    if val == "easy":
         return exam.easy_weight
-    elif difficulty == QuestionDifficulty.MEDIUM:
+    elif val == "medium":
         return exam.medium_weight
-    elif difficulty == QuestionDifficulty.HARD:
+    elif val == "hard":
         return exam.hard_weight
     return 10.0
 

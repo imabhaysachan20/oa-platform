@@ -108,6 +108,8 @@ class ExamResultDetail(BaseModel):
     roll_no: Optional[str] = None
     status: str
     total_score: Optional[float] = None
+    raw_score: Optional[float] = None
+    max_score: Optional[float] = None
     rank: Optional[int] = None
     submitted_at: Optional[datetime] = None
     question_scores: List[QuestionScoreBreakdown] = []
@@ -128,6 +130,8 @@ class MonitoringStudentView(BaseModel):
     time_remaining_sec: Optional[float] = None
     submissions_count: int = 0
     current_score: Optional[float] = None
+    raw_score: Optional[float] = None
+    max_score: Optional[float] = None
     flags_count: int = 0
     network_status: str = "online"  # "online" | "unstable" | "offline" | "not_started"
     seconds_since_last_ping: Optional[float] = None
@@ -225,6 +229,8 @@ class CandidateDossierResponse(BaseModel):
     submitted_at: Optional[datetime] = None
     total_time_sec: Optional[float] = None
     total_score: Optional[float] = None
+    raw_score: Optional[float] = None
+    max_score: Optional[float] = None
     rank: Optional[int] = None
     total_flags: int = 0
     flag_counts_by_type: dict = {}

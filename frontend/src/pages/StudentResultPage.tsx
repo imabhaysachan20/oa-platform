@@ -120,10 +120,22 @@ export const StudentResultPage: React.FC = () => {
             <span className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               Total Score
             </span>
-            <span className="text-3xl font-extrabold text-ubi-800 dark:text-ubi-400">
-              {result.total_score?.toFixed(1) ?? '0.0'}
-              <span className="text-sm text-slate-400 font-normal"> / 100</span>
-            </span>
+            {result.raw_score !== null && result.raw_score !== undefined && result.max_score !== null && result.max_score !== undefined ? (
+              <div className="flex flex-col items-center">
+                <span className="text-3xl font-extrabold text-ubi-800 dark:text-ubi-400">
+                  {result.raw_score.toFixed(1)}
+                  <span className="text-sm text-slate-400 font-normal"> / {result.max_score.toFixed(1)} pts</span>
+                </span>
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
+                  ({result.total_score?.toFixed(1) ?? '0.0'}%)
+                </span>
+              </div>
+            ) : (
+              <span className="text-3xl font-extrabold text-ubi-800 dark:text-ubi-400">
+                {result.total_score?.toFixed(1) ?? '0.0'}
+                <span className="text-sm text-slate-400 font-normal"> / 100</span>
+              </span>
+            )}
           </div>
 
           {result.rank !== null && result.rank !== undefined && (

@@ -53,6 +53,14 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
 
   const currentQuestion = dossier?.questions?.[selectedQuestionIndex];
 
+  const totalRawEarned = dossier?.raw_score !== null && dossier?.raw_score !== undefined
+    ? dossier.raw_score
+    : (dossier?.questions || []).reduce((acc, q) => acc + q.final_score, 0);
+
+  const totalMaxWeight = dossier?.max_score !== null && dossier?.max_score !== undefined
+    ? dossier.max_score
+    : (dossier?.questions || []).reduce((acc, q) => acc + q.difficulty_weight, 0);
+
   return (
     <Modal
       isOpen={isOpen}
@@ -95,9 +103,20 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
               <div className="bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Score</span>
                 <span className="text-sm font-extrabold text-ubi-800 dark:text-ubi-400 font-mono">
-                  {dossier.total_score !== null && dossier.total_score !== undefined
-                    ? `${dossier.total_score.toFixed(1)} pts`
-                    : 'Unscored'}
+                  {dossier.raw_score !== null && dossier.raw_score !== undefined && dossier.max_score !== null && dossier.max_score !== undefined ? (
+                    <>
+                      <span>{dossier.raw_score.toFixed(1)} / {dossier.max_score.toFixed(1)} pts</span>
+                      {dossier.total_score !== null && dossier.total_score !== undefined && (
+                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 ml-1.5">
+                          ({dossier.total_score.toFixed(1)}%)
+                        </span>
+                      )}
+                    </>
+                  ) : dossier.total_score !== null && dossier.total_score !== undefined ? (
+                    `${dossier.total_score.toFixed(1)}%`
+                  ) : (
+                    'Unscored'
+                  )}
                   {dossier.rank && <span className="text-xs text-slate-500 font-medium ml-1.5">(Rank #{dossier.rank})</span>}
                 </span>
               </div>
@@ -466,8 +485,8 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                       <th className="py-3 px-4">Difficulty</th>
                       <th className="py-3 px-4">Time Taken</th>
                       <th className="py-3 px-4">Correctness</th>
-                      <th className="py-3 px-4">Weight</th>
-                      <th className="py-3 px-4 text-right">Score</th>
+                      <th className="py-3 px-4">Max Points</th>
+                      <th className="py-3 px-4 text-right">Marks Awarded</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-xs">
@@ -486,23 +505,36 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                           {(q.correctness * 100).toFixed(0)}% ({q.test_cases_passed}/{q.total_test_cases})
                         </td>
                         <td className="py-3 px-4 text-slate-500">
-                          {q.difficulty_weight} pts
+                          {q.difficulty_weight.toFixed(1)} pts
                         </td>
                         <td className="py-3 px-4 text-right font-extrabold text-ubi-800 dark:text-ubi-400">
-                          {q.final_score.toFixed(1)}
+                          {q.final_score.toFixed(1)} pts
                         </td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot className="bg-slate-50 dark:bg-slate-950 font-bold border-t border-slate-200 dark:border-slate-800 font-mono">
+                    <tr className="border-b border-slate-200/60 dark:border-slate-800/60">
+                      <td colSpan={4} className="py-2.5 px-4 text-right uppercase text-[11px] text-slate-500">
+                        Total Marks Earned:
+                      </td>
+                      <td className="py-2.5 px-4 text-slate-700 dark:text-slate-300">
+                        {totalMaxWeight.toFixed(1)} pts
+                      </td>
+                      <td className="py-2.5 px-4 text-right text-sm text-ubi-800 dark:text-ubi-400 font-extrabold">
+                        {totalRawEarned.toFixed(1)} pts
+                      </td>
+                    </tr>
                     <tr>
                       <td colSpan={5} className="py-3 px-4 text-right uppercase text-[11px] text-slate-500">
-                        Final Score (Out of 100):
+                        Percentage Score (Normalized / 100):
                       </td>
                       <td className="py-3 px-4 text-right text-base text-ubi-900 dark:text-white font-extrabold">
                         {dossier.total_score !== null && dossier.total_score !== undefined
-                          ? dossier.total_score.toFixed(1)
-                          : '0.0'}
+                          ? `${dossier.total_score.toFixed(1)}%`
+                          : totalMaxWeight > 0
+                          ? `${((totalRawEarned / totalMaxWeight) * 100).toFixed(1)}%`
+                          : '0.0%'}
                       </td>
                     </tr>
                   </tfoot>

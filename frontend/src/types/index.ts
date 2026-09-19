@@ -237,6 +237,8 @@ export interface ExamResultDetail {
   roll_no?: string;
   status: string;
   total_score?: number | null;
+  raw_score?: number | null;
+  max_score?: number | null;
   rank?: number | null;
   submitted_at?: string | null;
   question_scores: QuestionScoreBreakdown[];
@@ -254,7 +256,9 @@ export interface MonitoringStudentView {
   submitted_at?: string;
   time_remaining_sec?: number;
   submissions_count: number;
-  current_score?: number;
+  current_score?: number | null;
+  raw_score?: number | null;
+  max_score?: number | null;
   flags_count?: number;
   network_status?: 'online' | 'unstable' | 'offline' | 'not_started' | 'submitted';
   seconds_since_last_ping?: number | null;
@@ -324,6 +328,8 @@ export interface CandidateDossierResponse {
   submitted_at?: string | null;
   total_time_sec?: number | null;
   total_score?: number | null;
+  raw_score?: number | null;
+  max_score?: number | null;
   rank?: number | null;
   total_flags: number;
   flag_counts_by_type: Record<string, number>;

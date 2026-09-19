@@ -53,7 +53,6 @@ export const AdminCreateQuestionPage: React.FC = () => {
   const [questionType, setQuestionType] = useState<QuestionType>('coding');
 
   // MCQ-Specific Details
-  const [mcqMarks, setMcqMarks] = useState<number>(10);
   const [mcqTimeLimitSeconds, setMcqTimeLimitSeconds] = useState<string>('');
   const [isMultiSelect, setIsMultiSelect] = useState<boolean>(false);
   const [mcqOptions, setMcqOptions] = useState<{ id?: string; option_text: string; is_correct: boolean }[]>([
@@ -121,9 +120,6 @@ export const AdminCreateQuestionPage: React.FC = () => {
         setQuestionType(existingQuestion.question_type);
       }
 
-      if (existingQuestion.marks !== undefined && existingQuestion.marks !== null) {
-        setMcqMarks(existingQuestion.marks);
-      }
       if (existingQuestion.mcq_time_limit_seconds !== undefined && existingQuestion.mcq_time_limit_seconds !== null) {
         setMcqTimeLimitSeconds(String(existingQuestion.mcq_time_limit_seconds));
       }
@@ -353,17 +349,11 @@ export const AdminCreateQuestionPage: React.FC = () => {
         setValidationError('Multi-select MCQ must have at least one correct option.');
         return;
       }
-      if (!mcqMarks || Number(mcqMarks) <= 0) {
-        setValidationError('Marks must be greater than 0.');
-        return;
-      }
-
       const payload: any = {
         title: title.trim(),
         description: description.trim(),
         difficulty,
         question_type: 'mcq',
-        marks: Number(mcqMarks),
         mcq_time_limit_seconds: mcqTimeLimitSeconds && Number(mcqTimeLimitSeconds) > 0 ? Number(mcqTimeLimitSeconds) : null,
         is_multi_select: isMultiSelect,
         options: mcqOptions.map((opt, idx) => ({
@@ -519,7 +509,7 @@ export const AdminCreateQuestionPage: React.FC = () => {
                   <span className="text-[9px] bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-400 px-1.5 py-0.2 rounded-full font-bold">New</span>
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Selectable options with single/multi-select, dedicated marks, and timers.
+                  Selectable options with single/multi-select, customizable options, and timers.
                 </div>
               </div>
             </button>
@@ -578,22 +568,6 @@ export const AdminCreateQuestionPage: React.FC = () => {
 
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
-                    Marks Awarded *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0.5"
-                    value={mcqMarks}
-                    onChange={(e) => setMcqMarks(parseFloat(e.target.value) || 0)}
-                    placeholder="10"
-                    className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-ubi-800 focus:outline-none font-mono"
-                  />
-                  <span className="text-[10px] text-slate-400">Awarded if fully correct.</span>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide mb-1">
                     Time Limit (seconds, optional)
                   </label>
                   <input
@@ -605,6 +579,15 @@ export const AdminCreateQuestionPage: React.FC = () => {
                     className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-ubi-800 focus:outline-none font-mono"
                   />
                   <span className="text-[10px] text-slate-400">Leave blank for exam-level time.</span>
+                </div>
+
+                <div className="flex flex-col justify-center bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-1.5">
+                  <span className="font-semibold text-slate-700 dark:text-slate-300 text-[11px] uppercase tracking-wide">
+                    Scoring Weight
+                  </span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
+                    Set per exam (uniform marks for all MCQs).
+                  </span>
                 </div>
               </div>
             </div>

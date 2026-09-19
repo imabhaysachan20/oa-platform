@@ -6,7 +6,7 @@ from typing import Set
 from sqlalchemy import select, and_
 
 from backend.app.core.database import AsyncSessionLocal
-from backend.app.models.exam import ExamAssignment, AssignedQuestion, AssignmentStatus
+from backend.app.models.exam import ExamAssignment, AssignedQuestion, AssignmentStatus, Exam
 from backend.app.models.question import Question, MCQOption
 from backend.app.models.submission import MCQResponse
 from backend.app.services.scoring_service import compute_and_save_exam_scores
@@ -25,9 +25,10 @@ async def _process_expired_mcq_questions():
     async with AsyncSessionLocal() as db:
         try:
             stmt = (
-                select(AssignedQuestion, Question)
+                select(AssignedQuestion, Question, Exam)
                 .join(Question, AssignedQuestion.question_id == Question.id)
                 .join(ExamAssignment, AssignedQuestion.assignment_id == ExamAssignment.id)
+                .join(Exam, ExamAssignment.exam_id == Exam.id)
                 .where(
                     ExamAssignment.status == AssignmentStatus.IN_PROGRESS,
                     Question.question_type == "mcq",
@@ -40,7 +41,7 @@ async def _process_expired_mcq_questions():
                 return 0
 
             locked_count = 0
-            for assigned_q, q in expired_assigned:
+            for assigned_q, q, exam in expired_assigned:
                 resp_stmt = select(MCQResponse).where(
                     MCQResponse.assignment_id == assigned_q.assignment_id,
                     MCQResponse.question_id == q.id
@@ -56,7 +57,7 @@ async def _process_expired_mcq_questions():
                     MCQOption.is_correct == True
                 )
                 correct_ids: Set[uuid.UUID] = set((await db.execute(opt_stmt)).scalars().all())
-                mcq_weight = float(q.marks if q.marks is not None else 10.0)
+                mcq_weight = float(getattr(exam, 'mcq_weight', 2.0) if getattr(exam, 'mcq_weight', None) is not None else 2.0)
 
                 if mcq_resp:
                     selected_set = set(mcq_resp.selected_option_ids or [])

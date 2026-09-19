@@ -87,6 +87,21 @@ def test_mcq_creation_validation():
             ],
         )
 
+    # 5b. MCQ with None marks succeeds (marks configured per exam)
+    valid_no_marks = QuestionCreate(
+        title="MCQ Without Marks",
+        description="Marks configured on exam",
+        difficulty="easy",
+        question_type="mcq",
+        marks=None,
+        is_multi_select=False,
+        options=[
+            MCQOptionCreate(option_text="A", is_correct=True, order_index=0),
+            MCQOptionCreate(option_text="B", is_correct=False, order_index=1),
+        ],
+    )
+    assert valid_no_marks.marks is None
+
     # 6. Valid Single Select succeeds
     valid_single = QuestionCreate(
         title="Valid Single Select",
@@ -235,6 +250,24 @@ def test_pure_coding_exam_scoring_backward_compatibility():
     total_score = round((total_raw / max_possible) * 100.0, 2)
     # 40.0 / 50.0 = 80.0%
     assert total_score == 80.0
+
+
+def test_exam_mcq_weight_uniform_scoring():
+    """Verify that all MCQs in an exam are scored using exam.mcq_weight."""
+    exam_mcq_weight = 3.0
+    num_mcqs = 2
+    max_mcq_score = num_mcqs * exam_mcq_weight  # 6.0
+    mcqs_correct = 1
+    earned_mcq_score = mcqs_correct * exam_mcq_weight  # 3.0
+
+    coding_max = 10.0
+    coding_earned = 10.0
+
+    total_max = max_mcq_score + coding_max  # 16.0
+    total_earned = earned_mcq_score + coding_earned  # 13.0
+    percentage = round((total_earned / total_max) * 100.0, 2)
+    # 13.0 / 16.0 = 81.25%
+    assert percentage == 81.25
 
 
 @pytest.mark.asyncio
@@ -519,7 +552,7 @@ async def test_auto_submit_scan_for_expired_mcq():
         db.add_all([opt_correct, opt_wrong])
         await db.flush()
 
-        exam = Exam(title="Scan Exam", duration_minutes=60, is_published=True)
+        exam = Exam(title="Scan Exam", duration_minutes=60, is_published=True, mcq_weight=4.0)
         db.add(exam)
         await db.flush()
 
@@ -559,8 +592,8 @@ async def test_auto_submit_scan_for_expired_mcq():
         locked_count = await _process_expired_mcq_questions()
         assert locked_count >= 1
 
-        # Check response is now locked and graded
+        # Check response is now locked and graded with exam's mcq_weight (4.0)
         await db.refresh(resp)
         assert resp.is_locked is True
         assert resp.is_correct is True
-        assert resp.marks_awarded == 10.0
+        assert resp.marks_awarded == 4.0

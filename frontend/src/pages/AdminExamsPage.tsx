@@ -39,6 +39,7 @@ export const AdminExamsPage: React.FC = () => {
   const [editEasyWeight, setEditEasyWeight] = useState(10);
   const [editMediumWeight, setEditMediumWeight] = useState(20);
   const [editHardWeight, setEditHardWeight] = useState(30);
+  const [editMcqWeight, setEditMcqWeight] = useState(2);
   const [editEasyCount, setEditEasyCount] = useState(1);
   const [editMediumCount, setEditMediumCount] = useState(2);
   const [editHardCount, setEditHardCount] = useState(0);
@@ -142,6 +143,7 @@ export const AdminExamsPage: React.FC = () => {
     setEditEasyWeight(exam.easy_weight);
     setEditMediumWeight(exam.medium_weight);
     setEditHardWeight(exam.hard_weight);
+    setEditMcqWeight(exam.mcq_weight ?? 2);
     setEditEasyCount(exam.easy_count ?? 1);
     setEditMediumCount(exam.medium_count ?? 2);
     setEditHardCount(exam.hard_count ?? 0);
@@ -201,6 +203,7 @@ export const AdminExamsPage: React.FC = () => {
         easy_weight: editEasyWeight,
         medium_weight: editMediumWeight,
         hard_weight: editHardWeight,
+        mcq_weight: editMcqWeight,
         easy_count: editEasyCount,
         medium_count: editMediumCount,
         hard_count: editHardCount,
@@ -315,7 +318,7 @@ export const AdminExamsPage: React.FC = () => {
                       Pattern: <strong>{exam.easy_count ?? 1}E</strong> • <strong>{exam.medium_count ?? 2}M</strong> • <strong>{exam.hard_count ?? 0}H</strong> ({(exam.easy_count ?? 1) + (exam.medium_count ?? 2) + (exam.hard_count ?? 0)} coding)
                     </span>
                     <span>•</span>
-                    <span>Weights: Easy({exam.easy_weight}) Med({exam.medium_weight}) Hard({exam.hard_weight})</span>
+                    <span>Weights: Easy({exam.easy_weight}) Med({exam.medium_weight}) Hard({exam.hard_weight}) MCQ({exam.mcq_weight ?? 2})</span>
                   </div>
 
                   {/* Groups Assigned */}
@@ -433,7 +436,7 @@ export const AdminExamsPage: React.FC = () => {
                     <span className="text-[10px] text-slate-500 font-medium">Draw / candidate</span>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {/* Easy */}
                     <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/50 space-y-1.5">
                       <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 block">
@@ -514,16 +517,34 @@ export const AdminExamsPage: React.FC = () => {
                         />
                       </div>
                     </div>
+
+                    {/* MCQ */}
+                    <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-900/50 space-y-1.5">
+                      <span className="text-[10px] font-bold text-purple-700 dark:text-purple-400 block">
+                        MCQ ({editPoolMcqCount} in pool)
+                      </span>
+                      <div>
+                        <span className="block text-[9px] text-slate-500 uppercase font-semibold">Marks/Q</span>
+                        <input
+                          type="number"
+                          step="any"
+                          min={0.1}
+                          value={editMcqWeight}
+                          onChange={(e) => setEditMcqWeight(Number(e.target.value))}
+                          className="w-full px-1.5 py-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded text-xs text-slate-900 dark:text-slate-100"
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   <div className="p-1.5 bg-ubi-50/70 dark:bg-ubi-950/40 border border-ubi-200 dark:border-ubi-800 rounded-lg text-[10px] text-ubi-900 dark:text-ubi-200 flex items-center justify-between font-medium">
                     <span className="flex items-center gap-1">
                       <Sparkles size={11} className="text-ubi-700 dark:text-ubi-400 shrink-0" />
                       Candidate Draw: <strong>{editEasyCount}E + {editMediumCount}M + {editHardCount}H = {editEasyCount + editMediumCount + editHardCount} Coding</strong>
-                      {editPoolMcqCount > 0 ? ` + ${editPoolMcqCount} MCQs` : ''}
+                      {editPoolMcqCount > 0 ? ` + ${editPoolMcqCount} MCQs (${editMcqWeight}m)` : ''}
                     </span>
                     <span className="text-ubi-800 dark:text-ubi-300 font-bold">
-                      Max Score: {editEasyCount * editEasyWeight + editMediumCount * editMediumWeight + editHardCount * editHardWeight} pts
+                      Max Score: {editEasyCount * editEasyWeight + editMediumCount * editMediumWeight + editHardCount * editHardWeight + editPoolMcqCount * editMcqWeight} pts
                     </span>
                   </div>
                 </div>
@@ -755,7 +776,7 @@ export const AdminExamsPage: React.FC = () => {
                           </div>
                           {q.question_type === 'mcq' ? (
                             <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800 flex-shrink-0">
-                              MCQ ({q.marks || 10}m)
+                              MCQ ({editMcqWeight}m)
                             </span>
                           ) : (
                             <span

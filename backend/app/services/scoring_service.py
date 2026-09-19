@@ -68,7 +68,7 @@ async def compute_and_save_exam_scores(db: AsyncSession, assignment_id: int) -> 
 
     for assigned_q, q in assigned_rows:
         if q.question_type == "mcq":
-            mcq_weight = float(q.marks if q.marks is not None else 10.0)
+            mcq_weight = float(getattr(exam, 'mcq_weight', 2.0) if getattr(exam, 'mcq_weight', None) is not None else 2.0)
             max_possible_score += mcq_weight
 
             # Fetch correct options for this MCQ

@@ -94,7 +94,7 @@ class QuestionCreate(QuestionBase):
                 raise ValueError("Single-select MCQ must have exactly one correct option.")
             if self.is_multi_select and correct_count < 1:
                 raise ValueError("Multi-select MCQ must have at least one correct option.")
-            if self.marks is None or self.marks <= 0:
+            if self.marks is not None and self.marks <= 0:
                 raise ValueError("MCQ marks must be greater than 0.")
             if self.mcq_time_limit_seconds is not None and self.mcq_time_limit_seconds <= 0:
                 raise ValueError("MCQ time limit seconds must be greater than 0.")

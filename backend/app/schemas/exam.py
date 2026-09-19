@@ -13,6 +13,7 @@ class ExamBase(BaseModel):
     easy_weight: float = 10.0
     medium_weight: float = 20.0
     hard_weight: float = 30.0
+    mcq_weight: float = 2.0
     easy_count: int = 1
     medium_count: int = 2
     hard_count: int = 0
@@ -32,6 +33,7 @@ class ExamUpdate(BaseModel):
     easy_weight: Optional[float] = None
     medium_weight: Optional[float] = None
     hard_weight: Optional[float] = None
+    mcq_weight: Optional[float] = None
     easy_count: Optional[int] = None
     medium_count: Optional[int] = None
     hard_count: Optional[int] = None

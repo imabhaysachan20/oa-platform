@@ -86,6 +86,7 @@ async def create_exam(
         easy_weight=body.easy_weight,
         medium_weight=body.medium_weight,
         hard_weight=body.hard_weight,
+        mcq_weight=body.mcq_weight if body.mcq_weight is not None else 2.0,
         easy_count=body.easy_count if body.easy_count is not None else 1,
         medium_count=body.medium_count if body.medium_count is not None else 2,
         hard_count=body.hard_count if body.hard_count is not None else 0,
@@ -157,6 +158,8 @@ async def update_exam(
         exam.medium_weight = body.medium_weight
     if body.hard_weight is not None:
         exam.hard_weight = body.hard_weight
+    if body.mcq_weight is not None:
+        exam.mcq_weight = body.mcq_weight
     if body.easy_count is not None:
         exam.easy_count = body.easy_count
     if body.medium_count is not None:
@@ -351,7 +354,7 @@ async def create_question(
             raise HTTPException(status_code=400, detail="Single-select MCQ must have exactly one correct option.")
         if body.is_multi_select and correct_count < 1:
             raise HTTPException(status_code=400, detail="Multi-select MCQ must have at least one correct option.")
-        if body.marks is None or body.marks <= 0:
+        if body.marks is not None and body.marks <= 0:
             raise HTTPException(status_code=400, detail="MCQ marks must be greater than 0.")
         if body.mcq_time_limit_seconds is not None and body.mcq_time_limit_seconds <= 0:
             raise HTTPException(status_code=400, detail="MCQ time limit seconds must be greater than 0.")

@@ -401,6 +401,14 @@ async def _get_assigned_question_views(db: AsyncSession, assignment_id: int) -> 
     For coding questions:
       - Includes the latest code draft/submission.
     """
+    assign_stmt = select(ExamAssignment).where(ExamAssignment.id == assignment_id)
+    assignment = (await db.execute(assign_stmt)).scalar_one_or_none()
+    exam = None
+    if assignment:
+        exam_stmt = select(Exam).where(Exam.id == assignment.exam_id)
+        exam = (await db.execute(exam_stmt)).scalar_one_or_none()
+    mcq_weight = float(exam.mcq_weight) if exam and getattr(exam, "mcq_weight", None) is not None else 2.0
+
     stmt = (
         select(AssignedQuestion, Question)
         .join(Question, AssignedQuestion.question_id == Question.id)
@@ -469,7 +477,7 @@ async def _get_assigned_question_views(db: AsyncSession, assignment_id: int) -> 
                 function_signature=None,
                 status="submitted" if (selected_ids and len(selected_ids) > 0) else "unattempted",
                 question_type="mcq",
-                marks=q.marks,
+                marks=mcq_weight,
                 mcq_time_limit_seconds=q.mcq_time_limit_seconds,
                 is_multi_select=q.is_multi_select,
                 question_started_at=assigned_q.question_started_at,
@@ -862,7 +870,7 @@ async def get_candidate_dossier(
                 difficulty=assigned_q.difficulty.value,
                 order_index=assigned_q.order_index,
                 correctness=q_score.correctness if q_score else (1.0 if is_correct else 0.0),
-                difficulty_weight=q_score.difficulty_weight if q_score else (q.marks or 10.0),
+                difficulty_weight=q_score.difficulty_weight if q_score else float(getattr(exam, 'mcq_weight', 2.0) if getattr(exam, 'mcq_weight', None) is not None else 2.0),
                 final_score=q_score.final_score if q_score else (mcq_resp.marks_awarded if mcq_resp and mcq_resp.marks_awarded is not None else 0.0),
                 time_taken_sec=round(time_taken, 1),
                 has_submission=bool(selected_ids),

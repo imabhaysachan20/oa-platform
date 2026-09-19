@@ -137,7 +137,7 @@ export const AdminQuestionsPage: React.FC = () => {
                     <>
                       <span>{q.mcq_options?.length || 0} Options</span>
                       <span>•</span>
-                      <span>{q.marks || 10} Marks</span>
+                      <span>{q.marks ? `${q.marks} Marks` : 'Exam Weight'}</span>
                       {q.is_multi_select && <span>• <span className="text-purple-600 dark:text-purple-400 font-semibold">Multi-select</span></span>}
                       {q.mcq_time_limit_seconds ? (
                         <>

@@ -138,6 +138,7 @@ export interface Exam {
   easy_weight: number;
   medium_weight: number;
   hard_weight: number;
+  mcq_weight?: number;
   easy_count?: number;
   medium_count?: number;
   hard_count?: number;

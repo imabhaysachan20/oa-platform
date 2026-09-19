@@ -7,6 +7,7 @@ import { Navbar } from './components/Navbar';
 // Pages
 import { LoginPage } from './pages/LoginPage';
 import { StudentExamLandingPage } from './pages/StudentExamLandingPage';
+import { StudentExamInstructionsPage } from './pages/StudentExamInstructionsPage';
 import { StudentExamWorkspacePage } from './pages/StudentExamWorkspacePage';
 import { StudentResultPage } from './pages/StudentResultPage';
 import { ExamWaitingRoomPage } from './pages/ExamWaitingRoomPage';
@@ -62,6 +63,14 @@ const AppContent: React.FC = () => {
             element={
               <ProtectedRoute>
                 <StudentExamLandingPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/exam/:examId/instructions"
+            element={
+              <ProtectedRoute>
+                <StudentExamInstructionsPage />
               </ProtectedRoute>
             }
           />

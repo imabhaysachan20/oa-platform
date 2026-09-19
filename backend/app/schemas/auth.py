@@ -44,4 +44,22 @@ class CandidateImportResponse(BaseModel):
     credentials: list[ImportedCandidateCredential] = []
 
 
+class StudentCreate(BaseModel):
+    name: str
+    email: EmailStr
+    college: Optional[str] = None
+    candidate_group: Optional[str] = None
+    roll_no: Optional[str] = None
+    password: Optional[str] = None
+
+
+class StudentUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    college: Optional[str] = None
+    candidate_group: Optional[str] = None
+    roll_no: Optional[str] = None
+    password: Optional[str] = None
+
+
 TokenResponse.model_rebuild()

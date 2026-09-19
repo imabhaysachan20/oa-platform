@@ -27,6 +27,24 @@ export interface CandidateImportResponse {
   credentials: ImportedCandidateCredential[];
 }
 
+export interface StudentCreatePayload {
+  name: string;
+  email: string;
+  college?: string;
+  candidate_group?: string;
+  roll_no?: string;
+  password?: string;
+}
+
+export interface StudentUpdatePayload {
+  name?: string;
+  email?: string;
+  college?: string;
+  candidate_group?: string;
+  roll_no?: string;
+  password?: string;
+}
+
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
 
 export interface TestCase {

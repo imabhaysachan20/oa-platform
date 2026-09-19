@@ -274,9 +274,9 @@ export const StudentExamInstructionsPage: React.FC = () => {
   const allowedLanguagesText = `${allowedLanguagesList.length} language${allowedLanguagesList.length > 1 ? 's' : ''} allowed: ${allowedLanguagesList.join(', ')}`;
 
   return (
-    <div className="w-full min-h-[calc(100vh-64px)] md:h-[calc(100vh-64px)] bg-[#f4f7f6] dark:bg-slate-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn">
-      {/* LEFT PANEL: STATIC / NON-SCROLLING (INCREASED WIDTH ~40%) */}
-      <div className="w-full md:w-[44%] lg:w-[40%] xl:w-[38%] bg-white dark:bg-slate-900 p-8 sm:p-12 md:p-14 flex flex-col justify-between border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 shrink-0 h-auto md:h-[calc(100vh-64px)] overflow-hidden">
+    <div className="w-full min-h-[calc(100vh-64px)] bg-[#f4f7f6] dark:bg-slate-950 flex flex-col md:flex-row animate-fadeIn">
+      {/* LEFT PANEL: FIXED / NON-SCROLLING BETWEEN NAVBAR & FOOTER */}
+      <div className="w-full md:w-[44%] lg:w-[40%] xl:w-[38%] bg-white dark:bg-slate-900 p-6 sm:p-8 md:p-10 flex flex-col justify-between border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 shrink-0 md:sticky md:top-16 md:h-[calc(100vh-113px)] overflow-hidden">
         <div className="space-y-8">
           {/* Title Section */}
           <div className="space-y-1">
@@ -363,8 +363,8 @@ export const StudentExamInstructionsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* RIGHT PANEL: INDEPENDENTLY SCROLLABLE WITH LIGHT GREY BG */}
-      <div className="flex-1 bg-[#f4f7f6] dark:bg-slate-950 p-8 sm:p-12 md:p-14 flex flex-col justify-between min-h-[calc(100vh-64px)] md:h-[calc(100vh-64px)] md:overflow-y-auto custom-scrollbar">
+      {/* RIGHT PANEL: FULL HEIGHT WITH LIGHT GREY BG */}
+      <div className="flex-1 bg-[#f4f7f6] dark:bg-slate-950 p-8 sm:p-12 md:p-14 flex flex-col justify-between">
         <div className="max-w-3xl space-y-8">
           <h2 className="text-3xl sm:text-4xl font-normal text-slate-800 dark:text-slate-100 tracking-tight">
             Instructions

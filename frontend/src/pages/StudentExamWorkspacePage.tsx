@@ -519,7 +519,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
       const res = await submissionsApi.run(currentQ.id, currentCode, currentLang);
       setRunOutput(currentQ.id, res);
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to run code');
+      setSubmissionFeedback(`Error: ${err.response?.data?.detail || 'Failed to run code'}`);
     } finally {
       setIsRunningCode(false);
     }
@@ -541,7 +541,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
       // Refresh backend session in background
       refetch();
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to submit solution');
+      setSubmissionFeedback(`Error: ${err.response?.data?.detail || 'Failed to submit solution'}`);
     } finally {
       setIsSubmittingCode(false);
     }
@@ -559,7 +559,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
       resetExamState();
       navigate(`/exam/${id}/result`);
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to finish exam');
+      setSubmissionFeedback(`Error: ${err.response?.data?.detail || 'Failed to finish exam'}`);
     } finally {
       setIsSubmittingExam(false);
     }
@@ -572,7 +572,6 @@ export const StudentExamWorkspacePage: React.FC = () => {
         await flushLogs();
       } catch {}
     }
-    alert('Time limit reached! Your assessment has been automatically submitted.');
     resetExamState();
     navigate(`/exam/${id}/result`);
   };

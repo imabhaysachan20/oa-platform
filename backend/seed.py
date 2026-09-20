@@ -10,7 +10,7 @@ Database seed script:
 """
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +19,7 @@ from backend.app.core.security import get_password_hash
 from backend.app.models.base import Base
 from backend.app.models.user import User, UserRole
 from backend.app.models.question import Question, TestCase, MCQOption, QuestionDifficulty
-from backend.app.models.exam import Exam, ExamQuestionPool, ExamAssignment, AssignedQuestion
+from backend.app.models.exam import Exam, ExamQuestionPool, ExamAssignment, AssignedQuestion, AssignmentStatus
 from backend.app.models.submission import Submission, MCQResponse
 from backend.app.models.result import ExamResult, QuestionScore
 from backend.app.models.proctoring import ExamProctoringLog
@@ -189,6 +189,7 @@ async def seed_exams(
 ):
     """Seed 6 configured exams and populate their question pools."""
     print("Creating exams and populating question pools...")
+    created_exams = []
     for ex_data in EXAMS_DATA:
         exam = Exam(
             title=ex_data["title"],
@@ -206,6 +207,7 @@ async def seed_exams(
         )
         db.add(exam)
         await db.flush()
+        created_exams.append(exam)
 
         # Populate Pool
         selector = ex_data["pool_selector"]
@@ -236,6 +238,103 @@ async def seed_exams(
         await db.flush()
         print(f"Created Exam #{exam.id}: '{exam.title}' with {len(pool_questions)} pooled questions.")
 
+    return created_exams
+
+
+async def seed_leaderboard_candidates(db: AsyncSession, exams: list[Exam]):
+    """Seed realistic candidates, scores, ranks, and violation logs for exams."""
+    print("Seeding realistic candidate leaderboard results for assessments...")
+    now = datetime.now(timezone.utc)
+    candidates_data = [
+        {"name": "Aarav Sharma", "email": "aarav.sharma@iitd.ac.in", "roll_no": "2022CSB101", "college": "IIT Delhi", "group": "Batch-2026", "score": 96.5, "rank": 1, "status": AssignmentStatus.SUBMITTED, "time_mins": 38, "cq_solved": 3, "mcq_correct": 10, "violations": [("TAB_SWITCH", "Switched to browser search")]},
+        {"name": "Diya Patel", "email": "diya.patel@bits-pilani.ac.in", "roll_no": "2022A7PS002", "college": "BITS Pilani", "group": "Batch-2026", "score": 88.0, "rank": 2, "status": AssignmentStatus.SUBMITTED, "time_mins": 42, "cq_solved": 3, "mcq_correct": 8, "violations": []},
+        {"name": "Rohan Verma", "email": "rohan.verma@nitk.edu.in", "roll_no": "22NITK045", "college": "NIT Surathkal", "group": "Batch-2026", "score": 74.5, "rank": 3, "status": AssignmentStatus.SUBMITTED, "time_mins": 51, "cq_solved": 2, "mcq_correct": 7, "violations": [("WINDOW_BLUR", "Lost window focus"), ("FULLSCREEN_EXIT", "Exited fullscreen")]},
+        {"name": "Ananya Iyer", "email": "ananya.iyer@iiitb.ac.in", "roll_no": "2022IIIT089", "college": "IIIT Bangalore", "group": "Batch-2025", "score": 62.0, "rank": 4, "status": AssignmentStatus.AUTO_SUBMITTED, "time_mins": 60, "cq_solved": 2, "mcq_correct": 5, "violations": [("TAB_SWITCH", "Switched tab"), ("PASTE_ATTEMPT", "Clipboard paste detected")]},
+        {"name": "Vikramaditya Rao", "email": "vikram.rao@dtu.ac.in", "roll_no": "2K22/CO/412", "college": "Delhi Technological University", "group": "Batch-2026", "score": 45.0, "rank": 5, "status": AssignmentStatus.SUBMITTED, "time_mins": 58, "cq_solved": 1, "mcq_correct": 4, "violations": [("DEVTOOLS_SHORTCUT", "F12 pressed"), ("TAB_SWITCH", "Tab switch")]},
+        {"name": "Sneha Mukherjee", "email": "sneha.m@jaduniv.edu.in", "roll_no": "JU/CSE/22/019", "college": "Jadavpur University", "group": "Batch-2026", "score": None, "rank": None, "status": AssignmentStatus.IN_PROGRESS, "time_mins": None, "cq_solved": 1, "mcq_correct": 3, "violations": []},
+        {"name": "Kabir Nair", "email": "kabir.nair@coep.ac.in", "roll_no": "112203055", "college": "COEP Pune", "group": "Batch-2025", "score": None, "rank": None, "status": AssignmentStatus.NOT_STARTED, "time_mins": None, "cq_solved": 0, "mcq_correct": 0, "violations": []}
+    ]
+
+    for exam in exams:
+        pool_q_stmt = select(ExamQuestionPool.question_id).where(ExamQuestionPool.exam_id == exam.id)
+        pool_q_ids = (await db.execute(pool_q_stmt)).scalars().all()
+        coding_ids = pool_q_ids[:5] if len(pool_q_ids) >= 5 else pool_q_ids
+        mcq_ids = pool_q_ids[5:20] if len(pool_q_ids) >= 20 else pool_q_ids
+
+        for c in candidates_data:
+            c_email = f"{c['email'].split('@')[0]}_{exam.id}@{c['email'].split('@')[1]}"
+            u_stmt = select(User).where(User.email == c_email)
+            user = (await db.execute(u_stmt)).scalar_one_or_none()
+            if not user:
+                user = User(
+                    name=c["name"],
+                    email=c_email,
+                    roll_no=f"{c['roll_no']}-{exam.id}",
+                    college=c["college"],
+                    candidate_group=c["group"],
+                    role=UserRole.STUDENT,
+                    password_hash=get_password_hash("password123")
+                )
+                db.add(user)
+                await db.flush()
+
+            start_time = (now - timedelta(minutes=c["time_mins"] + 10)) if c["time_mins"] else (now - timedelta(minutes=15) if c["status"] == AssignmentStatus.IN_PROGRESS else None)
+            sub_time = (start_time + timedelta(minutes=c["time_mins"])) if (start_time and c["time_mins"]) else None
+
+            assign = ExamAssignment(
+                exam_id=exam.id,
+                user_id=user.id,
+                status=c["status"],
+                started_at=start_time,
+                submitted_at=sub_time,
+                is_active=True
+            )
+            db.add(assign)
+            await db.flush()
+
+            if c["score"] is not None:
+                res = ExamResult(
+                    assignment_id=assign.id,
+                    total_score=c["score"],
+                    rank=c["rank"]
+                )
+                db.add(res)
+
+            for idx in range(min(c["cq_solved"], len(coding_ids))):
+                sub = Submission(
+                    assignment_id=assign.id,
+                    question_id=coding_ids[idx],
+                    code="def solution():\n    return True",
+                    language="python",
+                    status="Accepted",
+                    test_cases_passed=4,
+                    total_test_cases=4,
+                    is_final=True
+                )
+                db.add(sub)
+
+            for idx in range(min(c["mcq_correct"], len(mcq_ids))):
+                mr = MCQResponse(
+                    assignment_id=assign.id,
+                    question_id=mcq_ids[idx],
+                    selected_option_ids=[],
+                    is_correct=True,
+                    marks_awarded=2.0
+                )
+                db.add(mr)
+
+            for v_type, v_desc in c["violations"]:
+                v_log = ExamProctoringLog(
+                    assignment_id=assign.id,
+                    event_type=v_type,
+                    title=v_type,
+                    description=v_desc
+                )
+                db.add(v_log)
+
+        await db.flush()
+        print(f"Seeded 7 candidate leaderboard entries for Exam #{exam.id}: '{exam.title}'")
+
 
 async def seed_database():
     """Main database seeding routine."""
@@ -262,7 +361,10 @@ async def seed_database():
         mcq_questions = await seed_mcqs(db)
 
         # Step 5: Seed Exams & Question Pools
-        await seed_exams(db, easy_questions, medium_questions, hard_questions, mcq_questions)
+        created_exams = await seed_exams(db, easy_questions, medium_questions, hard_questions, mcq_questions)
+
+        # Step 6: Seed Leaderboard Candidates for all exams
+        await seed_leaderboard_candidates(db, created_exams)
 
         # Final commit
         await db.commit()

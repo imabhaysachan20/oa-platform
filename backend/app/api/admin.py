@@ -3,7 +3,7 @@ import io
 import re
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Query
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select, func, delete, or_
 from sqlalchemy.orm import selectinload
@@ -25,7 +25,9 @@ from backend.app.schemas.exam import (
     MonitoringStudentView,
     CandidateDossierResponse,
     FreshRestartRequest,
-    FreshRestartResponse
+    FreshRestartResponse,
+    LeaderboardResponse,
+    LeaderboardEntry
 )
 from backend.app.schemas.question import (
     QuestionCreate,
@@ -46,7 +48,9 @@ from backend.app.services.exam_service import (
     get_live_exam_monitoring,
     get_candidate_dossier,
     sync_unsubmitted_assignments_for_exam,
-    fresh_restart_candidate_exam
+    fresh_restart_candidate_exam,
+    get_exam_leaderboard_paginated,
+    export_exam_leaderboard_excel
 )
 from backend.app.services.submission_service import execute_judge0_test_cases
 from backend.app.services.universal_driver_service import generate_all_templates
@@ -1061,5 +1065,66 @@ async def restart_candidate_exam(
         admin_user=current_admin,
         reason=body.reason
     )
+
+
+@router.get("/exams/{exam_id}/leaderboard", response_model=LeaderboardResponse)
+async def get_admin_exam_leaderboard(
+    exam_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    sort_by: str = Query("rank"),
+    sort_dir: str = Query("asc"),
+    search: Optional[str] = Query(None),
+    college: Optional[str] = Query(None),
+    candidate_group: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Returns paginated leaderboard with score, coding-solved, MCQ-correct, and violation breakdowns.
+    Admin only.
+    """
+    return await get_exam_leaderboard_paginated(
+        db=db,
+        exam_id=exam_id,
+        page=page,
+        page_size=page_size,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        search=search,
+        college=college,
+        candidate_group=candidate_group,
+        status=status
+    )
+
+
+@router.get("/exams/{exam_id}/leaderboard/export")
+async def export_admin_exam_leaderboard(
+    exam_id: int,
+    sort_by: str = Query("rank"),
+    sort_dir: str = Query("asc"),
+    search: Optional[str] = Query(None),
+    college: Optional[str] = Query(None),
+    candidate_group: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Exports full filtered exam results to Excel (.xlsx) with styled headers, auto-filters, and auto-sized columns.
+    Admin only.
+    """
+    return await export_exam_leaderboard_excel(
+        db=db,
+        exam_id=exam_id,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        search=search,
+        college=college,
+        candidate_group=candidate_group,
+        status=status
+    )
+
 
 

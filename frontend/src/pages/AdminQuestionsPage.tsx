@@ -266,10 +266,10 @@ export const AdminQuestionsPage: React.FC = () => {
                     setTypeFilter(t.id);
                     setCurrentPage(1);
                   }}
-                  className={`px-2.5 py-1 rounded-full text-xs font-semibold transition border ${
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition border ${
                     isActive
                       ? 'bg-ubi-800 text-white border-ubi-900 dark:bg-ubi-700 dark:border-ubi-600 shadow-2xs'
-                      : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-950 dark:hover:bg-slate-800 dark:text-slate-400 dark:border-slate-800'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 dark:bg-slate-950 dark:hover:bg-slate-800 dark:text-slate-300 dark:border-slate-800'
                   }`}
                 >
                   {t.label}
@@ -298,10 +298,10 @@ export const AdminQuestionsPage: React.FC = () => {
                     setDifficultyFilter(d.id);
                     setCurrentPage(1);
                   }}
-                  className={`px-2 py-0.5 rounded text-[11px] font-semibold transition border capitalize ${
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition border capitalize ${
                     isActive
-                      ? 'bg-slate-800 text-white border-slate-900 dark:bg-slate-200 dark:text-slate-900'
-                      : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-950 dark:hover:bg-slate-800 dark:text-slate-400 dark:border-slate-800'
+                      ? 'bg-ubi-800 text-white border-ubi-900 dark:bg-ubi-700 dark:border-ubi-600 shadow-2xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 dark:bg-slate-950 dark:hover:bg-slate-800 dark:text-slate-300 dark:border-slate-800'
                   }`}
                 >
                   {d.label}

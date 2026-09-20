@@ -154,7 +154,7 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app/backend
-      - C:/Users/Admin/.aws:/root/.aws:ro
+      - ${USERPROFILE}/.aws:/root/.aws:ro
     command: >
       sh -c "alembic -c backend/alembic.ini upgrade head &&
              python backend/seed.py &&

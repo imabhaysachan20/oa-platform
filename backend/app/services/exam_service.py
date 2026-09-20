@@ -1,11 +1,19 @@
 import json
 import hashlib
 import random
+import io
+import re
+import math
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
-from sqlalchemy import select, func, desc, and_
+from sqlalchemy import select, func, desc, and_, or_, case, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
+from fastapi.responses import StreamingResponse
+
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 from backend.app.models.exam import (
     Exam,
@@ -27,6 +35,7 @@ from backend.app.schemas.exam import (
     ExamStartResponse,
     MyQuestionsResponse,
     LeaderboardEntry,
+    LeaderboardResponse,
     ExamResultDetail,
     QuestionScoreBreakdown,
     MonitoringStudentView,
@@ -1284,29 +1293,566 @@ async def get_exam_result_detail(
     )
 
 
+async def get_exam_leaderboard_paginated(
+    db: AsyncSession,
+    exam_id: int,
+    page: int = 1,
+    page_size: int = 25,
+    sort_by: str = "rank",
+    sort_dir: str = "asc",
+    search: Optional[str] = None,
+    college: Optional[str] = None,
+    candidate_group: Optional[str] = None,
+    status: Optional[str] = None,
+) -> LeaderboardResponse:
+    """
+    Returns paginated leaderboard and proctoring/scoring metrics for an exam (admin only).
+    Uses a single SQLAlchemy query with grouped subqueries to eliminate N+1 overhead.
+    """
+    exam = await db.get(Exam, exam_id)
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    page = max(1, page)
+    page_size = max(1, min(page_size, 100))
+
+    total_coding_cfg = (exam.easy_count or 0) + (exam.medium_count or 0) + (exam.hard_count or 0)
+    total_mcq_cfg = (exam.mcq_count or 0)
+
+    # 1. Grouped subquery for proctoring violations
+    violations_subq = (
+        select(
+            ExamProctoringLog.assignment_id.label("assignment_id"),
+            func.count().filter(
+                func.upper(ExamProctoringLog.event_type).not_in([
+                    "EXAM_START_DEVICE", "EXAM_RESUME_DEVICE", "VERIFICATION_SNAPSHOT",
+                    "ADMIN_FRESH_RESTART_ARCHIVED", "ADMIN_FRESH_RESTART_GRANTED", "START", "RESUME"
+                ])
+            ).label("total_violation_count"),
+            func.count().filter(
+                func.upper(ExamProctoringLog.event_type) == "TAB_SWITCH"
+            ).label("tab_switch_count"),
+            func.count().filter(
+                func.upper(ExamProctoringLog.event_type) == "FULLSCREEN_EXIT"
+            ).label("fullscreen_exit_count"),
+            func.count().filter(
+                func.upper(ExamProctoringLog.event_type).in_(["WINDOW_BLUR", "BLUR"])
+            ).label("blur_count"),
+            func.count().filter(
+                func.upper(ExamProctoringLog.event_type).in_(["CLIPBOARD_BLOCK", "PASTE_ATTEMPT", "COPY_ATTEMPT", "CLIPBOARD"])
+            ).label("clipboard_block_count"),
+            func.count().filter(
+                func.upper(ExamProctoringLog.event_type).in_(["DEVTOOLS_ATTEMPT", "DEVTOOLS_SHORTCUT", "DEVTOOLS_DOCK_OPENED", "PRINT_SAVE_SHORTCUT"])
+            ).label("devtools_attempt_count"),
+            func.count().filter(
+                func.upper(ExamProctoringLog.event_type).in_(["NAVIGATION_BLOCK", "NAVIGATION_BLOCKED"])
+            ).label("navigation_block_count"),
+        )
+        .group_by(ExamProctoringLog.assignment_id)
+        .subquery("violations_subq")
+    )
+
+    # 2. Coding questions solved subquery (correctness == 1.0 on final submission)
+    coding_solved_subq = (
+        select(
+            Submission.assignment_id.label("assignment_id"),
+            func.count(func.distinct(Submission.question_id)).label("questions_solved_count")
+        )
+        .where(
+            Submission.is_final == True,
+            Submission.total_test_cases > 0,
+            Submission.test_cases_passed == Submission.total_test_cases
+        )
+        .group_by(Submission.assignment_id)
+        .subquery("coding_solved_subq")
+    )
+
+    # 3. MCQ questions answered correctly subquery
+    mcq_correct_subq = (
+        select(
+            MCQResponse.assignment_id.label("assignment_id"),
+            func.count(func.distinct(MCQResponse.question_id)).label("mcq_correct_count")
+        )
+        .where(MCQResponse.is_correct == True)
+        .group_by(MCQResponse.assignment_id)
+        .subquery("mcq_correct_subq")
+    )
+
+    # 4. Assigned question counts by type subquery
+    assigned_counts_subq = (
+        select(
+            AssignedQuestion.assignment_id.label("assignment_id"),
+            func.count(func.distinct(case((Question.question_type == "coding", AssignedQuestion.question_id), else_=None))).label("total_coding_questions"),
+            func.count(func.distinct(case((Question.question_type == "mcq", AssignedQuestion.question_id), else_=None))).label("total_mcq_questions"),
+        )
+        .join(Question, AssignedQuestion.question_id == Question.id)
+        .group_by(AssignedQuestion.assignment_id)
+        .subquery("assigned_counts_subq")
+    )
+
+    filters = [
+        ExamAssignment.exam_id == exam_id,
+        or_(ExamAssignment.is_active == True, ExamAssignment.is_active.is_(None))
+    ]
+
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                User.name.ilike(term),
+                User.email.ilike(term),
+                User.roll_no.ilike(term)
+            )
+        )
+
+    if college and college.strip():
+        filters.append(func.lower(User.college) == college.strip().lower())
+
+    if candidate_group and candidate_group.strip():
+        filters.append(func.lower(User.candidate_group) == candidate_group.strip().lower())
+
+    if status and status.strip():
+        filters.append(func.lower(func.cast(ExamAssignment.status, String)) == status.strip().lower())
+
+    # Total Count for Pagination
+    count_stmt = (
+        select(func.count(ExamAssignment.id))
+        .join(User, ExamAssignment.user_id == User.id)
+        .where(*filters)
+    )
+    total_count = (await db.execute(count_stmt)).scalar() or 0
+    total_pages = math.ceil(total_count / page_size) if total_count > 0 else 0
+    offset = (page - 1) * page_size
+
+    order_clauses = []
+    if sort_by == "score":
+        order_clauses.append(ExamResult.total_score.asc().nullslast() if sort_dir == "asc" else ExamResult.total_score.desc().nullslast())
+        order_clauses.append((ExamAssignment.submitted_at - ExamAssignment.started_at).asc().nullslast())
+        order_clauses.append(ExamAssignment.submitted_at.asc().nullslast())
+    elif sort_by == "name":
+        order_clauses.append(User.name.asc() if sort_dir == "asc" else User.name.desc())
+    elif sort_by == "violations":
+        violation_cnt_col = func.coalesce(violations_subq.c.total_violation_count, 0)
+        order_clauses.append(violation_cnt_col.asc() if sort_dir == "asc" else violation_cnt_col.desc())
+        order_clauses.append(ExamResult.rank.asc().nullslast())
+    else:  # default "rank"
+        order_clauses.append(ExamResult.rank.asc().nullslast() if sort_dir == "asc" else ExamResult.rank.desc().nullslast())
+        order_clauses.append((ExamAssignment.submitted_at - ExamAssignment.started_at).asc().nullslast())
+        order_clauses.append(ExamAssignment.submitted_at.asc().nullslast())
+    order_clauses.append(ExamAssignment.id.asc())
+
+    stmt = (
+        select(
+            ExamAssignment,
+            User,
+            ExamResult.total_score.label("res_total_score"),
+            ExamResult.rank.label("res_rank"),
+            func.coalesce(coding_solved_subq.c.questions_solved_count, 0).label("solved_coding"),
+            func.coalesce(mcq_correct_subq.c.mcq_correct_count, 0).label("correct_mcq"),
+            assigned_counts_subq.c.total_coding_questions.label("assigned_coding"),
+            assigned_counts_subq.c.total_mcq_questions.label("assigned_mcq"),
+            func.coalesce(violations_subq.c.total_violation_count, 0).label("v_total"),
+            func.coalesce(violations_subq.c.tab_switch_count, 0).label("v_tab"),
+            func.coalesce(violations_subq.c.fullscreen_exit_count, 0).label("v_fs"),
+            func.coalesce(violations_subq.c.blur_count, 0).label("v_blur"),
+            func.coalesce(violations_subq.c.clipboard_block_count, 0).label("v_clip"),
+            func.coalesce(violations_subq.c.devtools_attempt_count, 0).label("v_dev"),
+            func.coalesce(violations_subq.c.navigation_block_count, 0).label("v_nav"),
+        )
+        .join(User, ExamAssignment.user_id == User.id)
+        .outerjoin(ExamResult, ExamAssignment.id == ExamResult.assignment_id)
+        .outerjoin(violations_subq, ExamAssignment.id == violations_subq.c.assignment_id)
+        .outerjoin(coding_solved_subq, ExamAssignment.id == coding_solved_subq.c.assignment_id)
+        .outerjoin(mcq_correct_subq, ExamAssignment.id == mcq_correct_subq.c.assignment_id)
+        .outerjoin(assigned_counts_subq, ExamAssignment.id == assigned_counts_subq.c.assignment_id)
+        .where(*filters)
+        .order_by(*order_clauses)
+        .offset(offset)
+        .limit(page_size)
+    )
+
+    rows = (await db.execute(stmt)).all()
+
+    items: List[LeaderboardEntry] = []
+    for row in rows:
+        assign = row[0]
+        user = row[1]
+        res_score = row[2]
+        res_rank = row[3]
+        solved_coding = int(row[4] or 0)
+        correct_mcq = int(row[5] or 0)
+        assigned_coding = row[6]
+        assigned_mcq = row[7]
+        v_total = int(row[8] or 0)
+        v_tab = int(row[9] or 0)
+        v_fs = int(row[10] or 0)
+        v_blur = int(row[11] or 0)
+        v_clip = int(row[12] or 0)
+        v_dev = int(row[13] or 0)
+        v_nav = int(row[14] or 0)
+
+        total_coding = assigned_coding if (assigned_coding is not None and assigned_coding > 0) else total_coding_cfg
+        total_mcq = assigned_mcq if (assigned_mcq is not None and assigned_mcq > 0) else total_mcq_cfg
+
+        time_taken = None
+        if assign.submitted_at and assign.started_at:
+            time_taken = max(0.0, (assign.submitted_at - assign.started_at).total_seconds())
+
+        status_val = assign.status.value if hasattr(assign.status, "value") else str(assign.status)
+
+        items.append(LeaderboardEntry(
+            assignment_id=assign.id,
+            user_id=user.id,
+            name=user.name,
+            student_name=user.name,
+            email=user.email,
+            roll_no=user.roll_no,
+            college=user.college,
+            candidate_group=user.candidate_group,
+            status=status_val,
+            started_at=assign.started_at,
+            submitted_at=assign.submitted_at,
+            time_taken_seconds=time_taken,
+            total_score=float(res_score) if res_score is not None else None,
+            rank=int(res_rank) if res_rank is not None else None,
+            questions_solved_count=solved_coding,
+            total_coding_questions=total_coding,
+            mcq_correct_count=correct_mcq,
+            total_mcq_questions=total_mcq,
+            total_violation_count=v_total,
+            tab_switch_count=v_tab,
+            fullscreen_exit_count=v_fs,
+            blur_count=v_blur,
+            clipboard_block_count=v_clip,
+            devtools_attempt_count=v_dev,
+            navigation_block_count=v_nav,
+        ))
+
+    return LeaderboardResponse(
+        exam_id=exam.id,
+        exam_title=exam.title,
+        total_count=total_count,
+        total_pages=total_pages,
+        current_page=page,
+        page_size=page_size,
+        items=items,
+    )
+
+
+async def export_exam_leaderboard_excel(
+    db: AsyncSession,
+    exam_id: int,
+    sort_by: str = "rank",
+    sort_dir: str = "asc",
+    search: Optional[str] = None,
+    college: Optional[str] = None,
+    candidate_group: Optional[str] = None,
+    status: Optional[str] = None,
+) -> StreamingResponse:
+    """
+    Generates and streams a styled .xlsx report for the filtered exam leaderboard (admin only).
+    """
+    exam = await db.get(Exam, exam_id)
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    total_coding_cfg = (exam.easy_count or 0) + (exam.medium_count or 0) + (exam.hard_count or 0)
+    total_mcq_cfg = (exam.mcq_count or 0)
+
+    violations_subq = (
+        select(
+            ExamProctoringLog.assignment_id.label("assignment_id"),
+            func.count().filter(
+                func.upper(ExamProctoringLog.event_type).not_in([
+                    "EXAM_START_DEVICE", "EXAM_RESUME_DEVICE", "VERIFICATION_SNAPSHOT",
+                    "ADMIN_FRESH_RESTART_ARCHIVED", "ADMIN_FRESH_RESTART_GRANTED", "START", "RESUME"
+                ])
+            ).label("total_violation_count"),
+            func.count().filter(
+                func.upper(ExamProctoringLog.event_type) == "TAB_SWITCH"
+            ).label("tab_switch_count"),
+            func.count().filter(
+                func.upper(ExamProctoringLog.event_type) == "FULLSCREEN_EXIT"
+            ).label("fullscreen_exit_count"),
+            func.count().filter(
+                func.upper(ExamProctoringLog.event_type).in_(["WINDOW_BLUR", "BLUR"])
+            ).label("blur_count"),
+            func.count().filter(
+                func.upper(ExamProctoringLog.event_type).in_(["CLIPBOARD_BLOCK", "PASTE_ATTEMPT", "COPY_ATTEMPT", "CLIPBOARD"])
+            ).label("clipboard_block_count"),
+            func.count().filter(
+                func.upper(ExamProctoringLog.event_type).in_(["DEVTOOLS_ATTEMPT", "DEVTOOLS_SHORTCUT", "DEVTOOLS_DOCK_OPENED", "PRINT_SAVE_SHORTCUT"])
+            ).label("devtools_attempt_count"),
+            func.count().filter(
+                func.upper(ExamProctoringLog.event_type).in_(["NAVIGATION_BLOCK", "NAVIGATION_BLOCKED"])
+            ).label("navigation_block_count"),
+        )
+        .group_by(ExamProctoringLog.assignment_id)
+        .subquery("violations_subq")
+    )
+
+    coding_solved_subq = (
+        select(
+            Submission.assignment_id.label("assignment_id"),
+            func.count(func.distinct(Submission.question_id)).label("questions_solved_count")
+        )
+        .where(
+            Submission.is_final == True,
+            Submission.total_test_cases > 0,
+            Submission.test_cases_passed == Submission.total_test_cases
+        )
+        .group_by(Submission.assignment_id)
+        .subquery("coding_solved_subq")
+    )
+
+    mcq_correct_subq = (
+        select(
+            MCQResponse.assignment_id.label("assignment_id"),
+            func.count(func.distinct(MCQResponse.question_id)).label("mcq_correct_count")
+        )
+        .where(MCQResponse.is_correct == True)
+        .group_by(MCQResponse.assignment_id)
+        .subquery("mcq_correct_subq")
+    )
+
+    assigned_counts_subq = (
+        select(
+            AssignedQuestion.assignment_id.label("assignment_id"),
+            func.count(func.distinct(case((Question.question_type == "coding", AssignedQuestion.question_id), else_=None))).label("total_coding_questions"),
+            func.count(func.distinct(case((Question.question_type == "mcq", AssignedQuestion.question_id), else_=None))).label("total_mcq_questions"),
+        )
+        .join(Question, AssignedQuestion.question_id == Question.id)
+        .group_by(AssignedQuestion.assignment_id)
+        .subquery("assigned_counts_subq")
+    )
+
+    filters = [
+        ExamAssignment.exam_id == exam_id,
+        or_(ExamAssignment.is_active == True, ExamAssignment.is_active.is_(None))
+    ]
+
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                User.name.ilike(term),
+                User.email.ilike(term),
+                User.roll_no.ilike(term)
+            )
+        )
+
+    if college and college.strip():
+        filters.append(func.lower(User.college) == college.strip().lower())
+
+    if candidate_group and candidate_group.strip():
+        filters.append(func.lower(User.candidate_group) == candidate_group.strip().lower())
+
+    if status and status.strip():
+        filters.append(func.lower(func.cast(ExamAssignment.status, String)) == status.strip().lower())
+
+    order_clauses = []
+    if sort_by == "score":
+        order_clauses.append(ExamResult.total_score.asc().nullslast() if sort_dir == "asc" else ExamResult.total_score.desc().nullslast())
+        order_clauses.append((ExamAssignment.submitted_at - ExamAssignment.started_at).asc().nullslast())
+        order_clauses.append(ExamAssignment.submitted_at.asc().nullslast())
+    elif sort_by == "name":
+        order_clauses.append(User.name.asc() if sort_dir == "asc" else User.name.desc())
+    elif sort_by == "violations":
+        violation_cnt_col = func.coalesce(violations_subq.c.total_violation_count, 0)
+        order_clauses.append(violation_cnt_col.asc() if sort_dir == "asc" else violation_cnt_col.desc())
+        order_clauses.append(ExamResult.rank.asc().nullslast())
+    else:
+        order_clauses.append(ExamResult.rank.asc().nullslast() if sort_dir == "asc" else ExamResult.rank.desc().nullslast())
+        order_clauses.append((ExamAssignment.submitted_at - ExamAssignment.started_at).asc().nullslast())
+        order_clauses.append(ExamAssignment.submitted_at.asc().nullslast())
+    order_clauses.append(ExamAssignment.id.asc())
+
+    stmt = (
+        select(
+            ExamAssignment,
+            User,
+            ExamResult.total_score.label("res_total_score"),
+            ExamResult.rank.label("res_rank"),
+            func.coalesce(coding_solved_subq.c.questions_solved_count, 0).label("solved_coding"),
+            func.coalesce(mcq_correct_subq.c.mcq_correct_count, 0).label("correct_mcq"),
+            assigned_counts_subq.c.total_coding_questions.label("assigned_coding"),
+            assigned_counts_subq.c.total_mcq_questions.label("assigned_mcq"),
+            func.coalesce(violations_subq.c.total_violation_count, 0).label("v_total"),
+            func.coalesce(violations_subq.c.tab_switch_count, 0).label("v_tab"),
+            func.coalesce(violations_subq.c.fullscreen_exit_count, 0).label("v_fs"),
+            func.coalesce(violations_subq.c.blur_count, 0).label("v_blur"),
+            func.coalesce(violations_subq.c.clipboard_block_count, 0).label("v_clip"),
+            func.coalesce(violations_subq.c.devtools_attempt_count, 0).label("v_dev"),
+            func.coalesce(violations_subq.c.navigation_block_count, 0).label("v_nav"),
+        )
+        .join(User, ExamAssignment.user_id == User.id)
+        .outerjoin(ExamResult, ExamAssignment.id == ExamResult.assignment_id)
+        .outerjoin(violations_subq, ExamAssignment.id == violations_subq.c.assignment_id)
+        .outerjoin(coding_solved_subq, ExamAssignment.id == coding_solved_subq.c.assignment_id)
+        .outerjoin(mcq_correct_subq, ExamAssignment.id == mcq_correct_subq.c.assignment_id)
+        .outerjoin(assigned_counts_subq, ExamAssignment.id == assigned_counts_subq.c.assignment_id)
+        .where(*filters)
+        .order_by(*order_clauses)
+    )
+
+    rows = (await db.execute(stmt)).all()
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Leaderboard Results"
+
+    headers = [
+        "Rank",
+        "Name",
+        "Email",
+        "Roll No",
+        "College",
+        "Group",
+        "Status",
+        "Total Score",
+        "Coding Solved",
+        "MCQ Correct",
+        "Time Taken",
+        "Started At",
+        "Submitted At",
+        "Total Violations",
+        "Tab Switches",
+        "Fullscreen Exits",
+        "Window Blurs",
+        "Clipboard Blocks",
+        "DevTools Attempts",
+        "Navigation Blocks"
+    ]
+
+    header_fill = PatternFill(start_color="191B82", end_color="191B82", fill_type="solid")
+    header_font = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+    thin_border = Border(
+        left=Side(style="thin", color="E2E8F0"),
+        right=Side(style="thin", color="E2E8F0"),
+        top=Side(style="thin", color="E2E8F0"),
+        bottom=Side(style="thin", color="E2E8F0")
+    )
+    center_align = Alignment(horizontal="center", vertical="center")
+    left_align = Alignment(horizontal="left", vertical="center")
+
+    ws.append(headers)
+    for col_idx in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = center_align
+        cell.border = thin_border
+    ws.row_dimensions[1].height = 28
+
+    row_font = Font(name="Segoe UI", size=10)
+
+    for row_idx, row in enumerate(rows, start=2):
+        assign = row[0]
+        user = row[1]
+        res_score = row[2]
+        res_rank = row[3]
+        solved_coding = int(row[4] or 0)
+        correct_mcq = int(row[5] or 0)
+        assigned_coding = row[6]
+        assigned_mcq = row[7]
+        v_total = int(row[8] or 0)
+        v_tab = int(row[9] or 0)
+        v_fs = int(row[10] or 0)
+        v_blur = int(row[11] or 0)
+        v_clip = int(row[12] or 0)
+        v_dev = int(row[13] or 0)
+        v_nav = int(row[14] or 0)
+
+        total_coding = assigned_coding if (assigned_coding is not None and assigned_coding > 0) else total_coding_cfg
+        total_mcq = assigned_mcq if (assigned_mcq is not None and assigned_mcq > 0) else total_mcq_cfg
+
+        time_taken_str = "-"
+        if assign.submitted_at and assign.started_at:
+            secs = max(0, int((assign.submitted_at - assign.started_at).total_seconds()))
+            m, s = divmod(secs, 60)
+            h, m = divmod(m, 60)
+            time_taken_str = f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
+
+        started_str = assign.started_at.strftime("%Y-%m-%d %H:%M:%S") if assign.started_at else "-"
+        submitted_str = assign.submitted_at.strftime("%Y-%m-%d %H:%M:%S") if assign.submitted_at else "-"
+        status_str = assign.status.value if hasattr(assign.status, "value") else str(assign.status)
+
+        row_vals = [
+            res_rank if res_rank is not None else "-",
+            user.name,
+            user.email,
+            user.roll_no or "-",
+            user.college or "-",
+            user.candidate_group or "-",
+            status_str.upper(),
+            round(float(res_score), 2) if res_score is not None else "-",
+            f"{solved_coding}/{total_coding}",
+            f"{correct_mcq}/{total_mcq}",
+            time_taken_str,
+            started_str,
+            submitted_str,
+            v_total,
+            v_tab,
+            v_fs,
+            v_blur,
+            v_clip,
+            v_dev,
+            v_nav
+        ]
+
+        ws.append(row_vals)
+        ws.row_dimensions[row_idx].height = 20
+
+        for col_idx in range(1, len(row_vals) + 1):
+            c = ws.cell(row=row_idx, column=col_idx)
+            c.font = row_font
+            c.border = thin_border
+            if col_idx in [1, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]:
+                c.alignment = center_align
+            else:
+                c.alignment = left_align
+
+    # Freeze the header row
+    ws.freeze_panes = "A2"
+
+    # Enable autofilter across data range
+    ws.auto_filter.ref = ws.dimensions
+
+    # Auto-size columns reasonably
+    for col in ws.columns:
+        col_letter = get_column_letter(col[0].column)
+        max_len = 0
+        for cell in col:
+            val_str = str(cell.value or "")
+            if len(val_str) > max_len:
+                max_len = len(val_str)
+        ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    clean_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', exam.title.strip())[:40] or "exam"
+    date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    filename = f"{clean_title}_results_{date_str}.xlsx"
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )
+
+
 async def get_exam_leaderboard(db: AsyncSession, exam_id: int) -> List[LeaderboardEntry]:
     """
     Returns leaderboard for an exam, ordered by rank ascending (admin only).
+    Maintained for backward compatibility.
     """
-    stmt = (
-        select(ExamResult, ExamAssignment, User)
-        .join(ExamAssignment, ExamResult.assignment_id == ExamAssignment.id)
-        .join(User, ExamAssignment.user_id == User.id)
-        .where(ExamAssignment.exam_id == exam_id)
-        .order_by(ExamResult.rank.asc().nullslast())
-    )
-    rows = (await db.execute(stmt)).all()
-
-    leaderboard = []
-    for res_obj, assign, user in rows:
-        leaderboard.append(LeaderboardEntry(
-            rank=res_obj.rank or 9999,
-            student_name=user.name,
-            roll_no=user.roll_no,
-            total_score=res_obj.total_score,
-            submitted_at=assign.submitted_at
-        ))
-    return leaderboard
+    res = await get_exam_leaderboard_paginated(db=db, exam_id=exam_id, page=1, page_size=1000)
+    return res.items
 
 
 async def get_live_exam_monitoring(

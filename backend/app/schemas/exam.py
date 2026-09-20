@@ -128,12 +128,41 @@ class MyQuestionsResponse(BaseModel):
 
 
 class LeaderboardEntry(BaseModel):
-    rank: int
-    student_name: str
+    assignment_id: int
+    user_id: int
+    name: str
+    student_name: str  # Kept for backward compatibility
+    email: str
     roll_no: Optional[str] = None
-    total_score: float
+    college: Optional[str] = None
+    candidate_group: Optional[str] = None
     status: str
+    started_at: Optional[datetime] = None
     submitted_at: Optional[datetime] = None
+    time_taken_seconds: Optional[float] = None
+    total_score: Optional[float] = None
+    rank: Optional[int] = None
+    questions_solved_count: int = 0
+    total_coding_questions: int = 0
+    mcq_correct_count: int = 0
+    total_mcq_questions: int = 0
+    total_violation_count: int = 0
+    tab_switch_count: int = 0
+    fullscreen_exit_count: int = 0
+    blur_count: int = 0
+    clipboard_block_count: int = 0
+    devtools_attempt_count: int = 0
+    navigation_block_count: int = 0
+
+
+class LeaderboardResponse(BaseModel):
+    exam_id: int
+    exam_title: str
+    total_count: int
+    total_pages: int
+    current_page: int
+    page_size: int
+    items: List[LeaderboardEntry]
 
 
 class QuestionScoreBreakdown(BaseModel):

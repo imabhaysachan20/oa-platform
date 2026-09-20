@@ -252,12 +252,41 @@ export interface SubmitCodeResponse {
 }
 
 export interface LeaderboardEntry {
-  rank: number;
+  assignment_id: number;
+  user_id: number;
+  name: string;
   student_name: string;
+  email: string;
   roll_no?: string;
-  total_score: number;
+  college?: string;
+  candidate_group?: string;
   status: string;
+  started_at?: string;
   submitted_at?: string;
+  time_taken_seconds?: number | null;
+  total_score?: number | null;
+  rank?: number | null;
+  questions_solved_count: number;
+  total_coding_questions: number;
+  mcq_correct_count: number;
+  total_mcq_questions: number;
+  total_violation_count: number;
+  tab_switch_count: number;
+  fullscreen_exit_count: number;
+  blur_count: number;
+  clipboard_block_count: number;
+  devtools_attempt_count: number;
+  navigation_block_count: number;
+}
+
+export interface LeaderboardResponse {
+  exam_id: number;
+  exam_title: string;
+  total_count: number;
+  total_pages: number;
+  current_page: number;
+  page_size: number;
+  items: LeaderboardEntry[];
 }
 
 export interface QuestionScoreBreakdown {

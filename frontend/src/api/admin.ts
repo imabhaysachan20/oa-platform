@@ -199,5 +199,49 @@ export const adminApi = {
     const res = await api.post('/admin/playground/run', payload);
     return res.data;
   },
+
+  // Leaderboard & Results
+  getExamLeaderboard: async (
+    examId: number,
+    params?: {
+      page?: number;
+      page_size?: number;
+      sort_by?: 'rank' | 'score' | 'name' | 'violations';
+      sort_dir?: 'asc' | 'desc';
+      search?: string;
+      college?: string;
+      candidate_group?: string;
+      status?: string;
+    }
+  ): Promise<LeaderboardResponse> => {
+    const res = await api.get<LeaderboardResponse>(`/admin/exams/${examId}/leaderboard`, { params });
+    return res.data;
+  },
+
+  exportExamLeaderboard: async (
+    examId: number,
+    params?: {
+      sort_by?: 'rank' | 'score' | 'name' | 'violations';
+      sort_dir?: 'asc' | 'desc';
+      search?: string;
+      college?: string;
+      candidate_group?: string;
+      status?: string;
+    }
+  ): Promise<{ data: Blob; filename: string }> => {
+    const res = await api.get(`/admin/exams/${examId}/leaderboard/export`, {
+      params,
+      responseType: 'blob',
+    });
+    let filename = `exam_${examId}_results.xlsx`;
+    const disposition = res.headers['content-disposition'];
+    if (disposition && disposition.includes('filename=')) {
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      if (match && match[1]) {
+        filename = match[1];
+      }
+    }
+    return { data: res.data, filename };
+  },
 };
 

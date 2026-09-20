@@ -7,6 +7,7 @@ import time
 from typing import Optional, Dict, Any, List
 import httpx
 from backend.app.core.config import settings
+from backend.app.services.output_comparator import compare_outputs
 
 logger = logging.getLogger("judge0")
 
@@ -108,9 +109,7 @@ def _execute_python_fallback(
         status_id = 3
         status_desc = "Accepted"
         if expected_output is not None:
-            norm_act = stdout.strip().replace("\r\n", "\n")
-            norm_exp = expected_output.strip().replace("\r\n", "\n")
-            if norm_act != norm_exp:
+            if not compare_outputs(stdout, expected_output):
                 status_id = 4
                 status_desc = "Wrong Answer"
 
@@ -240,13 +239,17 @@ class Judge0Client:
             "language_id": language_id,
             "stdin": _b64_encode(stdin) if stdin is not None else None,
             "cpu_time_limit": cpu_time_limit,
+            "wall_time_limit": max(cpu_time_limit * 3.0, 10.0),
             "memory_limit": memory_limit_kb,
         }
+        if language_id == 62:  # Java (OpenJDK 13)
+            # Enforce low-overhead SerialGC and small initial heap during javac compilation
+            payload["compiler_options"] = "-J-XX:-UseCompressedClassPointers -J-XX:+UseSerialGC -J-Xmx128m"
         if expected_output is not None:
             payload["expected_output"] = _b64_encode(expected_output)
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=25.0) as client:
                 response = await client.post(url, json=payload, headers=self.headers)
                 response.raise_for_status()
                 data = response.json()
@@ -336,3 +339,26 @@ class Judge0Client:
 
 
 judge0_client = Judge0Client()
+
+
+async def ensure_judge0_language_config():
+    """
+    Ensures Judge0 languages table has low-overhead VM runtime flags for Java OpenJDK 13,
+    preventing G1GC concurrent mark stack and 2.5GB heap allocation failures in isolate sandbox.
+    """
+    try:
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy import text
+        engine = create_async_engine("postgresql+asyncpg://judge0:judge0password@judge0-db:5432/judge0")
+        async with engine.begin() as conn:
+            await conn.execute(text("""
+                UPDATE languages 
+                SET compile_cmd = '/usr/local/openjdk13/bin/javac -J-XX:-UseCompressedClassPointers -J-XX:+UseSerialGC -J-Xmx128m %s Main.java',
+                    run_cmd = '/usr/local/openjdk13/bin/java -XX:-UseCompressedClassPointers -XX:+UseSerialGC -Xmx128m Main'
+                WHERE id = 62;
+            """))
+        await engine.dispose()
+        logger.info("Successfully verified/updated Judge0 Java runtime configuration in judge0-db.")
+    except Exception as exc:
+        logger.warning(f"Could not connect to judge0-db to ensure language config: {exc}")
+

@@ -6,6 +6,9 @@ const backendUrl = process.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000';
 
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    include: ['@mediapipe/tasks-vision'],
+  },
   server: {
     port: 5173,
     host: true,

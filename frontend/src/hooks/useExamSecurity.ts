@@ -282,6 +282,13 @@ export function useExamSecurity({
     setActiveWarning(null);
   }, []);
 
+  const resumeFromWarning = useCallback(async () => {
+    setActiveWarning(null);
+    if (!document.fullscreenElement && requireFullscreenRef.current) {
+      await enterFullscreen();
+    }
+  }, [enterFullscreen]);
+
   useEffect(() => {
     if (!enabled) return;
 
@@ -472,6 +479,7 @@ export function useExamSecurity({
     enterFullscreen,
     logInfraction,
     dismissActiveWarning,
+    resumeFromWarning,
     flushLogs,
   };
 }

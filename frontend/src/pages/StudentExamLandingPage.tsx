@@ -16,7 +16,7 @@ export const StudentExamLandingPage: React.FC = () => {
   const { user } = useAuthStore();
   const candidateName = user?.name || (user as any)?.full_name || 'Candidate';
 
-  const [activeTab, setActiveTab] = React.useState<'all' | 'active' | 'upcoming' | 'completed' | 'closed'>('active');
+  const [activeTab, setActiveTab] = React.useState<'all' | 'active' | 'upcoming' | 'completed' | 'closed'>('all');
 
   const { data: exams, isLoading, error } = useQuery({
     queryKey: ['availableExams'],
@@ -102,33 +102,45 @@ export const StudentExamLandingPage: React.FC = () => {
     }).length;
   }, [exams]);
 
-  // Filtered exams based on tab
+  // Filtered exams based on tab and sorted by status priority for "all" tab
   const filteredExams = React.useMemo(() => {
     if (!exams) return [];
     const now = new Date().getTime();
-    return exams.filter((exam) => {
+
+    const getExamCategory = (exam: any): 'active' | 'upcoming' | 'completed' | 'closed' => {
       const isCompleted = exam.is_completed || exam.assignment_status === 'submitted' || exam.assignment_status === 'auto_submitted';
       const isInProgress = !isCompleted && exam.assignment_status === 'in_progress';
       const isUpcoming = !isCompleted && (exam.is_upcoming || (exam.start_time && now < new Date(exam.start_time).getTime()));
       const isExpired = !isCompleted && !isInProgress && (exam.is_expired || (exam.end_time && now > new Date(exam.end_time).getTime()));
 
-      if (activeTab === 'all') {
-        return true;
-      }
-      if (activeTab === 'active') {
-        return !isCompleted && !isExpired && !isUpcoming;
-      }
-      if (activeTab === 'upcoming') {
-        return !isCompleted && isUpcoming;
-      }
-      if (activeTab === 'completed') {
-        return isCompleted;
-      }
-      if (activeTab === 'closed') {
-        return isExpired;
-      }
-      return true;
+      if (isCompleted) return 'completed';
+      if (isExpired) return 'closed';
+      if (isUpcoming) return 'upcoming';
+      return 'active';
+    };
+
+    const categoryOrder: Record<string, number> = {
+      active: 1,
+      upcoming: 2,
+      completed: 3,
+      closed: 4,
+    };
+
+    const filtered = exams.filter((exam) => {
+      const cat = getExamCategory(exam);
+      if (activeTab === 'all') return true;
+      return cat === activeTab;
     });
+
+    if (activeTab === 'all') {
+      return [...filtered].sort((a, b) => {
+        const orderA = categoryOrder[getExamCategory(a)] || 99;
+        const orderB = categoryOrder[getExamCategory(b)] || 99;
+        return orderA - orderB;
+      });
+    }
+
+    return filtered;
   }, [exams, activeTab]);
 
   return (

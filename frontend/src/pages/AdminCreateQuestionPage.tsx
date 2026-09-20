@@ -527,7 +527,7 @@ export const AdminCreateQuestionPage: React.FC = () => {
             </label>
             <InfoTooltip
               title="Question Type"
-              content="Choose between a Coding Problem (automated code evaluation against test cases via Judge0) or Multiple Choice Question (MCQ with selectable options, instant grading, and optional timer)."
+              content="Choose between a Coding Problem (automated code evaluation against test cases) or Multiple Choice Question (MCQ with selectable options, instant grading, and optional timer)."
               example="Select Coding for algorithms/data structures, or MCQ for conceptual questions."
               align="left"
             />
@@ -549,7 +549,7 @@ export const AdminCreateQuestionPage: React.FC = () => {
                   Coding Problem
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Algorithm code submission evaluated against test cases via Judge0.
+                  Algorithm code submission evaluated against test cases.
                 </div>
               </div>
             </button>

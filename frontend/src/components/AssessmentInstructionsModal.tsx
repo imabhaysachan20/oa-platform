@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, HelpCircle, Terminal, ShieldAlert, Cpu, CheckCircle2 } from 'lucide-react';
+import { X, HelpCircle, Terminal, ShieldAlert, Cpu, CheckCircle2, Check } from 'lucide-react';
 
 export interface AssessmentInstructionsModalProps {
   isOpen: boolean;
@@ -55,7 +55,7 @@ export const AssessmentInstructionsModal: React.FC<AssessmentInstructionsModalPr
   const questionsList = exam.questions || [];
   const codingQuestions = questionsList.filter((q: any) => (q.question_type || 'coding') === 'coding');
   const mcqQuestions = questionsList.filter((q: any) => q.question_type === 'mcq');
-  
+
   const patternEasy = exam.easy_count ?? 1;
   const patternMed = exam.medium_count ?? 2;
   const patternHard = exam.hard_count ?? 0;
@@ -265,7 +265,7 @@ export const AssessmentInstructionsModal: React.FC<AssessmentInstructionsModalPr
                     Assessment Structure & Format:
                   </span>{' '}
                   This assessment consists of <strong>{totalCount} total question{totalCount > 1 ? 's' : ''}</strong> with an allocated duration of <strong>{duration} minutes</strong>.
-                  
+
                   {/* Dynamic Question Details (Flat Minimalist Text - No Box Containers) */}
                   <div className="mt-2 space-y-1 text-xs sm:text-sm text-slate-600 dark:text-slate-400">
                     {codingCount > 0 && (
@@ -288,7 +288,7 @@ export const AssessmentInstructionsModal: React.FC<AssessmentInstructionsModalPr
                 </li>
                 <li>
                   <span className="font-semibold text-slate-900 dark:text-white">
-                    Server-Driven Timer:
+                    Assessment Timer:
                   </span>{' '}
                   The countdown timer starts as soon as you click Continue. Closing or refreshing the page will not pause the clock. Your solution will auto-submit when the timer reaches 00:00:00.
                 </li>
@@ -323,11 +323,11 @@ export const AssessmentInstructionsModal: React.FC<AssessmentInstructionsModalPr
 
             {/* Action Buttons Row */}
             <div className="flex items-center gap-3">
-              {/* Primary Green Continue Button */}
+              {/* Primary Continue Button */}
               <button
                 onClick={handleProceed}
                 disabled={!agreedToTerms || isStarting}
-                className="px-7 py-2.5 bg-[#007a3d] hover:bg-[#006331] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-sm rounded shadow-sm transition-all flex items-center gap-2 cursor-pointer"
+                className="px-7 py-2.5 bg-ubi-800 hover:bg-ubi-900 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-sm rounded-xl shadow-md shadow-ubi-900/20 transition-all flex items-center gap-2 cursor-pointer"
               >
                 {isStarting ? (
                   <>
@@ -342,7 +342,7 @@ export const AssessmentInstructionsModal: React.FC<AssessmentInstructionsModalPr
               {/* Secondary Outline Button */}
               <button
                 onClick={() => setActiveTab(activeTab === 'instructions' ? 'questions' : 'instructions')}
-                className="px-6 py-2.5 bg-white dark:bg-slate-900 border border-[#007a3d] text-[#007a3d] dark:text-emerald-400 font-semibold text-sm rounded hover:bg-emerald-50/60 dark:hover:bg-slate-800 transition-all font-mono tracking-wide cursor-pointer"
+                className="px-6 py-2.5 bg-white dark:bg-slate-900 border border-ubi-700 text-ubi-800 dark:border-ubi-400 dark:text-ubi-400 font-semibold text-sm rounded-xl hover:bg-ubi-50/60 dark:hover:bg-slate-800 transition-all font-mono tracking-wide cursor-pointer"
               >
                 {activeTab === 'instructions' ? 'Try Sample Test' : 'View Instructions'}
               </button>

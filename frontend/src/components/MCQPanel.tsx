@@ -20,6 +20,8 @@ interface MCQPanelProps {
   hasMoreTimedMCQs?: boolean;
   onAdvanceTimedQuestion?: () => void;
   isAdvancing?: boolean;
+  onNextQuestion?: () => void;
+  hasNextQuestion?: boolean;
 }
 
 export const MCQPanel: React.FC<MCQPanelProps> = ({
@@ -37,6 +39,8 @@ export const MCQPanel: React.FC<MCQPanelProps> = ({
   hasMoreTimedMCQs,
   onAdvanceTimedQuestion,
   isAdvancing,
+  onNextQuestion,
+  hasNextQuestion,
 }) => {
   const isMultiSelect = !!question.is_multi_select;
   const options = question.mcq_options || [];
@@ -73,7 +77,7 @@ export const MCQPanel: React.FC<MCQPanelProps> = ({
       )}
 
       {/* Top Banner: Single Clean Options Header & Status */}
-      <div className="px-5 py-3 bg-slate-50 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
+      <div className="h-12 px-5 bg-slate-50 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
           <span>Select Your Answer</span>
           {selectedOptionIds.length > 0 && (
@@ -84,45 +88,21 @@ export const MCQPanel: React.FC<MCQPanelProps> = ({
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Question-level countdown timer badge */}
+          {/* Question-level countdown timer badge matching workspace header timer */}
           {timer.hasTimer && (
             <div
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition shadow-2xs ${
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-mono font-bold text-xs shadow-xs transition-colors ${
                 timer.hasExpired
-                  ? 'bg-slate-200 text-slate-500 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-                  : timer.isExpiringSoon
-                  ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/80 dark:text-rose-300 dark:border-rose-800 animate-pulse'
-                  : 'bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700'
+                  ? 'text-slate-500 bg-slate-200 border-slate-300 dark:text-slate-400 dark:bg-slate-800 dark:border-slate-700'
+                  : 'text-slate-800 bg-slate-100 border-slate-200 dark:text-slate-100 dark:bg-slate-800 dark:border-slate-700'
               }`}
             >
-              <Clock size={13} className={timer.isExpiringSoon ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'} />
-              <span>{timer.hasExpired ? 'Time Expired' : `${timer.formattedTime} left`}</span>
+              <Clock size={14} className="text-slate-500 dark:text-slate-400" />
+              <span>{timer.hasExpired ? 'Time Expired' : timer.formattedTime}</span>
             </div>
           )}
         </div>
       </div>
-
-      {/* Sequential Timed Section Notice Banner */}
-      {isTimedMCQ && !isLocked && (
-        <div className="bg-purple-50/90 dark:bg-purple-950/50 border-b border-purple-200 dark:border-purple-800 px-6 py-2.5 flex items-center justify-between gap-3 text-xs shrink-0">
-          <div className="flex items-center gap-2 text-purple-900 dark:text-purple-200 font-medium">
-            <Clock size={14} className="text-purple-700 dark:text-purple-400 shrink-0" />
-            <span>
-              <strong>Sequential Timed Mode:</strong> Complete questions in order. Advancing or timer expiry locks this question permanently.
-            </span>
-          </div>
-          {onAdvanceTimedQuestion && (
-            <button
-              type="button"
-              onClick={onAdvanceTimedQuestion}
-              disabled={isAdvancing}
-              className="px-3.5 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs transition-colors shrink-0 shadow-sm flex items-center gap-1 cursor-pointer disabled:opacity-50"
-            >
-              <span>{hasMoreTimedMCQs ? 'Next Question →' : 'Complete Timed Section →'}</span>
-            </button>
-          )}
-        </div>
-      )}
 
       {/* Lock Notice if locked or expired */}
       {isLocked && (
@@ -134,7 +114,6 @@ export const MCQPanel: React.FC<MCQPanelProps> = ({
 
       {/* Options Selection Area */}
       <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-3">
-
         <div className="space-y-2.5">
           {options.map((option, index) => {
             const isSelected = selectedOptionIds.includes(option.id);
@@ -144,43 +123,47 @@ export const MCQPanel: React.FC<MCQPanelProps> = ({
               <div
                 key={option.id}
                 onClick={() => handleToggleOption(option.id)}
-                className={`flex items-start gap-3.5 p-4 rounded-xl border transition-all select-none ${
+                className={`flex items-start gap-3.5 p-3.5 sm:p-4 rounded-xl border transition-all duration-150 select-none ${
                   isLocked
                     ? 'opacity-70 cursor-not-allowed bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-slate-800'
                     : isSelected
-                    ? 'cursor-pointer bg-ubi-50/70 dark:bg-ubi-950/40 border-ubi-600 dark:border-ubi-500 shadow-sm ring-1 ring-ubi-600 dark:ring-ubi-500'
-                    : 'cursor-pointer bg-white dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900'
+                    ? 'cursor-pointer bg-ubi-50/40 dark:bg-ubi-950/20 border-ubi-500/80 dark:border-ubi-500/70 shadow-2xs'
+                    : 'cursor-pointer bg-white dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50/80 dark:hover:bg-slate-900'
                 }`}
               >
-                {/* Indicator Icon / Letter */}
+                {/* Selection Control (Checkbox/Radio) FIRST, then Option Letter Badge SECOND */}
                 <div className="flex items-center gap-2.5 mt-0.5 shrink-0">
+                  {isMultiSelect ? (
+                    isSelected ? (
+                      <CheckSquare size={18} className="text-ubi-700 dark:text-ubi-400" />
+                    ) : (
+                      <Square size={18} className="text-slate-400 dark:text-slate-600" />
+                    )
+                  ) : isSelected ? (
+                    <div className="w-4 h-4 rounded-full border-2 border-ubi-700 dark:border-ubi-400 flex items-center justify-center">
+                      <div className="w-2 h-2 rounded-full bg-ubi-700 dark:bg-ubi-400" />
+                    </div>
+                  ) : (
+                    <div className="w-4 h-4 rounded-full border-2 border-slate-300 dark:border-slate-600" />
+                  )}
+
                   <span
-                    className={`w-6 h-6 rounded-md text-xs font-extrabold flex items-center justify-center transition ${
+                    className={`w-6 h-6 rounded-md text-xs font-bold flex items-center justify-center transition-colors ${
                       isSelected
-                        ? 'bg-ubi-800 text-white dark:bg-ubi-600'
+                        ? 'bg-ubi-100 text-ubi-800 dark:bg-ubi-900/60 dark:text-ubi-300'
                         : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                     }`}
                   >
                     {optionLetter}
                   </span>
-
-                  {isMultiSelect ? (
-                    isSelected ? (
-                      <CheckSquare size={18} className="text-ubi-800 dark:text-ubi-400" />
-                    ) : (
-                      <Square size={18} className="text-slate-400 dark:text-slate-600" />
-                    )
-                  ) : isSelected ? (
-                    <div className="w-4 h-4 rounded-full border-2 border-ubi-800 dark:border-ubi-400 flex items-center justify-center">
-                      <div className="w-2 h-2 rounded-full bg-ubi-800 dark:bg-ubi-400" />
-                    </div>
-                  ) : (
-                    <div className="w-4 h-4 rounded-full border-2 border-slate-300 dark:border-slate-600" />
-                  )}
                 </div>
 
                 {/* Option Text */}
-                <div className="flex-1 text-sm font-medium text-slate-800 dark:text-slate-200 pt-0.5 leading-relaxed">
+                <div className={`flex-1 text-sm pt-0.5 leading-relaxed transition-colors ${
+                  isSelected
+                    ? 'font-semibold text-slate-900 dark:text-white'
+                    : 'font-medium text-slate-700 dark:text-slate-300'
+                }`}>
                   <MarkdownRenderer content={option.option_text} />
                 </div>
               </div>
@@ -189,7 +172,7 @@ export const MCQPanel: React.FC<MCQPanelProps> = ({
         </div>
       </div>
 
-      {/* Bottom Bar: Autosave state & Help hint */}
+      {/* Bottom Bar: Autosave state & Help hint & Single Footer Next Question Button */}
       <div className="px-5 py-3 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs shrink-0">
         <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
           <HelpCircle size={14} />
@@ -219,15 +202,29 @@ export const MCQPanel: React.FC<MCQPanelProps> = ({
             </span>
           )}
 
-          {isTimedMCQ && !isLocked && onAdvanceTimedQuestion && (
-            <button
-              type="button"
-              onClick={onAdvanceTimedQuestion}
-              disabled={isAdvancing}
-              className="px-4 py-2 rounded-lg font-bold text-xs bg-ubi-800 hover:bg-ubi-900 text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 ml-2"
-            >
-              <span>{hasMoreTimedMCQs ? 'Next Question →' : 'Complete Timed Section & Proceed →'}</span>
-            </button>
+          {/* Single Footer Next Question Button (Supported for both Timed and Non-Timed MCQs) */}
+          {isTimedMCQ && !isLocked ? (
+            onAdvanceTimedQuestion && (
+              <button
+                type="button"
+                onClick={onAdvanceTimedQuestion}
+                disabled={isAdvancing}
+                className="px-4 py-2 rounded-lg font-bold text-xs bg-ubi-800 hover:bg-ubi-900 text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 ml-2"
+              >
+                <span>{hasMoreTimedMCQs ? 'Next Question →' : 'Complete Timed Section & Proceed →'}</span>
+              </button>
+            )
+          ) : (
+            hasNextQuestion && onNextQuestion && (
+              <button
+                type="button"
+                onClick={onNextQuestion}
+                disabled={isSaving}
+                className="px-4 py-2 rounded-lg font-bold text-xs bg-ubi-800 hover:bg-ubi-900 text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 ml-2"
+              >
+                <span>Next Question →</span>
+              </button>
+            )
           )}
         </div>
       </div>

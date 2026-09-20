@@ -30,6 +30,7 @@ import redis.asyncio as aioredis
 from backend.app.models.proctoring import ExamProctoringLog
 from backend.app.models.network_incident import ExamNetworkIncident
 from backend.app.schemas.question import StudentQuestionView, StudentMCQOptionView
+from backend.app.services.scoring_service import calculate_difficulty_weight
 
 from backend.app.schemas.exam import (
     ExamStartResponse,
@@ -1184,6 +1185,7 @@ async def _get_assigned_question_views(db: AsyncSession, assignment_id: int) -> 
                 .limit(1)
             )
             latest_sub = (await db.execute(stmt_sub)).scalar_one_or_none()
+            coding_weight = calculate_difficulty_weight(exam, assigned_q.difficulty or q.difficulty) if exam else 10.0
 
             views.append(StudentQuestionView(
                 id=q.id,
@@ -1202,7 +1204,7 @@ async def _get_assigned_question_views(db: AsyncSession, assignment_id: int) -> 
                 function_signature=get_question_signature(q.title, question=q),
                 status=latest_sub.status if latest_sub else "unattempted",
                 question_type="coding",
-                marks=None,
+                marks=coding_weight,
                 mcq_time_limit_seconds=None,
                 is_multi_select=False,
                 question_started_at=assigned_q.question_started_at,

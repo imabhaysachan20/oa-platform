@@ -131,6 +131,16 @@ export interface StudentQuestionView {
   is_mcq_locked?: boolean;
 }
 
+export const getQuestionMarks = (q?: StudentQuestionView | null): number => {
+  if (!q) return 10;
+  if (q.marks != null && q.marks > 0) return q.marks;
+  const diff = (q.difficulty || '').toString().toLowerCase();
+  if (diff === 'easy') return 10;
+  if (diff === 'medium') return 20;
+  if (diff === 'hard') return 30;
+  return 10;
+};
+
 export interface SubmitMCQResponsePayload {
   assignment_id: number;
   question_id: number;
@@ -163,6 +173,7 @@ export interface Exam {
   hard_count?: number;
   is_published: boolean;
   late_entry_window_minutes?: number;
+  target_colleges?: string[];
   target_groups?: string[];
   pool_count?: number;
   created_at?: string;
@@ -174,6 +185,12 @@ export interface Exam {
   entry_deadline?: string;
   attempt_number?: number;
   server_time?: string;
+}
+
+export interface StudentGroupsResponse {
+  groups: string[];
+  colleges: string[];
+  college_groups?: Record<string, string[]>;
 }
 
 export interface ExamStartResponse {

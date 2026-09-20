@@ -35,6 +35,7 @@ class Exam(Base, TimestampMixin):
     hard_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_published: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     late_entry_window_minutes: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+    target_colleges: Mapped[Optional[list[str]]] = mapped_column(JSON, default=list, nullable=True)
     target_groups: Mapped[Optional[list[str]]] = mapped_column(JSON, default=list, nullable=True)
 
     # Relationships

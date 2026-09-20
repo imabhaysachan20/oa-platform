@@ -483,7 +483,7 @@ export const AdminPlaygroundModal: React.FC<AdminPlaygroundModalProps> = ({
             input: formData.sampleInput || '',
             expected_output: formData.sampleOutput || '',
             actual_output: '',
-            stderr: err.response?.data?.detail || 'Failed to execute code in Judge0 sandbox.',
+            stderr: err.response?.data?.detail || 'Failed to execute code sandbox.',
             passed: false,
             status: 'Runtime Error',
           },

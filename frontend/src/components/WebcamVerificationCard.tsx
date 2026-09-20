@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   AlertCircle,
   RefreshCw,
-  Sparkles,
   ShieldCheck,
 } from 'lucide-react';
 import {
@@ -246,65 +245,70 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
 
   return (
     <div
-      className={`p-4 rounded-xl border transition-all ${
+      className={`p-3.5 sm:p-4 rounded-xl border transition-all ${
         capturedPhoto
-          ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-700'
+          ? 'bg-ubi-50/60 dark:bg-ubi-950/30 border-ubi-200 dark:border-ubi-800/80 border-l-4 border-l-ubi-700'
           : camStatus === 'denied'
-          ? 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800'
+          ? 'bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/60 border-l-4 border-l-rose-600'
           : camStatus === 'error'
-          ? 'bg-amber-50/70 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800'
-          : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800'
+          ? 'bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/60 border-l-4 border-l-amber-600'
+          : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 border-l-4 border-l-ubi-700 dark:border-l-ubi-500'
       }`}
     >
       {/* Header Info */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
-        <div className="flex items-start gap-3">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          {/* Icon Badge */}
           <div
-            className={`p-2 rounded-lg shrink-0 mt-0.5 ${
+            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-2xs transition-colors ${
               capturedPhoto
-                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300'
+                ? 'bg-ubi-100 text-ubi-800 dark:bg-ubi-900/60 dark:text-ubi-300'
                 : camStatus === 'denied'
-                ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300'
-                : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300'
+                ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300'
+                : 'bg-ubi-100 text-ubi-800 dark:bg-ubi-900/60 dark:text-ubi-300'
             }`}
           >
             {capturedPhoto ? (
-              <CheckCircle2 size={20} />
+              <CheckCircle2 size={15} className="text-ubi-800 dark:text-ubi-400" />
             ) : camStatus === 'denied' ? (
-              <CameraOff size={20} />
+              <CameraOff size={15} className="text-rose-600 dark:text-rose-400" />
             ) : (
-              <Camera size={20} />
+              <Camera size={15} className="text-ubi-700 dark:text-ubi-400" />
             )}
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+
+          <div className="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-center sm:gap-2">
+            <div className="flex items-center gap-2 shrink-0">
+              <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
                 Facial Identity & Webcam Verification
               </h4>
               <span
-                className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider border shadow-2xs ${
                   capturedPhoto
-                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300'
+                    ? 'bg-ubi-100/90 text-ubi-900 border-ubi-300 dark:bg-ubi-950/80 dark:text-ubi-300 dark:border-ubi-800'
                     : camStatus === 'granted'
-                    ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-300'
+                    ? 'bg-sky-100/90 text-sky-800 border-sky-300 dark:bg-sky-950/80 dark:text-sky-300 dark:border-sky-800'
                     : camStatus === 'denied'
-                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-300'
-                    : 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300'
+                    ? 'bg-rose-100/90 text-rose-800 border-rose-300 dark:bg-rose-950/80 dark:text-rose-300 dark:border-rose-800'
+                    : 'bg-amber-100/90 text-amber-900 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800'
                 }`}
               >
                 {capturedPhoto
-                  ? 'Photo Verified'
+                  ? '✓ Photo Verified'
                   : camStatus === 'granted'
                   ? 'Camera Active'
                   : camStatus === 'denied'
-                  ? 'Access Blocked'
+                  ? '✕ Blocked'
                   : 'Action Required'}
               </span>
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
-              Institutional proctoring requires continuous webcam verification. Position your face
-              within the frame and take a verification photo to {isResuming ? 'resume' : 'start'}{' '}
-              your assessment.
+
+            <p className="text-[11px] text-slate-600 dark:text-slate-400 truncate sm:mt-0 mt-0.5">
+              {capturedPhoto
+                ? 'Identity photo captured and ready for submission.'
+                : camStatus === 'granted'
+                ? 'Position your face inside the guide oval and click Take Verification Photo.'
+                : 'Webcam verification required to start assessment.'}
             </p>
           </div>
         </div>
@@ -314,9 +318,9 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
             type="button"
             onClick={requestCamera}
             disabled={camStatus === 'requesting'}
-            className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            className="shrink-0 text-[11px] font-bold px-3 py-1.5 rounded-lg bg-ubi-800 hover:bg-ubi-900 text-white transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
           >
-            <RefreshCw size={12} className={camStatus === 'requesting' ? 'animate-spin' : ''} />
+            <RefreshCw size={11} className={camStatus === 'requesting' ? 'animate-spin' : ''} />
             <span>{camStatus === 'denied' ? 'Retry Camera' : 'Enable Camera'}</span>
           </button>
         )}
@@ -324,11 +328,11 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
 
       {/* Permission Blocked / Error State */}
       {camStatus === 'denied' && (
-        <div className="mt-2 p-3 rounded-lg bg-rose-100/70 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 text-xs flex items-center gap-2">
+        <div className="mt-2 p-3 rounded-xl bg-rose-100/80 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 text-xs flex items-center gap-2">
           <AlertCircle size={16} className="shrink-0" />
           <span>
             {errorMsg ||
-              'Camera access was denied. Please click the lock or camera icon in your browser address bar to allow camera access, then click "Retry Camera".'}
+              'Camera access was denied. Please click the lock icon in your browser address bar to allow camera access, then click "Retry Camera".'}
           </span>
         </div>
       )}
@@ -337,7 +341,7 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
       {camStatus === 'granted' && (
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
           {/* Live Video Feed or Captured Photo */}
-          <div className="relative mx-auto w-full max-w-[280px] aspect-[4/3] bg-black rounded-lg overflow-hidden border-2 border-slate-300 dark:border-slate-700 shadow-inner flex items-center justify-center">
+          <div className="relative mx-auto w-full max-w-[280px] aspect-[4/3] bg-slate-950 rounded-xl overflow-hidden border border-slate-700 dark:border-slate-800 shadow-md flex items-center justify-center">
             {!capturedPhoto ? (
               <>
                 <video
@@ -360,35 +364,35 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
                 />
 
                 {/* Face Guide Oval Overlay */}
-                <div
-                  className={`absolute inset-0 pointer-events-none flex items-center justify-center transition-all ${
-                    detection.detected ? 'opacity-80' : 'opacity-100'
-                  }`}
-                >
+                <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                   <div
-                    className={`w-[140px] h-[180px] rounded-[50%] border-2 border-dashed transition-colors duration-300 ${
+                    className={`w-[135px] h-[170px] rounded-[50%] border-2 border-dashed transition-all duration-300 ${
                       detection.detected
-                        ? 'border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]'
-                        : 'border-amber-400/80 shadow-[0_0_10px_rgba(251,191,36,0.3)]'
+                        ? 'border-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.5)]'
+                        : 'border-amber-400/80 shadow-[0_0_12px_rgba(251,191,36,0.3)]'
                     }`}
                   />
                 </div>
 
-                {/* Live Status Badge Overlay */}
-                <div className="absolute top-2 left-2 right-2 flex justify-center pointer-events-none">
+                {/* Clean Top Status Overlay */}
+                <div className="absolute top-0 inset-x-0 p-2 pointer-events-none bg-gradient-to-b from-black/80 via-black/40 to-transparent">
                   <div
-                    className={`px-2.5 py-1 rounded-full text-[11px] font-semibold flex items-center gap-1.5 backdrop-blur-md shadow-md transition-colors ${
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-medium flex items-center justify-center gap-2 backdrop-blur-md border transition-all ${
                       detection.detected
-                        ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/40'
-                        : 'bg-slate-950/80 text-amber-300 border border-amber-500/40'
+                        ? 'bg-emerald-950/85 text-emerald-200 border-emerald-500/40 shadow-2xs'
+                        : 'bg-slate-950/85 text-amber-200 border-amber-500/40 shadow-2xs'
                     }`}
                   >
                     <span
-                      className={`w-2 h-2 rounded-full ${
+                      className={`w-2 h-2 rounded-full shrink-0 ${
                         detection.detected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
                       }`}
                     />
-                    <span className="truncate max-w-[200px]">{detection.message}</span>
+                    <span className="text-center font-semibold leading-tight">
+                      {detection.detected
+                        ? '✓ Face Verified & Aligned'
+                        : detection.message || 'Position face inside the oval'}
+                    </span>
                   </div>
                 </div>
               </>
@@ -400,9 +404,9 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
                   className="w-full h-full object-cover"
                   style={{ transform: 'scaleX(-1)' }}
                 />
-                <div className="absolute bottom-2 left-2 right-2 bg-emerald-950/85 backdrop-blur-sm border border-emerald-500/40 text-emerald-200 text-[11px] font-semibold px-2 py-1 rounded text-center flex items-center justify-center gap-1.5">
+                <div className="absolute bottom-2 left-2 right-2 bg-ubi-950/85 backdrop-blur-sm border border-ubi-500/40 text-ubi-200 text-[11px] font-semibold px-2.5 py-1 rounded-lg text-center flex items-center justify-center gap-1.5 shadow-2xs">
                   <CheckCircle2 size={13} className="text-emerald-400" />
-                  <span>Snapshot ready ({capturedSizeKb} KB)</span>
+                  <span>Snapshot verified ({capturedSizeKb} KB)</span>
                 </div>
               </div>
             )}
@@ -413,26 +417,25 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
             {!capturedPhoto ? (
               <>
                 <div className="space-y-1.5">
-                  <h5 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                    <Sparkles size={14} className="text-indigo-500" />
+                  <h5 className="text-xs font-bold text-slate-800 dark:text-slate-200">
                     Instructions for Photo:
                   </h5>
-                  <ul className="text-xs text-slate-600 dark:text-slate-400 space-y-1 list-disc list-inside">
+                  <ul className="text-xs text-slate-600 dark:text-slate-400 space-y-1 list-disc list-inside leading-relaxed">
                     <li>Center your face inside the dashed oval</li>
                     <li>Ensure good ambient lighting without glare</li>
                     <li>Do not wear caps, dark glasses, or masks</li>
                   </ul>
                 </div>
 
-                <div className="pt-2">
+                <div className="pt-1">
                   <button
                     type="button"
                     onClick={handleCapture}
                     disabled={!detection.detected}
-                    className={`w-full sm:w-auto px-5 py-2.5 rounded-lg text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    className={`w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
                       detection.detected
-                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'
-                        : 'bg-slate-300 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed opacity-60'
+                        ? 'bg-ubi-800 hover:bg-ubi-900 text-white shadow-ubi-900/20 active:scale-95'
+                        : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-70 shadow-none'
                     }`}
                   >
                     <Camera size={15} />
@@ -446,22 +449,11 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
                 </div>
               </>
             ) : (
-              <div className="space-y-3">
-                <div className="p-3 bg-white dark:bg-slate-800/80 rounded-lg border border-emerald-200 dark:border-emerald-800/50 space-y-1">
-                  <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 text-xs font-bold">
-                    <ShieldCheck size={16} />
-                    <span>Identity Photo Verified</span>
-                  </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                    Captured JPEG thumbnail ({capturedSizeKb} KB) will be securely uploaded to S3
-                    proctoring storage upon entering the assessment.
-                  </p>
-                </div>
-
+              <div>
                 <button
                   type="button"
                   onClick={handleRetake}
-                  className="px-4 py-2 text-xs font-semibold rounded bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2 text-xs font-bold rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
                 >
                   <RefreshCw size={13} />
                   <span>Retake Photo</span>

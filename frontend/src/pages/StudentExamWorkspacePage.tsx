@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { examsApi } from '../api/exams';
 import { submissionsApi } from '../api/submissions';
-import { StudentQuestionView } from '../types';
+import { StudentQuestionView, getQuestionMarks } from '../types';
 import { useExamStore, STARTER_CODE } from '../store/examStore';
 import { useThemeStore } from '../store/themeStore';
 import { QuestionPanel } from '../components/QuestionPanel';
@@ -16,7 +16,7 @@ import { Timer } from '../components/ui/Timer';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Badge } from '../components/ui/Badge';
-import { Play, Send, CheckCircle, AlertTriangle, Sun, Moon, ShieldAlert, Maximize2, WifiOff, Clock, HardDrive, Code2, AlignLeft } from 'lucide-react';
+import { Play, Send, CheckCircle, AlertTriangle, Sun, Moon, ShieldAlert, ShieldCheck, Maximize2, WifiOff, Clock, HardDrive, Code2, AlignLeft } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useExamSecurity } from '../hooks/useExamSecurity';
 import { useCandidateHeartbeat } from '../hooks/useCandidateHeartbeat';
@@ -101,6 +101,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
     codeDrafts,
     selectedLanguage,
     runOutputs,
+    submissionOutputs,
     mcqSelections,
     isRunningCode,
     isSubmittingCode,
@@ -111,6 +112,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
     setCodeDraft,
     setSelectedLanguage,
     setRunOutput,
+    setSubmissionOutput,
     setMCQSelection,
     updateQuestionDeadline,
     setIsRunningCode,
@@ -167,6 +169,17 @@ export const StudentExamWorkspacePage: React.FC = () => {
         return;
       }
 
+      // Sort questions: Timed MCQs first, then Untimed MCQs, then Coding Questions
+      const rawQuestions = examData.questions || [];
+      const timedMCQs = rawQuestions.filter(
+        (q) => q.question_type === 'mcq' && Boolean(q.mcq_time_limit_seconds && q.mcq_time_limit_seconds > 0)
+      );
+      const untimedMCQs = rawQuestions.filter(
+        (q) => q.question_type === 'mcq' && (!q.mcq_time_limit_seconds || q.mcq_time_limit_seconds <= 0)
+      );
+      const codingQuestions = rawQuestions.filter((q) => q.question_type !== 'mcq');
+      const sortedQuestions = [...timedMCQs, ...untimedMCQs, ...codingQuestions];
+
       setExamSession(
         examData.exam_id,
         examData.assignment_id,
@@ -174,7 +187,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
         examData.status,
         examData.started_at || '',
         examData.deadline_at || '',
-        examData.questions
+        sortedQuestions
       );
     }
   }, [examData, id, navigate, setExamSession]);
@@ -191,6 +204,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
     enterFullscreen,
     logInfraction,
     dismissActiveWarning,
+    resumeFromWarning,
     flushLogs,
   } = useExamSecurity({
     enabled: !!examData && examData.status === 'in_progress',
@@ -341,7 +355,10 @@ export const StudentExamWorkspacePage: React.FC = () => {
 
     if (questions && questions.length > 0) {
       questions.forEach((q) => {
-        if (q.is_mcq_locked) {
+        if (
+          q.is_mcq_locked ||
+          (q.question_type !== 'mcq' && q.status?.toLowerCase() === 'accepted')
+        ) {
           set.add(q.id);
         }
       });
@@ -585,7 +602,6 @@ export const StudentExamWorkspacePage: React.FC = () => {
         const nextIdx = questions.findIndex((q) => q.id === nextTimedQ.id);
         if (nextIdx !== -1) {
           setActiveQuestionIndex(nextIdx);
-          setSubmissionFeedback(`Question ${currentQ.title} locked. Proceeding to next timed question.`);
         }
       } else {
         // Transition to free navigation across all untimed MCQs and coding questions
@@ -595,7 +611,6 @@ export const StudentExamWorkspacePage: React.FC = () => {
         } else if (activeQuestionIndex < questions.length - 1) {
           setActiveQuestionIndex(activeQuestionIndex + 1);
         }
-        setSubmissionFeedback(`Timed section completed! You can now freely navigate all remaining untimed MCQs and coding questions.`);
       }
     } finally {
       setIsAdvancingTimedMCQ(false);
@@ -745,11 +760,22 @@ export const StudentExamWorkspacePage: React.FC = () => {
 
     try {
       const res = await submissionsApi.submit(id, currentQ.id, currentCode, currentLang, assignmentId);
-      setSubmissionFeedback(
-        `Question ${activeQuestionIndex + 1} Submitted: ${res.test_cases_passed}/${res.total_test_cases} test cases passed (${res.status})`
-      );
+      setSubmissionOutput(currentQ.id, res);
       // Update question status in view
       currentQ.status = res.status;
+
+      const isAccepted =
+        res.status?.toLowerCase() === 'accepted' ||
+        (res.test_cases_passed > 0 && res.test_cases_passed === res.total_test_cases);
+
+      if (isAccepted) {
+        markQuestionLocked(currentQ.id);
+      }
+
+      // Ensure console is visible by balancing vertical split height
+      if (editorHeightPercent > 70) {
+        setEditorHeightPercent(55);
+      }
       // Refresh backend session in background
       refetch();
     } catch (err: any) {
@@ -869,16 +895,16 @@ export const StudentExamWorkspacePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Submission Feedback Toast / Bar */}
+      {/* System Error Toast Bar */}
       {submissionFeedback && (
-        <div className="bg-ubi-50 border-b border-ubi-200 text-ubi-900 dark:bg-ubi-950/80 dark:border-ubi-800/60 dark:text-ubi-200 px-4 py-2 flex items-center justify-between text-xs font-semibold animate-fadeIn shrink-0">
+        <div className="bg-rose-50 border-b border-rose-200 text-rose-900 dark:bg-rose-950/80 dark:border-rose-800/60 dark:text-rose-200 px-4 py-2 flex items-center justify-between text-xs font-semibold animate-fadeIn shrink-0">
           <span className="flex items-center gap-2">
-            <CheckCircle size={14} className="text-emerald-600 dark:text-emerald-400" />
+            <AlertTriangle size={14} className="text-rose-600 dark:text-rose-400" />
             {submissionFeedback}
           </span>
           <button
             onClick={() => setSubmissionFeedback(null)}
-            className="text-ubi-700 dark:text-ubi-400 hover:text-ubi-900 dark:hover:text-ubi-200 font-bold px-1"
+            className="text-rose-700 dark:text-rose-400 hover:text-rose-900 dark:hover:text-rose-200 font-bold px-1"
           >
             ✕
           </button>
@@ -895,22 +921,17 @@ export const StudentExamWorkspacePage: React.FC = () => {
             onSelectIndex={(idx) => {
               if (isSequentialTimedPhase) {
                 if (questions[idx]?.id !== activeTimedQuestion?.id) {
-                  setSubmissionFeedback(
-                    `Timed Section in progress: Please complete Question ${
-                      questions.findIndex((q) => q.id === activeTimedQuestion?.id) + 1
-                    } first.`
-                  );
                   return;
                 }
               }
               const targetQ = questions[idx];
-              if (
+              const isTargetLocked =
                 targetQ &&
-                targetQ.question_type === 'mcq' &&
-                (lockedQuestionIds.has(targetQ.id) || targetQ.is_mcq_locked) &&
-                idx !== activeQuestionIndex
-              ) {
-                setSubmissionFeedback(`Question ${idx + 1} is locked and cannot be reopened.`);
+                (lockedQuestionIds.has(targetQ.id) ||
+                  Boolean(targetQ.is_mcq_locked) ||
+                  (targetQ.question_type !== 'mcq' && targetQ.status?.toLowerCase() === 'accepted'));
+
+              if (targetQ && isTargetLocked && idx !== activeQuestionIndex) {
                 return;
               }
               setIsEditorExpanded(false);
@@ -926,13 +947,14 @@ export const StudentExamWorkspacePage: React.FC = () => {
               isDraggingHorizontal || isDraggingVertical ? 'select-none' : ''
             }`}
           >
-            {/* Left Column: Problem Statement */}
+            {/* Left Column: Problem Statement with Matching Top Header Bar */}
             <div
               style={{ flexBasis: `${leftWidthPercent}%`, width: `${leftWidthPercent}%` }}
-              className="h-full bg-slate-50/70 dark:bg-slate-950/60 overflow-y-auto p-5 sm:p-6 space-y-4 select-none shrink-0"
+              className="h-full bg-slate-50/70 dark:bg-slate-950/60 flex flex-col min-h-0 select-none shrink-0 overflow-hidden"
             >
-              {currentQ.question_type === 'mcq' ? (
-                <>
+              {/* Top Banner: Matching Header Bar for Left Panel */}
+              <div className="h-12 px-5 bg-slate-50 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
+                {currentQ.question_type === 'mcq' ? (
                   <div className="flex items-center gap-2 text-xs">
                     <span className="px-2.5 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300/60 dark:border-slate-700 text-[11px] font-semibold tracking-wide">
                       {currentQ.is_multi_select ? 'Multi-Select' : 'Single-Select'}
@@ -943,20 +965,10 @@ export const StudentExamWorkspacePage: React.FC = () => {
                       </span>
                     )}
                   </div>
-
-                  <h2 className="text-xl font-extrabold text-slate-900 dark:text-white leading-tight">
-                    {currentQ.title}
-                  </h2>
-
-                  <div className="border-t border-slate-200/70 dark:border-slate-800 pt-4 text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                    <MarkdownRenderer content={currentQ.description} />
-                  </div>
-                </>
-              ) : (
-                <>
+                ) : (
                   <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 font-medium">
                     <span className="px-2.5 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300/60 dark:border-slate-700 text-[11px] font-semibold">
-                      +{currentQ.marks ?? 10} {(currentQ.marks ?? 10) === 1 ? 'Mark' : 'Marks'}
+                      +{getQuestionMarks(currentQ)} {getQuestionMarks(currentQ) === 1 ? 'Mark' : 'Marks'}
                     </span>
                     <span className="flex items-center gap-1">
                       <Clock size={13} className="text-slate-400" />
@@ -967,75 +979,89 @@ export const StudentExamWorkspacePage: React.FC = () => {
                       {Math.round(currentQ.memory_limit_kb / 1024)}MB memory
                     </span>
                   </div>
+                )}
+              </div>
 
-                  <h2 className="text-xl font-extrabold text-slate-900 dark:text-white leading-tight">
-                    {currentQ.title}
-                  </h2>
+              {/* Scrollable Problem Statement Content */}
+              <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
+                {currentQ.question_type === 'mcq' ? (
+                  <>
+                    <h2 className="text-xl font-extrabold text-slate-900 dark:text-white leading-tight">
+                      {currentQ.title}
+                    </h2>
 
-                  <div className="border-t border-slate-200/70 dark:border-slate-800 pt-4 text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                    <MarkdownRenderer content={currentQ.description} />
-                  </div>
-
-                  {/* Input Format */}
-                  {currentQ.input_format && (
-                    <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 rounded-xl p-3.5 space-y-1.5 shadow-xs">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                        <AlignLeft size={13} className="text-ubi-700 dark:text-ubi-400" />
-                        <span>Input Format</span>
-                      </div>
-                      <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                        <MarkdownRenderer content={currentQ.input_format} />
-                      </div>
+                    <div className="border-t border-slate-200/70 dark:border-slate-800 pt-4 text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                      <MarkdownRenderer content={currentQ.description} />
                     </div>
-                  )}
+                  </>
+                ) : (
+                  <>
+                    <h2 className="text-xl font-extrabold text-slate-900 dark:text-white leading-tight">
+                      {currentQ.title}
+                    </h2>
 
-                  {/* Sample Test Case */}
-                  {(currentQ.sample_input || currentQ.sample_output) && (
-                    <div className="space-y-3 pt-3 border-t border-slate-200/70 dark:border-slate-800">
-                      <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                        Sample Test Case
-                      </h3>
-                      {currentQ.sample_input && (
-                        <div>
-                          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1 block">
-                            Input
-                          </span>
-                          <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 font-mono text-xs text-slate-900 dark:text-slate-200 whitespace-pre-wrap">
-                            {currentQ.sample_input}
-                          </div>
-                        </div>
-                      )}
-                      {currentQ.sample_output && (
-                        <div>
-                          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1 block">
-                            Output
-                          </span>
-                          <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 font-mono text-xs text-slate-900 dark:text-slate-200 whitespace-pre-wrap">
-                            {currentQ.sample_output}
-                          </div>
-                        </div>
-                      )}
+                    <div className="border-t border-slate-200/70 dark:border-slate-800 pt-4 text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                      <MarkdownRenderer content={currentQ.description} />
                     </div>
-                  )}
-                </>
-              )}
+
+                    {/* Input Format */}
+                    {currentQ.input_format && (
+                      <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 rounded-xl p-3.5 space-y-1.5 shadow-xs">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                          <AlignLeft size={13} className="text-ubi-700 dark:text-ubi-400" />
+                          <span>Input Format</span>
+                        </div>
+                        <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                          <MarkdownRenderer content={currentQ.input_format} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Sample Test Case */}
+                    {(currentQ.sample_input || currentQ.sample_output) && (
+                      <div className="space-y-3 pt-3 border-t border-slate-200/70 dark:border-slate-800">
+                        <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                          Sample Test Case
+                        </h3>
+                        {currentQ.sample_input && (
+                          <div>
+                            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1 block">
+                              Input
+                            </span>
+                            <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 font-mono text-xs text-slate-900 dark:text-slate-200 whitespace-pre-wrap">
+                              {currentQ.sample_input}
+                            </div>
+                          </div>
+                        )}
+                        {currentQ.sample_output && (
+                          <div>
+                            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1 block">
+                              Output
+                            </span>
+                            <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 font-mono text-xs text-slate-900 dark:text-slate-200 whitespace-pre-wrap">
+                              {currentQ.sample_output}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
-            {/* Horizontal Splitter Handle (Between Left Problem Statement & Right Interactive Panel) */}
+            {/* Horizontal Splitter Handle */}
             <div
               onMouseDown={handleHorizontalMouseDown}
               onDoubleClick={() => setLeftWidthPercent(40)}
-              title="Drag to resize left & right panels (Double-click to reset)"
-              className="hidden lg:flex w-1.5 bg-slate-200/50 hover:bg-slate-300 dark:bg-slate-800/50 dark:hover:bg-slate-700 cursor-col-resize items-center justify-center transition-colors shrink-0 group z-10"
+              title="Drag to resize problem statement & editor panels (Double-click to reset)"
+              className="w-1.5 bg-slate-200/50 hover:bg-slate-300 dark:bg-slate-800/50 dark:hover:bg-slate-700 cursor-col-resize flex items-center justify-center transition-colors shrink-0 group z-10 hidden lg:flex"
             >
               <div className="w-0.5 h-6 rounded-full bg-slate-400/50 group-hover:bg-slate-600 dark:bg-slate-600 dark:group-hover:bg-slate-300 transition-colors" />
             </div>
 
-            {/* Right Column: Interactive Panel (MCQ Options OR Code Editor & Console) */}
-            <div
-              style={{ flexBasis: `${100 - leftWidthPercent}%`, width: `${100 - leftWidthPercent}%` }}
-              className="h-full overflow-hidden flex flex-col min-h-0 bg-white dark:bg-slate-900 shrink-0"
-            >
+            {/* Right Column: Code Editor & Output Console OR MCQ View */}
+            <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden relative">
               {currentQ.question_type === 'mcq' ? (
                 <MCQPanel
                   userId={userId}
@@ -1052,6 +1078,19 @@ export const StudentExamWorkspacePage: React.FC = () => {
                   hasMoreTimedMCQs={pendingTimedMCQs ? pendingTimedMCQs.filter((q: StudentQuestionView) => q.id !== currentQ.id).length > 0 : false}
                   onAdvanceTimedQuestion={handleAdvanceTimedMCQ}
                   isAdvancing={isAdvancingTimedMCQ}
+                  onNextQuestion={() => {
+                    if (activeQuestionIndex < questions.length - 1) {
+                      const nextIdx = activeQuestionIndex + 1;
+                      const targetQ = questions[nextIdx];
+                      if (targetQ && (lockedQuestionIds.has(targetQ.id) || targetQ.is_mcq_locked)) {
+                        return;
+                      }
+                      setIsEditorExpanded(false);
+                      setActiveQuestionIndex(nextIdx);
+                      setSubmissionFeedback(null);
+                    }
+                  }}
+                  hasNextQuestion={activeQuestionIndex < questions.length - 1}
                 />
               ) : (
                 <div ref={verticalContainerRef} className="h-full flex flex-col overflow-hidden min-h-0 bg-white dark:bg-slate-900 relative">
@@ -1068,6 +1107,9 @@ export const StudentExamWorkspacePage: React.FC = () => {
                       starterCode={currentStarter}
                       onReset={() => currentQ && setCodeDraft(currentQ.id, currentLang, currentStarter)}
                       onPasteAttempt={() => logInfraction('PASTE_ATTEMPT')}
+                      readOnly={Boolean(
+                        currentQ && (currentQ.status?.toLowerCase() === 'accepted' || lockedQuestionIds.has(currentQ.id))
+                      )}
                     />
                   </div>
 
@@ -1088,12 +1130,16 @@ export const StudentExamWorkspacePage: React.FC = () => {
                   >
                     <OutputConsole
                       output={currentOutput}
+                      submissionOutput={currentQ ? submissionOutputs[currentQ.id] : null}
                       isRunning={isRunningCode}
                       sampleInput={currentQ?.sample_input}
                       sampleOutput={currentQ?.sample_output}
                       onRunCode={handleRunCode}
                       onSubmitCode={handleSubmitCode}
                       isSubmitting={isSubmittingCode}
+                      isQuestionLocked={Boolean(
+                        currentQ && (currentQ.status?.toLowerCase() === 'accepted' || lockedQuestionIds.has(currentQ.id))
+                      )}
                     />
                   </div>
                 </div>
@@ -1109,67 +1155,82 @@ export const StudentExamWorkspacePage: React.FC = () => {
         onClose={() => setIsFinishModalOpen(false)}
         title="Submit and Finish Assessment?"
       >
-        <div className="space-y-4 text-sm text-slate-700 dark:text-slate-300">
-          <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-300 rounded-xl text-xs">
-            <AlertTriangle size={18} className="shrink-0 mt-0.5" />
-            <span>
-              Are you sure you want to finish the exam? Once submitted, your scores will be finalized and you cannot submit further code.
-            </span>
-          </div>
+        <div className="space-y-4 text-xs sm:text-sm text-slate-700 dark:text-slate-300 font-sans pt-1">
+          <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+            Are you sure you want to finish the exam? Once submitted, your scores will be finalized and you cannot submit further code or answers.
+          </p>
 
-          <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 space-y-2 text-xs">
-            <p className="font-bold text-slate-900 dark:text-slate-200 uppercase tracking-wider text-[11px]">
-              Question Submission Status:
-            </p>
-            {questions.map((q, idx) => {
-              const isMCQ = q.question_type === 'mcq';
-              const hasMCQAnswer = (mcqSelections[q.id]?.length || 0) > 0 || (q.selected_option_ids && q.selected_option_ids.length > 0);
-              return (
-                <div key={q.id} className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-slate-800/60 last:border-0">
-                  <span className="font-medium text-slate-700 dark:text-slate-300">
-                    Question {idx + 1} ({isMCQ ? 'MCQ' : `+${q.marks ?? 10} ${(q.marks ?? 10) === 1 ? 'Mark' : 'Marks'}`}):
-                  </span>
-                  <span
-                    className={
-                      isMCQ
-                        ? hasMCQAnswer
-                          ? 'text-emerald-600 dark:text-emerald-400 font-bold'
-                          : 'text-slate-400 font-medium'
-                        : q.status && q.status !== 'unattempted'
-                        ? 'text-emerald-600 dark:text-emerald-400 font-bold'
-                        : 'text-slate-400 font-medium'
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              <span>Question Submission Status</span>
+              <span className="text-slate-700 dark:text-slate-300 font-semibold lowercase">
+                {
+                  questions.filter((q) => {
+                    if (q.question_type === 'mcq') {
+                      return (mcqSelections[q.id]?.length || 0) > 0 || (q.selected_option_ids && q.selected_option_ids.length > 0);
                     }
-                  >
-                    {isMCQ
-                      ? hasMCQAnswer
-                        ? 'Answer Selected'
-                        : 'Not Answered'
-                      : q.status && q.status !== 'unattempted'
-                      ? q.status
-                      : 'Not Submitted'}
-                  </span>
-                </div>
-              );
-            })}
+                    return q.status && q.status !== 'unattempted';
+                  }).length
+                }{' '}
+                of {questions.length} attempted
+              </span>
+            </div>
+
+            <div className="max-h-60 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 space-y-1.5 text-xs">
+              {questions.map((q, idx) => {
+                const isMCQ = q.question_type === 'mcq';
+                const hasMCQAnswer = (mcqSelections[q.id]?.length || 0) > 0 || (q.selected_option_ids && q.selected_option_ids.length > 0);
+                const isCodingAttempted = !isMCQ && Boolean(q.status && q.status !== 'unattempted');
+                const isAccepted = !isMCQ && q.status?.toLowerCase() === 'accepted';
+
+                const statusColor = isMCQ
+                  ? hasMCQAnswer
+                    ? 'text-emerald-600 dark:text-emerald-400 font-bold'
+                    : 'text-slate-400 font-medium'
+                  : !isCodingAttempted
+                  ? 'text-slate-400 font-medium'
+                  : isAccepted
+                  ? 'text-emerald-600 dark:text-emerald-400 font-bold'
+                  : 'text-rose-600 dark:text-rose-400 font-bold';
+
+                return (
+                  <div key={q.id} className="flex items-center justify-between py-1.5 border-b border-slate-200/60 dark:border-slate-800/60 last:border-0">
+                    <span className="font-medium text-slate-700 dark:text-slate-300">
+                      Question {idx + 1} ({isMCQ ? 'MCQ' : `+${getQuestionMarks(q)} ${getQuestionMarks(q) === 1 ? 'Mark' : 'Marks'}`}):
+                    </span>
+                    <span className={statusColor}>
+                      {isMCQ
+                        ? hasMCQAnswer
+                          ? 'Answer Selected'
+                          : 'Not Answered'
+                        : isCodingAttempted
+                        ? q.status
+                        : 'Not Submitted'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2">
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setIsFinishModalOpen(false)}
               disabled={isSubmittingExam}
+              className="text-xs font-semibold px-4"
             >
               Cancel
             </Button>
             <Button
-              variant="success"
+              variant="primary"
               size="sm"
               onClick={handleFinishExam}
               isLoading={isSubmittingExam}
-              className="gap-1.5 font-semibold"
+              className="gap-1.5 font-bold text-xs px-4 shadow-sm"
             >
-              <CheckCircle size={15} />
+              <CheckCircle size={14} />
               <span>Confirm & Submit Exam</span>
             </Button>
           </div>
@@ -1177,41 +1238,62 @@ export const StudentExamWorkspacePage: React.FC = () => {
       </Modal>
 
       {/* Mandatory Full-Screen Start & Pause Lockout Gate */}
-      {(!isFullscreen || fullscreenRequiredModal) && (
-        <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full p-6 sm:p-8 shadow-2xl text-center space-y-6">
-            <div className="mx-auto w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
-              <ShieldAlert size={32} />
+      {!activeWarning && (!isFullscreen || fullscreenRequiredModal) && (
+        <div className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden">
+            {/* Top Icon */}
+            <div className="relative mx-auto w-16 h-16 flex items-center justify-center">
+              <div className="absolute inset-0 rounded-2xl bg-amber-500/20 dark:bg-amber-400/20 blur-lg animate-pulse" />
+              <div className="relative w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 dark:bg-amber-500/20 dark:border-amber-400/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
+                <ShieldAlert size={32} />
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                {hasInitiatedFullscreen ? 'Assessment Suspended: Full Screen Exited' : 'Full Screen Required to Start'}
+            {/* Header & Description */}
+            <div className="space-y-2 text-center">
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                {hasInitiatedFullscreen ? 'Assessment Suspended' : 'Full Screen Required'}
               </h2>
-              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-md mx-auto">
                 {hasInitiatedFullscreen
                   ? 'You exited full-screen mode. Full-screen mode is strictly required. Your workspace and code editor are locked until full screen is restored.'
                   : 'This assessment is strictly proctored and cannot begin without full-screen mode enabled. The questions, timer, and editor will unlock once full screen is active.'}
               </p>
             </div>
 
-            <div className="bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 rounded-xl p-4 text-xs text-slate-600 dark:text-slate-400 text-left space-y-2">
-              <p className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-[11px]">Strict Proctoring Guidelines:</p>
-              <ul className="list-disc pl-4 space-y-1">
-                <li>The exam must stay in full-screen mode until final submission.</li>
-                <li>Switching tabs, minimizing, or clicking outside triggers security strikes.</li>
-                <li>Copying questions and pasting external code are blocked and flagged.</li>
-                <li>All infraction events are stored and provided to the recruiting committee.</li>
+            {/* Proctoring Rules (Clean borderless list) */}
+            <div className="text-left space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <p className="font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider text-[11px]">
+                Strict Proctoring Guidelines:
+              </p>
+              <ul className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300">
+                <li className="flex items-start gap-2.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" />
+                  <span>The exam must stay in full-screen mode until final submission.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" />
+                  <span>Switching tabs, minimizing, or clicking outside triggers security alerts.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" />
+                  <span>Copying questions and pasting external code are blocked and flagged.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" />
+                  <span>All infraction events are stored and provided to the recruiting committee.</span>
+                </li>
               </ul>
             </div>
 
+            {/* Action CTA */}
             <Button
               variant="primary"
               size="lg"
               onClick={enterFullscreen}
-              className="w-full justify-center gap-2 font-bold py-3 text-base shadow-lg shadow-ubi-900/20"
+              className="w-full justify-center gap-2.5 font-extrabold py-3.5 text-base shadow-xl shadow-indigo-600/25 rounded-xl transition-all duration-200 hover:scale-[1.01]"
             >
-              <Maximize2 size={18} />
+              <Maximize2 size={19} />
               <span>{hasInitiatedFullscreen ? 'Re-enter Full Screen to Resume' : 'Enter Full Screen & Start Assessment'}</span>
             </Button>
           </div>
@@ -1222,58 +1304,66 @@ export const StudentExamWorkspacePage: React.FC = () => {
       <Modal
         isOpen={!!activeWarning}
         onClose={dismissActiveWarning}
-        title={strikeCount >= maxStrikes ? "⚠️ Security Infraction Limit Notice" : "⚠️ Security Infraction Detected"}
-        maxWidth="lg"
-      >
-        <div className="space-y-4 text-sm text-slate-700 dark:text-slate-300">
-          <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950/60 dark:border-rose-800/80 dark:text-rose-200 rounded-xl space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 font-bold text-rose-900 dark:text-rose-100">
-                <ShieldAlert size={20} className="text-rose-600 dark:text-rose-400 shrink-0" />
-                <span>{activeWarning?.title}</span>
-              </div>
-              <span className="text-xs font-bold px-2 py-0.5 rounded bg-rose-200 text-rose-900 dark:bg-rose-900 dark:text-rose-200">
-                Infraction #{strikeCount}
-              </span>
+        title={
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 border border-rose-500/20 flex items-center justify-center shrink-0">
+              <ShieldAlert size={20} />
             </div>
-            <p className="text-xs text-rose-700 dark:text-rose-300 leading-relaxed">
+            <div>
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight">
+                Security Warning
+              </h3>
+            </div>
+          </div>
+        }
+        maxWidth="md"
+      >
+        <div className="space-y-6 text-sm text-slate-700 dark:text-slate-300 pt-1">
+          {/* Main Warning Details */}
+          <div className="space-y-2">
+            <h4 className="text-lg font-extrabold text-slate-900 dark:text-white tracking-tight">
+              {activeWarning?.title}
+            </h4>
+            <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
               {activeWarning?.description}
             </p>
           </div>
 
-          {strikeCount >= maxStrikes && (
-            <div className="p-3.5 bg-amber-50 border border-amber-200 text-amber-900 dark:bg-amber-950/60 dark:border-amber-800 dark:text-amber-200 rounded-xl text-xs space-y-1">
-              <div className="flex items-center gap-1.5 font-bold text-amber-950 dark:text-amber-100">
-                <AlertTriangle size={15} className="text-amber-600 dark:text-amber-400 shrink-0" />
-                <span>Security Audit Threshold Reached</span>
-              </div>
-              <p className="text-amber-800 dark:text-amber-300 leading-relaxed">
-                You have accumulated {strikeCount} security infractions. All incidents are logged with exact timestamps and will be submitted with your evaluation report. Please continue your assessment carefully.
-              </p>
-            </div>
-          )}
-
-          <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-950 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
-            <p className="font-semibold text-slate-900 dark:text-slate-200">Strict Assessment Rules:</p>
-            <ul className="list-disc pl-5 space-y-1">
-              <li>Do not leave full screen or switch browser tabs.</li>
-              <li>Do not click outside the workspace or open background tools.</li>
-              <li>Copying questions or pasting external solutions is prohibited.</li>
-              <li>All infraction events are stored and provided to the recruiting team.</li>
+          {/* Guidelines Section - Clean, Borderless List */}
+          <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <p className="font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider text-[11px]">
+              Strict Assessment Rules:
+            </p>
+            <ul className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300">
+              <li className="flex items-start gap-2.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0 mt-1.5" />
+                <span>Do not leave full screen or switch browser tabs.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0 mt-1.5" />
+                <span>Do not click outside the workspace boundary or open background tools.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0 mt-1.5" />
+                <span>Copying questions or pasting external code is strictly prohibited.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0 mt-1.5" />
+                <span>All security infraction events are logged for proctoring evaluation.</span>
+              </li>
             </ul>
           </div>
 
-          <div className="flex items-center justify-between pt-2">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-              {strikeCount} total security flag{strikeCount === 1 ? '' : 's'} recorded
-            </span>
+          {/* Action CTA */}
+          <div className="pt-2">
             <Button
               variant="primary"
-              size="sm"
-              onClick={dismissActiveWarning}
-              className="font-semibold"
+              size="lg"
+              onClick={resumeFromWarning}
+              className="w-full justify-center gap-2 font-extrabold py-3 text-sm sm:text-base shadow-lg shadow-indigo-600/20 rounded-xl transition-all"
             >
-              I Understand & Resume Test
+              <CheckCircle size={18} />
+              <span>I Understand & Resume Test</span>
             </Button>
           </div>
         </div>

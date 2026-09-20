@@ -673,24 +673,44 @@ export const AdminExamDetailsModal: React.FC<AdminExamDetailsModalProps> = ({
               </div>
 
               {hasSchedule ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                  <div className="p-3 bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Window Start Time
-                    </span>
-                    <span className="text-sm font-bold text-slate-900 dark:text-white block">
-                      {formatIST(exam.start_time)}
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                    <div className="p-3 bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Window Start Time
+                      </span>
+                      <span className="text-sm font-bold text-slate-900 dark:text-white block">
+                        {formatIST(exam.start_time)}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Window End Time
+                      </span>
+                      <span className="text-sm font-bold text-slate-900 dark:text-white block">
+                        {formatIST(exam.end_time)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Late Entry Window
+                      </span>
+                      <span className="font-semibold text-slate-900 dark:text-white">
+                        {exam.duration_minutes <= (exam.late_entry_window_minutes || 15)
+                          ? 'Flexible Entry (Assessment duration ≤ entry window)'
+                          : `${exam.late_entry_window_minutes || 15} minutes from start time`}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-500 sm:text-right">
+                      {exam.duration_minutes <= (exam.late_entry_window_minutes || 15)
+                        ? 'Candidates can enter anytime and receive their full duration.'
+                        : 'Candidates cannot enter after this grace window closes.'}
                     </span>
                   </div>
-                  <div className="p-3 bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Window End Time
-                    </span>
-                    <span className="text-sm font-bold text-slate-900 dark:text-white block">
-                      {formatIST(exam.end_time)}
-                    </span>
-                  </div>
-                </div>
+                </>
               ) : (
                 <p className="text-xs text-slate-500 dark:text-slate-400 italic">
                   This assessment has no fixed start or end date restrictor and can be taken at any time by targeted candidate groups.

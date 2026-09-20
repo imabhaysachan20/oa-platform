@@ -7,6 +7,7 @@ import {
   LeaderboardEntry,
   DeviceTelemetryPayload,
   ResumeExamResponse,
+  PhotoUploadUrlResponse,
 } from '../types';
 
 export const examsApi = {
@@ -20,19 +21,100 @@ export const examsApi = {
     return res.data;
   },
 
-  start: async (id: number, telemetry?: DeviceTelemetryPayload): Promise<ExamStartResponse> => {
-    const res = await api.post<ExamStartResponse>(`/exams/${id}/start`, telemetry);
+  getPhotoUploadUrl: async (
+    id: number,
+    eventType: 'start' | 'resume' = 'start'
+  ): Promise<PhotoUploadUrlResponse> => {
+    const res = await api.post<PhotoUploadUrlResponse>(`/exams/${id}/photo-upload-url`, {
+      event_type: eventType,
+    });
+    return res.data;
+  },
+
+  uploadPhotoDirectToS3: async (
+    uploadUrl: string,
+    base64OrBlob: string | Blob
+  ): Promise<void> => {
+    let body: Blob;
+    if (typeof base64OrBlob === 'string') {
+      const base64Data = base64OrBlob.includes(',')
+        ? base64OrBlob.split(',')[1]
+        : base64OrBlob;
+      const byteCharacters = atob(base64Data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      body = new Blob([byteArray], { type: 'image/jpeg' });
+    } else {
+      body = base64OrBlob;
+    }
+
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'image/jpeg',
+      },
+      body,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Direct AWS S3 upload failed with status ${res.status}`);
+    }
+  },
+
+  start: async (
+    id: number,
+    telemetryOrPayload?: DeviceTelemetryPayload | { telemetry?: DeviceTelemetryPayload; verification_photo?: string; s3_key?: string },
+    verificationPhoto?: string,
+    s3Key?: string
+  ): Promise<ExamStartResponse> => {
+    let payload: Record<string, any> = {};
+    if (telemetryOrPayload) {
+      if (
+        'verification_photo' in telemetryOrPayload ||
+        'telemetry' in telemetryOrPayload ||
+        's3_key' in telemetryOrPayload
+      ) {
+        const obj = telemetryOrPayload as {
+          telemetry?: DeviceTelemetryPayload;
+          verification_photo?: string;
+          s3_key?: string;
+        };
+        payload = { ...obj };
+        if (obj.telemetry) {
+          payload = { ...obj.telemetry, ...payload };
+        }
+      } else {
+        payload = {
+          ...telemetryOrPayload,
+          telemetry: telemetryOrPayload,
+        };
+      }
+    }
+    if (verificationPhoto) {
+      payload.verification_photo = verificationPhoto;
+    }
+    if (s3Key) {
+      payload.s3_key = s3Key;
+    }
+    const res = await api.post<ExamStartResponse>(`/exams/${id}/start`, payload);
     return res.data;
   },
 
   resume: async (
     id: number,
     assignmentId: number,
-    telemetry?: DeviceTelemetryPayload
+    telemetry?: DeviceTelemetryPayload,
+    verificationPhoto?: string,
+    s3Key?: string
   ): Promise<ResumeExamResponse> => {
     const res = await api.post<ResumeExamResponse>(`/exams/${id}/resume`, {
       assignment_id: assignmentId,
       telemetry,
+      verification_photo: verificationPhoto,
+      s3_key: s3Key,
     });
     return res.data;
   },

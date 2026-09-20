@@ -16,7 +16,10 @@ import {
   CheckCircle2,
   RefreshCw,
   Check,
+  Camera,
 } from 'lucide-react';
+import { WebcamVerificationCard } from '../components/WebcamVerificationCard';
+import { stopAllActiveMediaTracks } from '../components/LiveWebcamHUD';
 
 export const StudentExamInstructionsPage: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
@@ -26,6 +29,14 @@ export const StudentExamInstructionsPage: React.FC = () => {
 
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [verificationPhoto, setVerificationPhoto] = useState<string | null>(null);
+
+  // Ensure any active camera tracks from verification card are cleaned up when unmounting
+  useEffect(() => {
+    return () => {
+      stopAllActiveMediaTracks();
+    };
+  }, []);
 
   // Device Location Verification State
   type LocationStatus = 'prompt' | 'requesting' | 'granted' | 'denied' | 'error' | 'unsupported';
@@ -186,7 +197,17 @@ export const StudentExamInstructionsPage: React.FC = () => {
   const isResuming = exam?.assignment_status === 'in_progress' || myQuestionsData?.status === 'in_progress';
 
   const handleProceed = async () => {
-    if (!exam || !agreedToTerms || isStarting || !isLive || isExpired || !isLocationVerified || !locationCoords) return;
+    if (
+      !exam ||
+      !agreedToTerms ||
+      isStarting ||
+      !isLive ||
+      isExpired ||
+      !isLocationVerified ||
+      !locationCoords ||
+      !verificationPhoto
+    )
+      return;
 
     // Request fullscreen immediately on candidate click gesture
     try {
@@ -206,7 +227,27 @@ export const StudentExamInstructionsPage: React.FC = () => {
       telemetry.accuracy = locationCoords.accuracy;
       telemetry.location_status = 'granted';
 
-      const res = await examsApi.start(id, telemetry);
+      // Enterprise Scalable Direct-to-S3 Upload with Presigned PUT URL
+      let uploadedS3Key: string | undefined = undefined;
+      try {
+        if (verificationPhoto) {
+          const uploadInfo = await examsApi.getPhotoUploadUrl(id, 'start');
+          await examsApi.uploadPhotoDirectToS3(uploadInfo.upload_url, verificationPhoto);
+          uploadedS3Key = uploadInfo.s3_key;
+        }
+      } catch (uploadErr) {
+        console.warn('Direct S3 upload failed; using server-side fallback:', uploadErr);
+      }
+
+      // If direct S3 upload succeeded, send uploadedS3Key (0-byte image proxy through FastAPI)
+      // Otherwise, pass verificationPhoto base64 as resilient server fallback
+      const res = await examsApi.start(
+        id,
+        telemetry,
+        uploadedS3Key ? undefined : verificationPhoto,
+        uploadedS3Key
+      );
+
       // Sort questions: Timed MCQs first, then Untimed MCQs, then Coding Questions
       const rawQuestions = res.questions || [];
       const timedMCQs = rawQuestions.filter(
@@ -217,7 +258,6 @@ export const StudentExamInstructionsPage: React.FC = () => {
       );
       const codingQuestions = rawQuestions.filter((q: any) => q.question_type !== 'mcq');
       const sortedQuestions = [...timedMCQs, ...untimedMCQs, ...codingQuestions];
-
       setExamSession(
         res.exam_id,
         res.assignment_id,
@@ -230,6 +270,8 @@ export const StudentExamInstructionsPage: React.FC = () => {
 
       // Single-use authorization for workspace entry
       sessionStorage.setItem(`ubicode_verified_entry_${id}`, 'true');
+      // Release camera hardware tracks from verification card before switching to workspace live feed
+      stopAllActiveMediaTracks();
       navigate(`/exam/${id}/workspace`, { replace: true });
     } catch (err: any) {
       alert(err.response?.data?.detail || 'Failed to start or resume assessment');
@@ -476,7 +518,10 @@ export const StudentExamInstructionsPage: React.FC = () => {
         {/* Back Link Button */}
         <div className="pt-6 border-t border-slate-200/80 dark:border-slate-800/80 mt-8">
           <button
-            onClick={() => navigate('/')}
+            onClick={() => {
+              stopAllActiveMediaTracks();
+              navigate('/');
+            }}
             className="group inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg text-xs font-semibold transition-all border border-slate-200/80 dark:border-slate-700/80 shadow-2xs cursor-pointer"
           >
             <ArrowLeft size={14} className="transition-transform group-hover:-translate-x-0.5" />
@@ -693,6 +738,12 @@ export const StudentExamInstructionsPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Facial Identity & Webcam Verification Card */}
+          <WebcamVerificationCard
+            onPhotoCaptured={setVerificationPhoto}
+            isResuming={isResuming}
+          />
+
           {/* Custom UsefulBI Acknowledgment Checkbox (Locked until location is verified) */}
           <div
             onClick={() => {
@@ -737,7 +788,7 @@ export const StudentExamInstructionsPage: React.FC = () => {
           <div className="flex items-center gap-4">
             <button
               onClick={handleProceed}
-              disabled={!agreedToTerms || isStarting || !isLive || isExpired || !isLocationVerified}
+              disabled={!agreedToTerms || isStarting || !isLive || isExpired || !isLocationVerified || !verificationPhoto}
               className={`px-8 py-3 font-bold text-sm rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer ${
                 isResuming
                   ? 'bg-amber-600 hover:bg-amber-700 text-white disabled:bg-amber-600/50 disabled:cursor-not-allowed shadow-amber-900/20'
@@ -758,6 +809,11 @@ export const StudentExamInstructionsPage: React.FC = () => {
                   <MapPin size={15} />
                   <span>Grant Location First</span>
                 </span>
+              ) : !verificationPhoto ? (
+                <span className="flex items-center gap-1.5">
+                  <Camera size={15} />
+                  <span>Photo Required to {isResuming ? 'Resume' : 'Start'}</span>
+                </span>
               ) : !agreedToTerms ? (
                 <span>Check Acknowledgment to Proceed</span>
               ) : isResuming ? (
@@ -768,7 +824,10 @@ export const StudentExamInstructionsPage: React.FC = () => {
             </button>
 
             <button
-              onClick={() => navigate('/')}
+              onClick={() => {
+                stopAllActiveMediaTracks();
+                navigate('/');
+              }}
               disabled={isStarting}
               className="px-6 py-3 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-sm rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
             >

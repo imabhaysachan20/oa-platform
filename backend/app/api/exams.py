@@ -1,8 +1,11 @@
-from datetime import datetime, timezone
+import logging
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger("uvicorn.error")
 
 import redis.asyncio as aioredis
 from backend.app.core.database import get_db
@@ -14,6 +17,7 @@ from backend.app.models.proctoring import ExamProctoringLog
 from backend.app.models.network_incident import ExamNetworkIncident
 from backend.app.schemas.exam import (
     ExamResponse,
+    ExamStartRequest,
     ExamStartResponse,
     MyQuestionsResponse,
     LeaderboardEntry,
@@ -23,8 +27,11 @@ from backend.app.schemas.exam import (
     CandidateHeartbeatResponse,
     DeviceTelemetryPayload,
     ResumeExamRequest,
-    ResumeExamResponse
+    ResumeExamResponse,
+    PhotoUploadUrlRequest,
+    PhotoUploadUrlResponse
 )
+from backend.app.services.s3_service import generate_presigned_upload_url
 from backend.app.services.exam_service import (
     start_exam_for_student,
     record_exam_resume_telemetry,
@@ -79,7 +86,8 @@ async def list_available_exams(
     exam_ids = [e.id for e in exams]
     assign_stmt = select(ExamAssignment).where(
         ExamAssignment.user_id == current_user.id,
-        ExamAssignment.exam_id.in_(exam_ids)
+        ExamAssignment.exam_id.in_(exam_ids),
+        ExamAssignment.is_active == True
     )
     assignments = (await db.execute(assign_stmt)).scalars().all()
     assignments_by_exam_id = {a.exam_id: a for a in assignments}
@@ -103,7 +111,21 @@ async def list_available_exams(
         resp.is_expired = bool(exam.end_time and now > exam.end_time)
 
         assign = assignments_by_exam_id.get(exam.id)
+
+        # Late Entry Window computation
+        late_window = getattr(exam, 'late_entry_window_minutes', 15) or 15
+        if exam.start_time and exam.duration_minutes > late_window:
+            entry_deadline = exam.start_time + timedelta(minutes=late_window)
+            resp.entry_deadline = entry_deadline
+            is_waived = assign is not None and getattr(assign, 'reset_by_admin', False)
+            is_already_started = assign is not None and assign.status in [AssignmentStatus.IN_PROGRESS, AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]
+            resp.is_entry_closed = bool(now > entry_deadline and not is_waived and not is_already_started)
+        else:
+            resp.is_entry_closed = False
+            resp.entry_deadline = None
+
         if assign:
+            resp.attempt_number = getattr(assign, 'attempt_number', 1)
             is_done = (
                 assign.status in [AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]
                 or bool(assign.deadline_at and assign.deadline_at <= now)
@@ -143,10 +165,24 @@ async def get_exam_details(
 
     assign_stmt = select(ExamAssignment).where(
         ExamAssignment.user_id == current_user.id,
-        ExamAssignment.exam_id == exam.id
+        ExamAssignment.exam_id == exam.id,
+        ExamAssignment.is_active == True
     )
     assign = (await db.execute(assign_stmt)).scalar_one_or_none()
+
+    late_window = getattr(exam, 'late_entry_window_minutes', 15) or 15
+    if exam.start_time and exam.duration_minutes > late_window:
+        entry_deadline = exam.start_time + timedelta(minutes=late_window)
+        resp.entry_deadline = entry_deadline
+        is_waived = assign is not None and getattr(assign, 'reset_by_admin', False)
+        is_already_started = assign is not None and assign.status in [AssignmentStatus.IN_PROGRESS, AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]
+        resp.is_entry_closed = bool(now > entry_deadline and not is_waived and not is_already_started)
+    else:
+        resp.is_entry_closed = False
+        resp.entry_deadline = None
+
     if assign:
+        resp.attempt_number = getattr(assign, 'attempt_number', 1)
         is_done = (
             assign.status in [AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]
             or bool(assign.deadline_at and assign.deadline_at <= now)
@@ -164,11 +200,38 @@ async def get_exam_details(
     return resp
 
 
+@router.post("/{exam_id}/photo-upload-url", response_model=PhotoUploadUrlResponse)
+async def get_photo_upload_url(
+    exam_id: int,
+    body: Optional[PhotoUploadUrlRequest] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Generates an AWS S3 presigned PUT URL allowing candidates to upload verification
+    snapshots directly to S3 without sending image data through FastAPI.
+    """
+    event_type = body.event_type if body and body.event_type else "start"
+    res = generate_presigned_upload_url(
+        exam_id=exam_id,
+        user_id=current_user.id,
+        attempt_number=1,
+        event_type=event_type,
+        content_type="image/jpeg"
+    )
+    if not res:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate secure S3 upload URL."
+        )
+    return PhotoUploadUrlResponse(**res)
+
+
 @router.post("/{exam_id}/start", response_model=ExamStartResponse)
 async def start_exam(
     exam_id: int,
     request: Request,
-    body: Optional[DeviceTelemetryPayload] = None,
+    body: Optional[ExamStartRequest] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     redis: aioredis.Redis = Depends(get_redis)
@@ -177,7 +240,57 @@ async def start_exam(
     Idempotently assigns questions based on exam configuration and starts the timer.
     Enforces location provision before allowing exam start or resume.
     """
-    if body is None or body.latitude is None or body.longitude is None:
+    telemetry = None
+    verification_photo = None
+    s3_key = None
+
+    if body:
+        verification_photo = body.verification_photo
+        s3_key = body.s3_key
+        if body.telemetry and body.telemetry.latitude is not None and body.telemetry.longitude is not None:
+            telemetry = body.telemetry
+        elif body.latitude is not None and body.longitude is not None:
+            telemetry = DeviceTelemetryPayload(
+                browser=body.browser,
+                os=body.os,
+                device_type=body.device_type,
+                screen_resolution=body.screen_resolution,
+                device_fingerprint=body.device_fingerprint,
+                latitude=body.latitude,
+                longitude=body.longitude,
+                accuracy=body.accuracy,
+                location_status=body.location_status,
+            )
+
+    # Fallback to direct request.json() parsing if telemetry was not bound
+    if telemetry is None or telemetry.latitude is None or telemetry.longitude is None:
+        try:
+            raw_data = await request.json()
+            if isinstance(raw_data, dict):
+                if not verification_photo and raw_data.get("verification_photo"):
+                    verification_photo = raw_data.get("verification_photo")
+                if not s3_key and raw_data.get("s3_key"):
+                    s3_key = raw_data.get("s3_key")
+
+                t_dict = raw_data.get("telemetry") if isinstance(raw_data.get("telemetry"), dict) else raw_data
+                lat = t_dict.get("latitude")
+                lng = t_dict.get("longitude")
+                if lat is not None and lng is not None:
+                    telemetry = DeviceTelemetryPayload(
+                        browser=t_dict.get("browser"),
+                        os=t_dict.get("os"),
+                        device_type=t_dict.get("device_type"),
+                        screen_resolution=t_dict.get("screen_resolution"),
+                        device_fingerprint=t_dict.get("device_fingerprint"),
+                        latitude=float(lat),
+                        longitude=float(lng),
+                        accuracy=float(t_dict.get("accuracy")) if t_dict.get("accuracy") is not None else None,
+                        location_status=t_dict.get("location_status") or "granted",
+                    )
+        except Exception as e:
+            logger.warning(f"Could not parse raw request body for telemetry: {e}")
+
+    if telemetry is None or telemetry.latitude is None or telemetry.longitude is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Device location is strictly required to start or resume this assessment. Please grant location access in your browser."
@@ -188,9 +301,11 @@ async def start_exam(
         db=db,
         exam_id=exam_id,
         user_id=current_user.id,
-        telemetry=body,
+        telemetry=telemetry,
         client_ip=client_ip,
-        redis=redis
+        redis=redis,
+        verification_photo=verification_photo,
+        s3_key=s3_key
     )
 
 
@@ -225,7 +340,9 @@ async def resume_exam(
         assignment_id=body.assignment_id,
         telemetry=body.telemetry,
         client_ip=client_ip,
-        redis=redis
+        redis=redis,
+        verification_photo=body.verification_photo,
+        s3_key=body.s3_key
     )
 
 
@@ -274,7 +391,11 @@ async def get_my_exam_result(
     """
     stmt = (
         select(ExamAssignment)
-        .where(ExamAssignment.exam_id == exam_id, ExamAssignment.user_id == current_user.id)
+        .where(
+            ExamAssignment.exam_id == exam_id,
+            ExamAssignment.user_id == current_user.id,
+            ExamAssignment.is_active == True
+        )
     )
     assignment = (await db.execute(stmt)).scalar_one_or_none()
     if not assignment:

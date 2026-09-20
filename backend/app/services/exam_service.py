@@ -37,12 +37,20 @@ from backend.app.schemas.exam import (
     NetworkIncidentItem,
     DeviceTelemetryPayload,
     ResumeExamRequest,
-    ResumeExamResponse
+    ResumeExamResponse,
+    FreshRestartResponse,
+    CandidateAttemptItem
 )
 from backend.app.services.scoring_service import compute_and_save_exam_scores, calculate_difficulty_weight
 from backend.app.services.question_templates import (
     get_question_starter_templates,
     get_question_signature
+)
+from backend.app.core.config import settings
+from backend.app.services.s3_service import (
+    upload_verification_photo_to_s3,
+    get_presigned_view_url,
+    generate_presigned_upload_url
 )
 
 
@@ -234,105 +242,13 @@ async def sync_unsubmitted_assignments_for_exam(db: AsyncSession, exam_id: int):
     await db.commit()
 
 
-async def start_exam_for_student(
-    db: AsyncSession,
-    exam_id: int,
-    user_id: int,
-    telemetry: Optional[DeviceTelemetryPayload] = None,
-    client_ip: Optional[str] = None,
-    redis: Optional[aioredis.Redis] = None
-) -> ExamStartResponse:
+async def _draw_exam_questions(db: AsyncSession, exam: Exam) -> List[int]:
     """
-    Idempotently starts the exam for a student:
-    - If already assigned, returns existing assignment and locked questions, and records resume telemetry.
-    - If not assigned:
-      - Randomly picks coding questions based on dynamic exam pattern (easy_count, medium_count, hard_count)
-      - Fetches ALL fixed/MCQ questions (selection_mode='fixed') for this exam
-      - Every student gets all fixed MCQs in the pool + the random coding draw
-      - Sets started_at and deadline_at = started_at + duration_minutes.
-      - Logs initial device & geolocation telemetry in the proctoring audit log.
+    Randomly draws question IDs from the exam question pool according to the
+    exam's MCQ quotas and difficulty distribution (easy_count, medium_count, hard_count).
+    Returns an ordered list of question IDs: timed MCQs first, untimed MCQs, then coding questions.
     """
-    now = datetime.now(timezone.utc)
-
-    # 1. Fetch exam
-    stmt_exam = select(Exam).where(Exam.id == exam_id)
-    exam = (await db.execute(stmt_exam)).scalar_one_or_none()
-    if not exam:
-        raise HTTPException(status_code=404, detail="Exam not found")
-
-    if not exam.is_published:
-        raise HTTPException(status_code=400, detail="Exam is not published")
-
-    if exam.start_time and now < exam.start_time:
-        raise HTTPException(status_code=400, detail="Exam has not started yet")
-
-    if exam.end_time and now > exam.end_time:
-        raise HTTPException(status_code=400, detail="Exam window has expired")
-
-    # Check candidate group eligibility
-    if exam.target_groups and len(exam.target_groups) > 0:
-        student = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-        if not student or not student.candidate_group or student.candidate_group not in exam.target_groups:
-            allowed_groups_str = ", ".join(exam.target_groups)
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"This assessment is restricted to specific candidate batches/groups ({allowed_groups_str})."
-            )
-
-    # 2. Check for existing assignment
-    stmt_assign = (
-        select(ExamAssignment)
-        .where(ExamAssignment.exam_id == exam_id, ExamAssignment.user_id == user_id)
-    )
-    assignment = (await db.execute(stmt_assign)).scalar_one_or_none()
-
-    if assignment:
-        # If already completed or expired, reject starting again
-        if assignment.status in [AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]:
-            raise HTTPException(
-                status_code=400,
-                detail="You have already completed and submitted this assessment."
-            )
-
-        if assignment.deadline_at and now > assignment.deadline_at:
-            assignment.status = AssignmentStatus.AUTO_SUBMITTED
-            assignment.submitted_at = assignment.deadline_at
-            await db.commit()
-            await compute_and_save_exam_scores(db, assignment.id)
-            raise HTTPException(
-                status_code=400,
-                detail="Assessment time limit has expired and your test has been submitted."
-            )
-
-        # Sync assigned questions if exam pool/pattern changed by admin
-        await sync_unsubmitted_assignments_for_exam(db, exam_id)
-
-        # If already started, record resume telemetry if provided
-        if telemetry:
-            await record_exam_resume_telemetry(
-                db=db,
-                exam_id=exam_id,
-                user_id=user_id,
-                assignment_id=assignment.id,
-                telemetry=telemetry,
-                client_ip=client_ip,
-                redis=redis
-            )
-
-        # Return existing locked questions
-        assigned_views = await _get_assigned_question_views(db, assignment.id)
-        return ExamStartResponse(
-            assignment_id=assignment.id,
-            exam_id=exam.id,
-            status=assignment.status,
-            started_at=assignment.started_at or now,
-            deadline_at=assignment.deadline_at or (now + timedelta(minutes=exam.duration_minutes)),
-            duration_minutes=exam.duration_minutes,
-            questions=assigned_views
-        )
-
-    # 3. Create new assignment
-    # A. Fetch MCQ questions based on exam configuration (mcq_count)
+    exam_id = exam.id
     mcq_target = getattr(exam, 'mcq_count', None)
     mcq_q_ids = []
     if mcq_target is not None and mcq_target > 0:
@@ -348,7 +264,6 @@ async def start_exam_for_student(
         )
         mcq_q_ids = list((await db.execute(stmt_mcq)).scalars().all())
     elif mcq_target is None:
-        # Fallback for unconfigured legacy exams: all fixed MCQs
         stmt_fixed = (
             select(ExamQuestionPool.question_id)
             .join(Question, ExamQuestionPool.question_id == Question.id)
@@ -360,7 +275,7 @@ async def start_exam_for_student(
         )
         mcq_q_ids = list((await db.execute(stmt_fixed)).scalars().all())
 
-    # B. Fetch coding questions based on dynamic exam quotas
+    # Fetch coding questions based on dynamic exam quotas
     easy_target = getattr(exam, 'easy_count', None) or 0
     med_target = getattr(exam, 'medium_count', None) or 0
     hard_target = getattr(exam, 'hard_count', None) or 0
@@ -413,7 +328,6 @@ async def start_exam_for_student(
 
     coding_selected_ids = list(easy_q_ids) + list(med_q_ids) + list(hard_q_ids)
 
-    # Check if there are any random coding pool questions available to fallback from
     stmt_random_pool = (
         select(ExamQuestionPool.question_id)
         .join(Question, ExamQuestionPool.question_id == Question.id)
@@ -455,21 +369,167 @@ async def start_exam_for_student(
             else:
                 untimed_mcq_ids.append(q_id)
 
-    # Total assigned questions: timed MCQs first, then untimed MCQs, then coding questions
     final_assigned_q_ids = timed_mcq_ids + untimed_mcq_ids + coding_selected_ids
-
     if not final_assigned_q_ids:
         raise HTTPException(
             status_code=400,
             detail="No questions available in the exam pool. Please contact administrator."
         )
+    return final_assigned_q_ids
+
+
+async def start_exam_for_student(
+    db: AsyncSession,
+    exam_id: int,
+    user_id: int,
+    telemetry: Optional[DeviceTelemetryPayload] = None,
+    client_ip: Optional[str] = None,
+    redis: Optional[aioredis.Redis] = None,
+    verification_photo: Optional[str] = None,
+    s3_key: Optional[str] = None
+) -> ExamStartResponse:
+    """
+    Idempotently starts the exam for a student:
+    - If already assigned, returns existing assignment and locked questions, and records resume telemetry.
+    - If not assigned:
+      - Randomly picks coding questions based on dynamic exam pattern (easy_count, medium_count, hard_count)
+      - Fetches ALL fixed/MCQ questions (selection_mode='fixed') for this exam
+      - Every student gets all fixed MCQs in the pool + the random coding draw
+      - Sets started_at and deadline_at = started_at + duration_minutes.
+      - Logs initial device & geolocation telemetry in the proctoring audit log.
+    """
+    now = datetime.now(timezone.utc)
+
+    # 1. Fetch exam
+    stmt_exam = select(Exam).where(Exam.id == exam_id)
+    exam = (await db.execute(stmt_exam)).scalar_one_or_none()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    if not exam.is_published:
+        raise HTTPException(status_code=400, detail="Exam is not published")
+
+    if exam.start_time and now < exam.start_time:
+        raise HTTPException(status_code=400, detail="Exam has not started yet")
+
+    if exam.end_time and now > exam.end_time:
+        raise HTTPException(status_code=400, detail="Exam window has expired")
+
+    # Check candidate group eligibility
+    if exam.target_groups and len(exam.target_groups) > 0:
+        student = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if not student or not student.candidate_group or student.candidate_group not in exam.target_groups:
+            allowed_groups_str = ", ".join(exam.target_groups)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"This assessment is restricted to specific candidate batches/groups ({allowed_groups_str})."
+            )
+
+    # 2. Check for existing active assignment
+    stmt_assign = (
+        select(ExamAssignment)
+        .where(
+            ExamAssignment.exam_id == exam_id,
+            ExamAssignment.user_id == user_id,
+            ExamAssignment.is_active == True
+        )
+    )
+    assignment = (await db.execute(stmt_assign)).scalar_one_or_none()
+
+    # Late Entry Window Enforcement:
+    # If exam has start_time and duration_minutes > late_entry_window_minutes (default 15):
+    # Candidate cannot enter if now > start_time + late_entry_window_minutes
+    # Exceptions:
+    # 1) If exam duration <= late_entry_window_minutes: candidates can enter anytime within exam window.
+    # 2) If assignment was already started during the entry window (in_progress resume)
+    # 3) If assignment was explicitly reset/waived by admin (reset_by_admin == True)
+    late_window = getattr(exam, 'late_entry_window_minutes', 15) or 15
+    if exam.start_time and exam.duration_minutes > late_window:
+        entry_cutoff = exam.start_time + timedelta(minutes=late_window)
+        is_waived = assignment is not None and getattr(assignment, 'reset_by_admin', False)
+        is_already_started = assignment is not None and assignment.status == AssignmentStatus.IN_PROGRESS
+        if not is_waived and not is_already_started and now > entry_cutoff:
+            cutoff_str = entry_cutoff.strftime("%H:%M UTC")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"The late entry window for this assessment closed at {cutoff_str} ({late_window} minutes after start time). Late entry is not permitted."
+            )
+
+    if assignment:
+        # If assignment was in NOT_STARTED state (e.g. from fresh restart), start the clock now
+        if assignment.status == AssignmentStatus.NOT_STARTED:
+            assignment.started_at = now
+            assignment.deadline_at = now + timedelta(minutes=exam.duration_minutes)
+            assignment.status = AssignmentStatus.IN_PROGRESS
+            await db.commit()
+            await db.refresh(assignment)
+
+        # If already completed or expired, reject starting again
+        if assignment.status in [AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]:
+            raise HTTPException(
+                status_code=400,
+                detail="You have already completed and submitted this assessment."
+            )
+
+        if assignment.deadline_at and now > assignment.deadline_at:
+            assignment.status = AssignmentStatus.AUTO_SUBMITTED
+            assignment.submitted_at = assignment.deadline_at
+            await db.commit()
+            await compute_and_save_exam_scores(db, assignment.id)
+            raise HTTPException(
+                status_code=400,
+                detail="Assessment time limit has expired and your test has been submitted."
+            )
+
+        # Sync assigned questions if exam pool/pattern changed by admin
+        await sync_unsubmitted_assignments_for_exam(db, exam_id)
+
+        # If already started, record resume telemetry or photo if provided
+        if telemetry or verification_photo or s3_key:
+            await record_exam_resume_telemetry(
+                db=db,
+                exam_id=exam_id,
+                user_id=user_id,
+                assignment_id=assignment.id,
+                telemetry=telemetry,
+                client_ip=client_ip,
+                redis=redis,
+                verification_photo=verification_photo,
+                s3_key=s3_key
+            )
+
+        # Return existing locked questions
+        assigned_views = await _get_assigned_question_views(db, assignment.id)
+        return ExamStartResponse(
+            assignment_id=assignment.id,
+            exam_id=exam.id,
+            status=assignment.status,
+            started_at=assignment.started_at or now,
+            deadline_at=assignment.deadline_at or (now + timedelta(minutes=exam.duration_minutes)),
+            duration_minutes=exam.duration_minutes,
+            attempt_number=getattr(assignment, 'attempt_number', 1),
+            verification_photo_url=get_presigned_view_url(getattr(assignment, 'verification_photo_url', None)),
+            questions=assigned_views
+        )
+
+    # 3. Create new assignment (initial attempt)
+    final_assigned_q_ids = await _draw_exam_questions(db, exam)
 
     started_at = now
     deadline_at = started_at + timedelta(minutes=exam.duration_minutes)
 
+    max_att_stmt = select(func.coalesce(func.max(ExamAssignment.attempt_number), 0)).where(
+        ExamAssignment.exam_id == exam.id,
+        ExamAssignment.user_id == user_id
+    )
+    max_attempt = (await db.execute(max_att_stmt)).scalar() or 0
+    attempt_num = max_attempt + 1
+
     assignment = ExamAssignment(
         exam_id=exam.id,
         user_id=user_id,
+        attempt_number=attempt_num,
+        is_active=True,
         started_at=started_at,
         deadline_at=deadline_at,
         status=AssignmentStatus.IN_PROGRESS
@@ -528,6 +588,43 @@ async def start_exam_for_student(
     )
     db.add(start_log)
 
+    # Verification Photo: Prefer direct S3 key (enterprise-scale direct upload)
+    if s3_key:
+        expected_prefix = f"{settings.S3_PHOTO_PREFIX}/exam_{exam.id}/user_{user_id}/"
+        if s3_key.startswith(expected_prefix) or settings.S3_PHOTO_PREFIX in s3_key:
+            assignment.verification_photo_url = s3_key
+            photo_log = ExamProctoringLog(
+                assignment_id=assignment.id,
+                event_type="VERIFICATION_SNAPSHOT",
+                title="Candidate Identity Photo (Start)",
+                description="Identity verification webcam snapshot captured and stored directly in S3 bucket ubi-code",
+                occurred_at=now,
+                meta_data=json.dumps({"s3_key": s3_key, "event": "start"})
+            )
+            db.add(photo_log)
+        else:
+            logger.warning(f"[S3] Mismatched s3_key prefix '{s3_key}' for exam {exam.id}, user {user_id}")
+    elif verification_photo:
+        upload_res = upload_verification_photo_to_s3(
+            base64_data=verification_photo,
+            exam_id=exam.id,
+            user_id=user_id,
+            attempt_number=attempt_num,
+            event_type="start"
+        )
+        if upload_res:
+            s3_key_res, photo_url = upload_res
+            assignment.verification_photo_url = s3_key_res
+            photo_log = ExamProctoringLog(
+                assignment_id=assignment.id,
+                event_type="VERIFICATION_SNAPSHOT",
+                title="Candidate Identity Photo (Start)",
+                description="Identity verification webcam snapshot captured and stored in S3 bucket ubi-code",
+                occurred_at=now,
+                meta_data=json.dumps({"s3_key": s3_key_res, "photo_url": photo_url, "event": "start"})
+            )
+            db.add(photo_log)
+
     await db.commit()
     await db.refresh(assignment)
 
@@ -560,6 +657,8 @@ async def start_exam_for_student(
         started_at=assignment.started_at,
         deadline_at=assignment.deadline_at,
         duration_minutes=exam.duration_minutes,
+        attempt_number=getattr(assignment, 'attempt_number', 1),
+        verification_photo_url=get_presigned_view_url(getattr(assignment, 'verification_photo_url', None)),
         questions=assigned_views
     )
 
@@ -571,7 +670,9 @@ async def record_exam_resume_telemetry(
     assignment_id: int,
     telemetry: Optional[DeviceTelemetryPayload],
     client_ip: Optional[str] = None,
-    redis: Optional[aioredis.Redis] = None
+    redis: Optional[aioredis.Redis] = None,
+    verification_photo: Optional[str] = None,
+    s3_key: Optional[str] = None
 ) -> ResumeExamResponse:
     """
     Records device details and geolocation each time a candidate resumes, refreshes, or reconnects.
@@ -679,6 +780,44 @@ async def record_exam_resume_telemetry(
         meta_data=json.dumps(resume_meta)
     )
     db.add(resume_log)
+
+    # Verification Photo on resume: Prefer direct S3 key
+    if s3_key:
+        expected_prefix = f"{settings.S3_PHOTO_PREFIX}/exam_{exam_id}/user_{user_id}/"
+        if s3_key.startswith(expected_prefix) or settings.S3_PHOTO_PREFIX in s3_key:
+            assignment.verification_photo_url = s3_key
+            photo_log = ExamProctoringLog(
+                assignment_id=assignment.id,
+                event_type="VERIFICATION_SNAPSHOT",
+                title="Candidate Identity Photo (Resume)",
+                description="Identity verification webcam snapshot captured on resume and stored directly in S3 bucket ubi-code",
+                occurred_at=now,
+                meta_data=json.dumps({"s3_key": s3_key, "event": "resume"})
+            )
+            db.add(photo_log)
+        else:
+            logger.warning(f"[S3] Mismatched s3_key prefix '{s3_key}' on resume for exam {exam_id}, user {user_id}")
+    elif verification_photo:
+        upload_res = upload_verification_photo_to_s3(
+            base64_data=verification_photo,
+            exam_id=exam_id,
+            user_id=user_id,
+            attempt_number=getattr(assignment, 'attempt_number', 1),
+            event_type="resume"
+        )
+        if upload_res:
+            s3_key_res, photo_url = upload_res
+            assignment.verification_photo_url = s3_key_res
+            photo_log = ExamProctoringLog(
+                assignment_id=assignment.id,
+                event_type="VERIFICATION_SNAPSHOT",
+                title="Candidate Identity Photo (Resume)",
+                description="Identity verification webcam snapshot captured on resume and stored in S3 bucket ubi-code",
+                occurred_at=now,
+                meta_data=json.dumps({"s3_key": s3_key_res, "photo_url": photo_url, "event": "resume"})
+            )
+            db.add(photo_log)
+
     await db.commit()
 
     if redis:
@@ -704,6 +843,7 @@ async def record_exam_resume_telemetry(
     return ResumeExamResponse(
         status="ok",
         device_switch_detected=device_switch_detected,
+        verification_photo_url=get_presigned_view_url(getattr(assignment, 'verification_photo_url', None)),
         message="Device switch recorded" if device_switch_detected else "Assessment resumed telemetry logged."
     )
 
@@ -723,12 +863,27 @@ async def mark_question_viewed(
     """
     now = datetime.now(timezone.utc)
 
-    # 1. Fetch assignment
-    assign_stmt = select(ExamAssignment).where(
-        ExamAssignment.exam_id == exam_id,
-        ExamAssignment.user_id == user_id
+    # 1. Fetch assignment (prioritize active assignment / latest attempt)
+    assign_stmt = (
+        select(ExamAssignment)
+        .where(
+            ExamAssignment.exam_id == exam_id,
+            ExamAssignment.user_id == user_id,
+            ExamAssignment.is_active == True
+        )
+        .order_by(desc(ExamAssignment.attempt_number))
     )
-    assignment = (await db.execute(assign_stmt)).scalar_one_or_none()
+    assignment = (await db.execute(assign_stmt)).scalars().first()
+    if not assignment:
+        assign_stmt_fallback = (
+            select(ExamAssignment)
+            .where(
+                ExamAssignment.exam_id == exam_id,
+                ExamAssignment.user_id == user_id
+            )
+            .order_by(desc(ExamAssignment.attempt_number))
+        )
+        assignment = (await db.execute(assign_stmt_fallback)).scalars().first()
     if not assignment:
         raise HTTPException(status_code=404, detail="Exam assignment not found")
 
@@ -772,12 +927,27 @@ async def lock_assigned_question(
     """
     now = datetime.now(timezone.utc)
 
-    # 1. Fetch assignment
-    assign_stmt = select(ExamAssignment).where(
-        ExamAssignment.exam_id == exam_id,
-        ExamAssignment.user_id == user_id
+    # 1. Fetch assignment (prioritize active assignment / latest attempt)
+    assign_stmt = (
+        select(ExamAssignment)
+        .where(
+            ExamAssignment.exam_id == exam_id,
+            ExamAssignment.user_id == user_id,
+            ExamAssignment.is_active == True
+        )
+        .order_by(desc(ExamAssignment.attempt_number))
     )
-    assignment = (await db.execute(assign_stmt)).scalar_one_or_none()
+    assignment = (await db.execute(assign_stmt)).scalars().first()
+    if not assignment:
+        assign_stmt_fallback = (
+            select(ExamAssignment)
+            .where(
+                ExamAssignment.exam_id == exam_id,
+                ExamAssignment.user_id == user_id
+            )
+            .order_by(desc(ExamAssignment.attempt_number))
+        )
+        assignment = (await db.execute(assign_stmt_fallback)).scalars().first()
     if not assignment:
         raise HTTPException(status_code=404, detail="Exam assignment not found")
 
@@ -823,7 +993,11 @@ async def get_student_exam_questions(
     stmt = (
         select(ExamAssignment, Exam)
         .join(Exam, ExamAssignment.exam_id == Exam.id)
-        .where(ExamAssignment.exam_id == exam_id, ExamAssignment.user_id == user_id)
+        .where(
+            ExamAssignment.exam_id == exam_id,
+            ExamAssignment.user_id == user_id,
+            ExamAssignment.is_active == True
+        )
     )
     row = (await db.execute(stmt)).first()
     if not row:
@@ -855,6 +1029,7 @@ async def get_student_exam_questions(
         started_at=assignment.started_at,
         deadline_at=assignment.deadline_at,
         duration_minutes=exam.duration_minutes,
+        attempt_number=getattr(assignment, 'attempt_number', 1),
         server_time=now,
         questions=assigned_views
     )
@@ -872,7 +1047,11 @@ async def finish_exam_for_student(
 
     stmt = (
         select(ExamAssignment)
-        .where(ExamAssignment.exam_id == exam_id, ExamAssignment.user_id == user_id)
+        .where(
+            ExamAssignment.exam_id == exam_id,
+            ExamAssignment.user_id == user_id,
+            ExamAssignment.is_active == True
+        )
     )
     assignment = (await db.execute(stmt)).scalar_one_or_none()
     if not assignment:
@@ -1279,9 +1458,14 @@ async def get_live_exam_monitoring(
             college=user.college,
             candidate_group=user.candidate_group,
             status=assign.status.value,
+            attempt_number=getattr(assign, 'attempt_number', 1),
+            is_active=getattr(assign, 'is_active', True),
+            reset_by_admin=getattr(assign, 'reset_by_admin', False),
+            reset_reason=getattr(assign, 'reset_reason', None),
             started_at=assign.started_at,
             deadline_at=assign.deadline_at,
             submitted_at=assign.submitted_at,
+            verification_photo_url=get_presigned_view_url(getattr(assign, 'verification_photo_url', None)),
             time_remaining_sec=remaining_sec,
             submissions_count=submission_count,
             flags_count=flags_count,
@@ -1505,6 +1689,25 @@ async def get_candidate_dossier(
     computed_percentage = round((raw_score / max_score) * 100.0, 2) if max_score > 0 else 0.0
     total_score = result.total_score if result else (computed_percentage if assignment.status in (AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED) else None)
 
+    attempts_stmt = (
+        select(ExamAssignment)
+        .where(
+            ExamAssignment.exam_id == exam_id,
+            ExamAssignment.user_id == user.id
+        )
+        .order_by(ExamAssignment.attempt_number.asc())
+    )
+    attempts_records = (await db.execute(attempts_stmt)).scalars().all()
+    available_attempts = [
+        CandidateAttemptItem(
+            assignment_id=att.id,
+            attempt_number=att.attempt_number,
+            is_active=att.is_active,
+            status=att.status.value if hasattr(att.status, "value") else str(att.status)
+        )
+        for att in attempts_records
+    ]
+
     return CandidateDossierResponse(
         assignment_id=assignment.id,
         exam_id=exam.id,
@@ -1514,6 +1717,12 @@ async def get_candidate_dossier(
         email=user.email,
         roll_no=user.roll_no,
         status=assignment.status.value,
+        attempt_number=getattr(assignment, 'attempt_number', 1),
+        is_active=getattr(assignment, 'is_active', True),
+        reset_by_admin=getattr(assignment, 'reset_by_admin', False),
+        reset_reason=getattr(assignment, 'reset_reason', None),
+        available_attempts=available_attempts,
+        verification_photo_url=get_presigned_view_url(getattr(assignment, 'verification_photo_url', None)),
         started_at=assignment.started_at,
         submitted_at=assignment.submitted_at,
         total_time_sec=round(total_time_sec, 1) if total_time_sec is not None else None,
@@ -1530,4 +1739,106 @@ async def get_candidate_dossier(
         disconnect_incidents_count=disconnect_incidents_count,
         total_offline_seconds=total_offline_seconds,
         network_incidents=[NetworkIncidentItem.model_validate(inc) for inc in incident_rows]
+    )
+
+
+async def fresh_restart_candidate_exam(
+    db: AsyncSession,
+    exam_id: int,
+    assignment_id: int,
+    admin_user: User,
+    reason: Optional[str] = None
+) -> FreshRestartResponse:
+    """
+    Manually restarts an exam attempt for a candidate in genuine emergency/technical cases.
+    - Archives the previous attempt by marking is_active = False (preserving all submissions, logs, scores).
+    - Issues a brand-new ExamAssignment (attempt_number = prev + 1, is_active = True).
+    - Randomly draws a fresh set of questions from the exam pool following dynamic quotas.
+    - Resets timer to full duration, with status NOT_STARTED and admin waiver so late entry is permitted.
+    - Logs audit proctoring events on both previous and new assignments.
+    """
+    now = datetime.now(timezone.utc)
+
+    # 1. Fetch current assignment
+    stmt = (
+        select(ExamAssignment, Exam, User)
+        .join(Exam, ExamAssignment.exam_id == Exam.id)
+        .join(User, ExamAssignment.user_id == User.id)
+        .where(
+            ExamAssignment.id == assignment_id,
+            ExamAssignment.exam_id == exam_id
+        )
+    )
+    row = (await db.execute(stmt)).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Candidate assignment not found for this exam")
+
+    assignment, exam, user = row
+
+    # 2. Deactivate previous assignment (preserves all submissions, scores, logs)
+    assignment.is_active = False
+
+    # 3. Next attempt number
+    next_attempt = assignment.attempt_number + 1
+
+    # 4. Draw brand-new question set
+    final_assigned_q_ids = await _draw_exam_questions(db, exam)
+
+    # 5. Create fresh new assignment with full duration
+    new_assignment = ExamAssignment(
+        exam_id=exam.id,
+        user_id=user.id,
+        attempt_number=next_attempt,
+        is_active=True,
+        reset_by_admin=True,
+        reset_reason=reason or f"Fresh restart granted by administrator {admin_user.email}",
+        status=AssignmentStatus.NOT_STARTED,
+        started_at=None,
+        deadline_at=None,
+        submitted_at=None
+    )
+    db.add(new_assignment)
+    await db.flush()
+
+    # 6. Link newly drawn questions to new assignment
+    for idx, q_id in enumerate(final_assigned_q_ids):
+        q_stmt = select(Question.difficulty).where(Question.id == q_id)
+        q_diff = (await db.execute(q_stmt)).scalar_one_or_none() or QuestionDifficulty.EASY
+        assigned_q = AssignedQuestion(
+            assignment_id=new_assignment.id,
+            question_id=q_id,
+            difficulty=q_diff,
+            order_index=idx
+        )
+        db.add(assigned_q)
+
+    # 7. Add proctoring audit log on both old and new assignments
+    old_log = ExamProctoringLog(
+        assignment_id=assignment.id,
+        event_type="ADMIN_FRESH_RESTART_ARCHIVED",
+        title="Attempt Archived via Admin Fresh Restart",
+        description=f"Attempt #{assignment.attempt_number} was archived by admin {admin_user.email}. Reason: {reason or 'Not specified'}",
+        occurred_at=now
+    )
+    db.add(old_log)
+
+    new_log = ExamProctoringLog(
+        assignment_id=new_assignment.id,
+        event_type="ADMIN_FRESH_RESTART_GRANTED",
+        title="Fresh Restart Issued by Admin",
+        description=f"Attempt #{next_attempt} initialized with fresh randomized question pool and full time allowance by admin {admin_user.email}. Reason: {reason or 'Not specified'}",
+        occurred_at=now
+    )
+    db.add(new_log)
+
+    await db.commit()
+
+    return FreshRestartResponse(
+        old_assignment_id=assignment.id,
+        new_assignment_id=new_assignment.id,
+        user_id=user.id,
+        exam_id=exam.id,
+        attempt_number=next_attempt,
+        status="not_started",
+        message=f"Successfully issued Fresh Restart (Attempt #{next_attempt}) for candidate {user.name}."
     )

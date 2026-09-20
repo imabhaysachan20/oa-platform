@@ -11,7 +11,8 @@ export type InfractionType =
   | 'PRINT_SAVE_SHORTCUT'
   | 'DEVTOOLS_DOCK_OPENED'
   | 'MOUSE_LEAVE'
-  | 'CONTEXT_MENU';
+  | 'CONTEXT_MENU'
+  | 'CAMERA_INTERRUPTED';
 
 export interface InfractionRecord {
   id: string;
@@ -32,6 +33,10 @@ interface UseExamSecurityOptions {
 }
 
 const INFRACTION_INFO: Record<InfractionType, { title: string; description: string }> = {
+  CAMERA_INTERRUPTED: {
+    title: 'Webcam Proctoring Stream Interrupted',
+    description: 'The live webcam video stream was disconnected or disabled. Continuous camera monitoring is required.',
+  },
   TAB_SWITCH: {
     title: 'Tab Switch Detected',
     description: 'You switched to another browser tab or minimized the window.',

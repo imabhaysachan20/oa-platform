@@ -8,6 +8,7 @@ import { QuestionTimerProgressBar } from './QuestionTimerProgressBar';
 interface MCQPanelProps {
   userId?: number | null;
   examId?: number | null;
+  assignmentId?: number | null;
   question: StudentQuestionView;
   selectedOptionIds: string[];
   onChangeSelection: (newSelectedIds: string[]) => void;
@@ -26,6 +27,7 @@ interface MCQPanelProps {
 export const MCQPanel: React.FC<MCQPanelProps> = ({
   userId,
   examId,
+  assignmentId,
   question,
   selectedOptionIds,
   onChangeSelection,
@@ -44,7 +46,7 @@ export const MCQPanel: React.FC<MCQPanelProps> = ({
   const options = question.mcq_options || [];
 
   // Per-question timer state driven by localStorage and server question_deadline_at with serverTime skew compensation
-  const timer = useQuestionTimer(userId, examId, question, onQuestionExpire, serverTime);
+  const timer = useQuestionTimer(userId, examId, question, onQuestionExpire, serverTime, assignmentId);
   const isLocked = !!question.is_mcq_locked || timer.hasExpired;
 
   const handleToggleOption = (optionId: string) => {

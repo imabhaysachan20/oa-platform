@@ -172,6 +172,7 @@ export interface Exam {
   medium_count?: number;
   hard_count?: number;
   is_published: boolean;
+  late_entry_window_minutes?: number;
   target_groups?: string[];
   pool_count?: number;
   created_at?: string;
@@ -179,6 +180,9 @@ export interface Exam {
   is_completed?: boolean;
   is_upcoming?: boolean;
   is_expired?: boolean;
+  is_entry_closed?: boolean;
+  entry_deadline?: string;
+  attempt_number?: number;
   server_time?: string;
 }
 
@@ -189,6 +193,8 @@ export interface ExamStartResponse {
   started_at: string;
   deadline_at: string;
   duration_minutes: number;
+  attempt_number?: number;
+  verification_photo_url?: string | null;
   questions: StudentQuestionView[];
 }
 
@@ -200,6 +206,7 @@ export interface MyQuestionsResponse {
   started_at?: string;
   deadline_at?: string;
   duration_minutes: number;
+  attempt_number?: number;
   server_time: string;
   questions: StudentQuestionView[];
 }
@@ -279,6 +286,10 @@ export interface MonitoringStudentView {
   email: string;
   roll_no?: string;
   status: string;
+  attempt_number?: number;
+  is_active?: boolean;
+  reset_by_admin?: boolean;
+  reset_reason?: string | null;
   started_at?: string;
   deadline_at?: string;
   submitted_at?: string;
@@ -292,6 +303,7 @@ export interface MonitoringStudentView {
   seconds_since_last_ping?: number | null;
   disconnect_incidents_count?: number;
   total_offline_seconds?: number;
+  verification_photo_url?: string | null;
 }
 
 export interface NetworkIncidentItem {
@@ -343,6 +355,13 @@ export interface CandidateQuestionSubmissionDossier {
   is_multi_select?: boolean;
 }
 
+export interface CandidateAttemptItem {
+  assignment_id: number;
+  attempt_number: number;
+  is_active: boolean;
+  status: string;
+}
+
 export interface CandidateDossierResponse {
   assignment_id: number;
   exam_id: number;
@@ -352,6 +371,11 @@ export interface CandidateDossierResponse {
   email: string;
   roll_no?: string | null;
   status: string;
+  attempt_number?: number;
+  is_active?: boolean;
+  reset_by_admin?: boolean;
+  reset_reason?: string | null;
+  available_attempts?: CandidateAttemptItem[];
   started_at?: string | null;
   submitted_at?: string | null;
   total_time_sec?: number | null;
@@ -368,6 +392,17 @@ export interface CandidateDossierResponse {
   disconnect_incidents_count?: number;
   total_offline_seconds?: number;
   network_incidents?: NetworkIncidentItem[];
+  verification_photo_url?: string | null;
+}
+
+export interface FreshRestartResponse {
+  old_assignment_id: number;
+  new_assignment_id: number;
+  user_id: number;
+  exam_id: number;
+  attempt_number: number;
+  status: string;
+  message: string;
 }
 
 export interface DeviceTelemetryPayload {
@@ -382,15 +417,30 @@ export interface DeviceTelemetryPayload {
   location_status?: string;
 }
 
+export interface StartExamPayload {
+  telemetry?: DeviceTelemetryPayload;
+  verification_photo?: string;
+  s3_key?: string;
+}
+
 export interface ResumeExamRequest {
   assignment_id: number;
   telemetry?: DeviceTelemetryPayload;
+  verification_photo?: string;
+  s3_key?: string;
 }
 
 export interface ResumeExamResponse {
   status: string;
   device_switch_detected: boolean;
   message: string;
+  verification_photo_url?: string | null;
+}
+
+export interface PhotoUploadUrlResponse {
+  upload_url: string;
+  s3_key: string;
+  expires_in: number;
 }
 
 

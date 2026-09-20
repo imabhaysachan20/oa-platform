@@ -211,7 +211,8 @@ async def submit_code_solution(
     exam_id: int,
     question_id: int,
     code: str,
-    language: str
+    language: str,
+    assignment_id: Optional[int] = None
 ) -> SubmitCodeResponse:
     """
     Submits code to Judge0 against ALL test cases (visible + hidden).
@@ -219,11 +220,40 @@ async def submit_code_solution(
     """
     # 1. Verify active exam assignment
     now = datetime.now(timezone.utc)
-    stmt_assign = (
-        select(ExamAssignment)
-        .where(ExamAssignment.exam_id == exam_id, ExamAssignment.user_id == user_id)
-    )
-    assignment = (await db.execute(stmt_assign)).scalar_one_or_none()
+    if assignment_id:
+        stmt_assign = (
+            select(ExamAssignment)
+            .where(
+                ExamAssignment.id == assignment_id,
+                ExamAssignment.exam_id == exam_id,
+                ExamAssignment.user_id == user_id
+            )
+        )
+        assignment = (await db.execute(stmt_assign)).scalar_one_or_none()
+    else:
+        stmt_assign = (
+            select(ExamAssignment)
+            .where(
+                ExamAssignment.exam_id == exam_id,
+                ExamAssignment.user_id == user_id,
+                ExamAssignment.is_active == True
+            )
+            .order_by(desc(ExamAssignment.attempt_number))
+        )
+        assignment = (await db.execute(stmt_assign)).scalars().first()
+
+    if not assignment:
+        # Fallback to most recent attempt if is_active flag was not populated
+        stmt_assign_fallback = (
+            select(ExamAssignment)
+            .where(
+                ExamAssignment.exam_id == exam_id,
+                ExamAssignment.user_id == user_id
+            )
+            .order_by(desc(ExamAssignment.attempt_number))
+        )
+        assignment = (await db.execute(stmt_assign_fallback)).scalars().first()
+
     if not assignment:
         raise HTTPException(status_code=404, detail="Exam assignment not found. Please start the exam first.")
 

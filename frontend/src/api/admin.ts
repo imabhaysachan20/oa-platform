@@ -8,6 +8,7 @@ import {
   CandidateImportResponse,
   StudentCreatePayload,
   StudentUpdatePayload,
+  FreshRestartResponse,
 } from '../types';
 
 export const adminApi = {
@@ -163,6 +164,11 @@ export const adminApi = {
 
   getCandidateDossier: async (examId: number, assignmentId: number): Promise<CandidateDossierResponse> => {
     const res = await api.get<CandidateDossierResponse>(`/admin/exams/${examId}/candidates/${assignmentId}/dossier`);
+    return res.data;
+  },
+
+  freshRestartCandidateExam: async (examId: number, assignmentId: number, reason?: string): Promise<FreshRestartResponse> => {
+    const res = await api.post<FreshRestartResponse>(`/admin/exams/${examId}/candidates/${assignmentId}/restart`, { reason });
     return res.data;
   },
 

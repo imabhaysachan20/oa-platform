@@ -147,10 +147,14 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - SECRET_KEY=ubicode-production-master-secret-key-2024
       - RUN_RATE_LIMIT=10/minute
+      - AWS_DEFAULT_REGION=ap-south-1
+      - AWS_REGION=ap-south-1
+      - S3_BUCKET_NAME=ubi-code
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app/backend
+      - C:/Users/Admin/.aws:/root/.aws:ro
     command: >
       sh -c "alembic -c backend/alembic.ini upgrade head &&
              python backend/seed.py &&

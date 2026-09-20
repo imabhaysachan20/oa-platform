@@ -18,7 +18,9 @@ import {
   Radio,
   Users,
   Clock,
+  RotateCcw,
 } from 'lucide-react';
+import { Modal } from '../components/ui/Modal';
 import { CandidateDossierModal } from '../components/CandidateDossierModal';
 
 export const AdminMonitoringPage: React.FC = () => {
@@ -27,6 +29,14 @@ export const AdminMonitoringPage: React.FC = () => {
   const navigate = useNavigate();
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<number | null>(null);
   const [filterMode, setFilterMode] = useState<'all' | 'in_progress' | 'disconnected'>('all');
+  const [restartTarget, setRestartTarget] = useState<{
+    assignmentId: number;
+    candidateName: string;
+    attemptNumber?: number;
+  } | null>(null);
+  const [restartReason, setRestartReason] = useState('');
+  const [isRestarting, setIsRestarting] = useState(false);
+  const [restartError, setRestartError] = useState<string | null>(null);
 
   const { data: monitoring, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['adminMonitoring', id],
@@ -80,6 +90,22 @@ export const AdminMonitoringPage: React.FC = () => {
     }
     return monitoring;
   }, [monitoring, filterMode]);
+
+  const handleConfirmRestart = async () => {
+    if (!restartTarget || !restartReason.trim()) return;
+    setIsRestarting(true);
+    setRestartError(null);
+    try {
+      await adminApi.freshRestartCandidateExam(id, restartTarget.assignmentId, restartReason.trim());
+      setRestartTarget(null);
+      setRestartReason('');
+      await refetch();
+    } catch (err: any) {
+      setRestartError(err?.response?.data?.detail || err?.message || 'Failed to restart assessment.');
+    } finally {
+      setIsRestarting(false);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 space-y-6 animate-fadeIn">
@@ -254,7 +280,19 @@ export const AdminMonitoringPage: React.FC = () => {
                     }`}
                   >
                     <td className="py-3.5 px-4 font-sans">
-                      <div className="font-bold text-slate-900 dark:text-slate-100">{row.name}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-slate-900 dark:text-slate-100">{row.name}</span>
+                        {row.attempt_number && row.attempt_number > 1 && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-400 dark:border-indigo-800">
+                            Attempt #{row.attempt_number}
+                          </span>
+                        )}
+                        {row.reset_by_admin && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/60 dark:text-purple-400 dark:border-purple-800">
+                            Restarted
+                          </span>
+                        )}
+                      </div>
                       <div className="text-[11px] text-slate-500 dark:text-slate-400">{row.email}</div>
                     </td>
                     <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400">{row.roll_no || '—'}</td>
@@ -392,15 +430,35 @@ export const AdminMonitoringPage: React.FC = () => {
                     </td>
 
                     <td className="py-3.5 px-4 text-right font-sans">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setSelectedAssignmentId(row.assignment_id)}
-                        className="gap-1.5 text-xs font-semibold"
-                      >
-                        <FileText size={13} className="text-ubi-800 dark:text-ubi-400" />
-                        <span>View Dossier</span>
-                      </Button>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setRestartError(null);
+                            setRestartReason('');
+                            setRestartTarget({
+                              assignmentId: row.assignment_id,
+                              candidateName: row.name,
+                              attemptNumber: row.attempt_number || 1,
+                            });
+                          }}
+                          className="gap-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 dark:border-rose-900/40 dark:text-rose-400 dark:hover:bg-rose-950/30"
+                          title="Grant Fresh Restart"
+                        >
+                          <RotateCcw size={13} />
+                          <span>Restart</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedAssignmentId(row.assignment_id)}
+                          className="gap-1.5 text-xs font-semibold"
+                        >
+                          <FileText size={13} className="text-ubi-800 dark:text-ubi-400" />
+                          <span>View Dossier</span>
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -424,6 +482,101 @@ export const AdminMonitoringPage: React.FC = () => {
           examId={id}
           assignmentId={selectedAssignmentId}
         />
+      )}
+
+      {/* Fresh Restart Confirmation Modal */}
+      {restartTarget && (
+        <Modal
+          isOpen={!!restartTarget}
+          onClose={() => {
+            if (!isRestarting) {
+              setRestartTarget(null);
+              setRestartReason('');
+              setRestartError(null);
+            }
+          }}
+          title="Grant Fresh Assessment Restart"
+          maxWidth="lg"
+        >
+          <div className="space-y-4">
+            <div className="p-3.5 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 rounded-lg text-xs space-y-2">
+              <div className="font-bold text-rose-900 dark:text-rose-300 flex items-center gap-1.5">
+                <AlertTriangle size={15} className="text-rose-600" />
+                <span>Archive Attempt #{restartTarget.attemptNumber || 1} & Issue New Attempt</span>
+              </div>
+              <p className="text-rose-800 dark:text-rose-400 leading-relaxed">
+                Candidate: <strong className="font-semibold">{restartTarget.candidateName}</strong>
+              </p>
+              <ul className="list-disc pl-4 space-y-1 text-rose-700 dark:text-rose-400">
+                <li>
+                  Previous code submissions, test results, scores, and proctoring logs will <strong>remain permanently preserved</strong>.
+                </li>
+                <li>
+                  A new attempt (<strong>Attempt #{(restartTarget.attemptNumber || 1) + 1}</strong>) will be created with a fresh set of questions drawn from the question pool.
+                </li>
+                <li>
+                  Candidate receives <strong>full duration allowance</strong> and is exempt from late entry cutoff.
+                </li>
+              </ul>
+            </div>
+
+            {restartError && (
+              <div className="p-3 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-300 text-xs">
+                {restartError}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Reason for Fresh Restart <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                value={restartReason}
+                onChange={(e) => setRestartReason(e.target.value)}
+                placeholder="e.g., Verified network outage / machine freeze during attempt 1"
+                rows={3}
+                disabled={isRestarting}
+                className="w-full text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                This reason will be logged in the audit trail for both attempts.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isRestarting}
+                onClick={() => {
+                  setRestartTarget(null);
+                  setRestartReason('');
+                  setRestartError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={!restartReason.trim() || isRestarting}
+                onClick={handleConfirmRestart}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold gap-1.5"
+              >
+                {isRestarting ? (
+                  <>
+                    <RefreshCw size={13} className="animate-spin" />
+                    <span>Restarting...</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw size={13} />
+                    <span>Confirm Fresh Restart</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

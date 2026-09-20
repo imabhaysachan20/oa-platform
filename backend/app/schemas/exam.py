@@ -19,6 +19,7 @@ class ExamBase(BaseModel):
     medium_count: int = 2
     hard_count: int = 0
     is_published: bool = True
+    late_entry_window_minutes: int = 15
     target_groups: Optional[List[str]] = []
 
 
@@ -40,6 +41,7 @@ class ExamUpdate(BaseModel):
     medium_count: Optional[int] = None
     hard_count: Optional[int] = None
     is_published: Optional[bool] = None
+    late_entry_window_minutes: Optional[int] = None
     target_groups: Optional[List[str]] = None
     question_ids: Optional[List[int]] = None
 
@@ -52,6 +54,9 @@ class ExamResponse(ExamBase):
     is_completed: Optional[bool] = False
     is_upcoming: Optional[bool] = False
     is_expired: Optional[bool] = False
+    is_entry_closed: Optional[bool] = False
+    entry_deadline: Optional[datetime] = None
+    attempt_number: Optional[int] = 1
     server_time: Optional[datetime] = None
 
     class Config:
@@ -65,6 +70,7 @@ class ExamStartResponse(BaseModel):
     started_at: datetime
     deadline_at: datetime
     duration_minutes: int
+    attempt_number: int = 1
     questions: List[StudentQuestionView]
 
 
@@ -76,6 +82,7 @@ class MyQuestionsResponse(BaseModel):
     started_at: Optional[datetime] = None
     deadline_at: Optional[datetime] = None
     duration_minutes: int
+    attempt_number: int = 1
     server_time: datetime
     questions: List[StudentQuestionView]
 
@@ -124,6 +131,10 @@ class MonitoringStudentView(BaseModel):
     college: Optional[str] = None
     candidate_group: Optional[str] = None
     status: str
+    attempt_number: int = 1
+    is_active: bool = True
+    reset_by_admin: bool = False
+    reset_reason: Optional[str] = None
     started_at: Optional[datetime] = None
     deadline_at: Optional[datetime] = None
     submitted_at: Optional[datetime] = None
@@ -216,6 +227,13 @@ class CandidateQuestionSubmissionDossier(BaseModel):
     is_multi_select: bool = False
 
 
+class CandidateAttemptItem(BaseModel):
+    assignment_id: int
+    attempt_number: int
+    is_active: bool
+    status: str
+
+
 class CandidateDossierResponse(BaseModel):
     assignment_id: int
     exam_id: int
@@ -225,6 +243,11 @@ class CandidateDossierResponse(BaseModel):
     email: str
     roll_no: Optional[str] = None
     status: str
+    attempt_number: int = 1
+    is_active: bool = True
+    reset_by_admin: bool = False
+    reset_reason: Optional[str] = None
+    available_attempts: List[CandidateAttemptItem] = []
     started_at: Optional[datetime] = None
     submitted_at: Optional[datetime] = None
     total_time_sec: Optional[float] = None
@@ -241,6 +264,20 @@ class CandidateDossierResponse(BaseModel):
     disconnect_incidents_count: int = 0
     total_offline_seconds: int = 0
     network_incidents: List[NetworkIncidentItem] = []
+
+
+class FreshRestartRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+class FreshRestartResponse(BaseModel):
+    old_assignment_id: int
+    new_assignment_id: int
+    user_id: int
+    exam_id: int
+    attempt_number: int
+    status: str
+    message: str
 
 
 class DeviceTelemetryPayload(BaseModel):

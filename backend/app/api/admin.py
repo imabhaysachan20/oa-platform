@@ -23,7 +23,9 @@ from backend.app.schemas.exam import (
     ExamUpdate,
     ExamResponse,
     MonitoringStudentView,
-    CandidateDossierResponse
+    CandidateDossierResponse,
+    FreshRestartRequest,
+    FreshRestartResponse
 )
 from backend.app.schemas.question import (
     QuestionCreate,
@@ -40,7 +42,12 @@ from backend.app.schemas.auth import (
     StudentCreate,
     StudentUpdate
 )
-from backend.app.services.exam_service import get_live_exam_monitoring, get_candidate_dossier, sync_unsubmitted_assignments_for_exam
+from backend.app.services.exam_service import (
+    get_live_exam_monitoring,
+    get_candidate_dossier,
+    sync_unsubmitted_assignments_for_exam,
+    fresh_restart_candidate_exam
+)
 from backend.app.services.submission_service import execute_judge0_test_cases
 from backend.app.services.universal_driver_service import generate_all_templates
 from backend.app.services.question_templates import wrap_code_with_driver
@@ -147,6 +154,7 @@ async def create_exam(
         medium_count=body.medium_count if body.medium_count is not None else 2,
         hard_count=body.hard_count if body.hard_count is not None else 0,
         is_published=body.is_published,
+        late_entry_window_minutes=body.late_entry_window_minutes if body.late_entry_window_minutes is not None else 15,
         target_groups=body.target_groups or [],
     )
     db.add(exam)
@@ -225,6 +233,8 @@ async def update_exam(
         exam.hard_count = body.hard_count
     if body.is_published is not None:
         exam.is_published = body.is_published
+    if body.late_entry_window_minutes is not None:
+        exam.late_entry_window_minutes = body.late_entry_window_minutes
     if body.target_groups is not None:
         exam.target_groups = body.target_groups
 
@@ -1030,4 +1040,26 @@ async def get_candidate_dossier_detail(
     - Network connectivity health and disconnection incident logs
     """
     return await get_candidate_dossier(db, exam_id, assignment_id, redis)
+
+
+@router.post("/exams/{exam_id}/candidates/{assignment_id}/restart", response_model=FreshRestartResponse)
+async def restart_candidate_exam(
+    exam_id: int,
+    assignment_id: int,
+    body: FreshRestartRequest = FreshRestartRequest(),
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Manually restarts a candidate's exam attempt with a fresh set of questions and full test duration.
+    Preserves all previous attempt records, submissions, test scores, and telemetry.
+    """
+    return await fresh_restart_candidate_exam(
+        db=db,
+        exam_id=exam_id,
+        assignment_id=assignment_id,
+        admin_user=current_admin,
+        reason=body.reason
+    )
+
 

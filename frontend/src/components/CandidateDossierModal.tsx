@@ -41,11 +41,16 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'code' | 'proctoring' | 'devices' | 'scoring' | 'network'>('code');
   const [selectedQuestionIndex, setSelectedQuestionIndex] = useState(0);
+  const [viewingAssignmentId, setViewingAssignmentId] = useState<number>(assignmentId);
+
+  React.useEffect(() => {
+    setViewingAssignmentId(assignmentId);
+  }, [assignmentId]);
 
   const { data: dossier, isLoading } = useQuery({
-    queryKey: ['candidateDossier', examId, assignmentId],
-    queryFn: () => adminApi.getCandidateDossier(examId, assignmentId),
-    enabled: isOpen && !!examId && !!assignmentId,
+    queryKey: ['candidateDossier', examId, viewingAssignmentId],
+    queryFn: () => adminApi.getCandidateDossier(examId, viewingAssignmentId),
+    enabled: isOpen && !!examId && !!viewingAssignmentId,
   });
 
   const formatDuration = (seconds?: number | null) => {
@@ -109,7 +114,7 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                 <UserIcon size={18} />
               </div>
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
                     {dossier.student_name}
                   </h3>
@@ -118,10 +123,56 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                       {dossier.roll_no}
                     </span>
                   )}
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      dossier.is_active
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:border-emerald-800'
+                        : 'bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                    }`}
+                  >
+                    Attempt #{dossier.attempt_number || 1} {dossier.is_active ? '(Active)' : '(Archived)'}
+                  </span>
+                  {dossier.reset_by_admin && (
+                    <span
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/60 dark:text-purple-400 dark:border-purple-800"
+                      title={dossier.reset_reason || 'Restarted by admin'}
+                    >
+                      Restarted
+                    </span>
+                  )}
                 </div>
-                <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
                   {dossier.email} • Exam: {dossier.exam_title}
                 </div>
+                {dossier.reset_reason && (
+                  <div className="mt-1 text-[11px] text-purple-700 dark:text-purple-300 bg-purple-50/70 dark:bg-purple-950/40 px-2 py-0.5 rounded border border-purple-200 dark:border-purple-800/40">
+                    <span className="font-semibold">Reason:</span> {dossier.reset_reason}
+                  </div>
+                )}
+                {dossier.available_attempts && dossier.available_attempts.length > 1 && (
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <span className="text-[10px] uppercase font-bold text-slate-400">Switch Attempt:</span>
+                    {dossier.available_attempts.map((att) => (
+                      <button
+                        key={att.assignment_id}
+                        onClick={() => {
+                          setViewingAssignmentId(att.assignment_id);
+                          setSelectedQuestionIndex(0);
+                        }}
+                        className={`px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1 border ${
+                          att.assignment_id === viewingAssignmentId
+                            ? 'bg-ubi-800 text-white border-ubi-800 dark:bg-ubi-600 dark:border-ubi-600 shadow-sm'
+                            : 'bg-white dark:bg-slate-900 text-slate-600 hover:text-slate-900 border-slate-200 dark:border-slate-800 dark:text-slate-400 dark:hover:text-white'
+                        }`}
+                      >
+                        <span>Attempt #{att.attempt_number}</span>
+                        <span className="text-[9px] opacity-75 font-normal">
+                          ({att.is_active ? 'Active' : 'Archived'})
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 

@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from typing import Optional, List
 from sqlalchemy import (
-    String, Integer, Float, Boolean, ForeignKey, Enum, DateTime,
+    String, Text, Integer, Float, Boolean, ForeignKey, Enum, DateTime,
     UniqueConstraint, Index, JSON
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -34,6 +34,7 @@ class Exam(Base, TimestampMixin):
     medium_count: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
     hard_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_published: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    late_entry_window_minutes: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
     target_groups: Mapped[Optional[list[str]]] = mapped_column(JSON, default=list, nullable=True)
 
     # Relationships
@@ -69,6 +70,10 @@ class ExamAssignment(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     exam_id: Mapped[int] = mapped_column(ForeignKey("exams.id", ondelete="CASCADE"), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    reset_by_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    reset_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     deadline_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -79,8 +84,9 @@ class ExamAssignment(Base, TimestampMixin):
     )
 
     __table_args__ = (
-        UniqueConstraint("exam_id", "user_id", name="uq_exam_user_assignment"),
+        UniqueConstraint("exam_id", "user_id", "attempt_number", name="uq_exam_user_assignment_attempt"),
         Index("ix_exam_assignments_exam_id_status", "exam_id", "status"),
+        Index("ix_exam_assignments_user_active", "exam_id", "user_id", "is_active"),
     )
 
     # Relationships

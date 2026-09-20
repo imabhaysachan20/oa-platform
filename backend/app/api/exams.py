@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy import select, func
@@ -79,7 +79,8 @@ async def list_available_exams(
     exam_ids = [e.id for e in exams]
     assign_stmt = select(ExamAssignment).where(
         ExamAssignment.user_id == current_user.id,
-        ExamAssignment.exam_id.in_(exam_ids)
+        ExamAssignment.exam_id.in_(exam_ids),
+        ExamAssignment.is_active == True
     )
     assignments = (await db.execute(assign_stmt)).scalars().all()
     assignments_by_exam_id = {a.exam_id: a for a in assignments}
@@ -103,7 +104,21 @@ async def list_available_exams(
         resp.is_expired = bool(exam.end_time and now > exam.end_time)
 
         assign = assignments_by_exam_id.get(exam.id)
+
+        # Late Entry Window computation
+        late_window = getattr(exam, 'late_entry_window_minutes', 15) or 15
+        if exam.start_time and exam.duration_minutes > late_window:
+            entry_deadline = exam.start_time + timedelta(minutes=late_window)
+            resp.entry_deadline = entry_deadline
+            is_waived = assign is not None and getattr(assign, 'reset_by_admin', False)
+            is_already_started = assign is not None and assign.status in [AssignmentStatus.IN_PROGRESS, AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]
+            resp.is_entry_closed = bool(now > entry_deadline and not is_waived and not is_already_started)
+        else:
+            resp.is_entry_closed = False
+            resp.entry_deadline = None
+
         if assign:
+            resp.attempt_number = getattr(assign, 'attempt_number', 1)
             is_done = (
                 assign.status in [AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]
                 or bool(assign.deadline_at and assign.deadline_at <= now)
@@ -143,10 +158,24 @@ async def get_exam_details(
 
     assign_stmt = select(ExamAssignment).where(
         ExamAssignment.user_id == current_user.id,
-        ExamAssignment.exam_id == exam.id
+        ExamAssignment.exam_id == exam.id,
+        ExamAssignment.is_active == True
     )
     assign = (await db.execute(assign_stmt)).scalar_one_or_none()
+
+    late_window = getattr(exam, 'late_entry_window_minutes', 15) or 15
+    if exam.start_time and exam.duration_minutes > late_window:
+        entry_deadline = exam.start_time + timedelta(minutes=late_window)
+        resp.entry_deadline = entry_deadline
+        is_waived = assign is not None and getattr(assign, 'reset_by_admin', False)
+        is_already_started = assign is not None and assign.status in [AssignmentStatus.IN_PROGRESS, AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]
+        resp.is_entry_closed = bool(now > entry_deadline and not is_waived and not is_already_started)
+    else:
+        resp.is_entry_closed = False
+        resp.entry_deadline = None
+
     if assign:
+        resp.attempt_number = getattr(assign, 'attempt_number', 1)
         is_done = (
             assign.status in [AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]
             or bool(assign.deadline_at and assign.deadline_at <= now)
@@ -274,7 +303,11 @@ async def get_my_exam_result(
     """
     stmt = (
         select(ExamAssignment)
-        .where(ExamAssignment.exam_id == exam_id, ExamAssignment.user_id == current_user.id)
+        .where(
+            ExamAssignment.exam_id == exam_id,
+            ExamAssignment.user_id == current_user.id,
+            ExamAssignment.is_active == True
+        )
     )
     assignment = (await db.execute(stmt)).scalar_one_or_none()
     if not assignment:

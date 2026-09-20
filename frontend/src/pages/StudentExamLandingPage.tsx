@@ -8,6 +8,7 @@ import {
   Play,
   CheckCircle2,
   Calendar,
+  AlertTriangle,
 } from 'lucide-react';
 
 export const StudentExamLandingPage: React.FC = () => {
@@ -246,6 +247,7 @@ export const StudentExamLandingPage: React.FC = () => {
                 const isInProgress = !isCompleted && exam.assignment_status === 'in_progress';
                 const isUpcoming = !isCompleted && (exam.is_upcoming || (exam.start_time && now < new Date(exam.start_time).getTime()));
                 const isExpired = !isCompleted && !isInProgress && (exam.is_expired || (exam.end_time && now > new Date(exam.end_time).getTime()));
+                const isEntryClosed = !isCompleted && !isInProgress && !isExpired && !isUpcoming && Boolean(exam.is_entry_closed);
 
                 const scheduleText = formatScheduleIST(exam.start_time, exam.end_time);
 
@@ -255,9 +257,21 @@ export const StudentExamLandingPage: React.FC = () => {
                     className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-5 py-3.5 shadow-2xs hover:border-ubi-300 dark:hover:border-ubi-700 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
                   >
                     <div className="space-y-1.5">
-                      <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
-                        {exam.title}
-                      </h3>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
+                          {exam.title}
+                        </h3>
+                        {exam.attempt_number && exam.attempt_number > 1 && (
+                          <span className="px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-semibold text-[11px] border border-indigo-200 dark:border-indigo-800">
+                            Attempt #{exam.attempt_number}
+                          </span>
+                        )}
+                        {exam.duration_minutes <= (exam.late_entry_window_minutes || 15) && (
+                          <span className="px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 font-medium text-[11px] border border-emerald-200 dark:border-emerald-800">
+                            Flexible Entry
+                          </span>
+                        )}
+                      </div>
 
                       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
                         <span className="flex items-center gap-1.5 font-medium">
@@ -309,6 +323,15 @@ export const StudentExamLandingPage: React.FC = () => {
                           className="w-full sm:w-auto px-4 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 font-semibold text-xs rounded border border-slate-200 dark:border-slate-700 cursor-not-allowed flex items-center justify-center"
                         >
                           <span>Closed</span>
+                        </button>
+                      ) : isEntryClosed ? (
+                        <button
+                          disabled
+                          className="w-full sm:w-auto px-4 py-1.5 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-semibold text-xs rounded border border-rose-200 dark:border-rose-800 cursor-not-allowed flex items-center justify-center gap-1.5"
+                          title="The entry window for this assessment has closed (15 minutes after start time). Late entry is not permitted."
+                        >
+                          <AlertTriangle size={13} />
+                          <span>Entry Window Closed</span>
                         </button>
                       ) : (
                         <button

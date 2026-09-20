@@ -23,68 +23,125 @@ export interface FaceDetectionResult {
     width: number;
     height: number;
   };
+  rawDetection?: Detection;
 }
 
-let detectorInstance: FaceDetector | null = null;
-let isInitializing = false;
-let initPromise: Promise<FaceDetector | null> | null = null;
+let visionResolverPromise: Promise<any> | null = null;
+
+export async function getVisionResolver() {
+  if (visionResolverPromise) return visionResolverPromise;
+  visionResolverPromise = (async () => {
+    try {
+      return await FilesetResolver.forVisionTasks('/wasm');
+    } catch (wasmErr) {
+      console.warn('Local WASM loading failed, falling back to unpkg CDN:', wasmErr);
+      return await FilesetResolver.forVisionTasks(
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+      );
+    }
+  })();
+  return visionResolverPromise;
+}
+
+let videoDetectorInstance: FaceDetector | null = null;
+let isVideoInitializing = false;
+let videoInitPromise: Promise<FaceDetector | null> | null = null;
+
+let lastMonotonicTimestamp = 0;
 
 /**
- * Initializes the MediaPipe FaceDetector using locally bundled WASM and TFLite model.
+ * Returns a strictly monotonically increasing timestamp for MediaPipe VIDEO runningMode.
+ */
+export function getMonotonicTimestamp(): number {
+  const now = performance.now();
+  if (now <= lastMonotonicTimestamp) {
+    lastMonotonicTimestamp += 16.67; // minimum 60fps frame delta
+  } else {
+    lastMonotonicTimestamp = now;
+  }
+  return lastMonotonicTimestamp;
+}
+
+/**
+ * Initializes the MediaPipe FaceDetector for live video streams (VIDEO runningMode).
  */
 export async function getFaceDetector(): Promise<FaceDetector | null> {
-  if (detectorInstance) return detectorInstance;
-  if (initPromise) return initPromise;
+  if (videoDetectorInstance) return videoDetectorInstance;
+  if (videoInitPromise) return videoInitPromise;
 
-  isInitializing = true;
-  initPromise = (async () => {
+  isVideoInitializing = true;
+  videoInitPromise = (async () => {
     try {
-      // 1. Load WebAssembly runtime from local public /wasm directory (fallback to unpkg if needed)
-      let vision;
-      try {
-        vision = await FilesetResolver.forVisionTasks('/wasm');
-      } catch (wasmErr) {
-        console.warn('Local WASM loading failed, trying unpkg CDN:', wasmErr);
-        vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
-        );
-      }
-
-      // 2. Initialize FaceDetector with local BlazeFace model
+      const vision = await getVisionResolver();
       const modelPath = '/models/blaze_face_short_range.tflite';
       try {
-        detectorInstance = await FaceDetector.createFromOptions(vision, {
+        videoDetectorInstance = await FaceDetector.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: modelPath,
             delegate: 'GPU',
           },
           runningMode: 'VIDEO',
-          minDetectionConfidence: 0.6,
+          minDetectionConfidence: 0.55,
           minSuppressionThreshold: 0.3,
         });
       } catch (gpuErr) {
         console.warn('MediaPipe GPU initialization failed, falling back to CPU delegate:', gpuErr);
-        detectorInstance = await FaceDetector.createFromOptions(vision, {
+        videoDetectorInstance = await FaceDetector.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: modelPath,
             delegate: 'CPU',
           },
           runningMode: 'VIDEO',
-          minDetectionConfidence: 0.6,
+          minDetectionConfidence: 0.55,
           minSuppressionThreshold: 0.3,
         });
       }
 
-      return detectorInstance;
+      return videoDetectorInstance;
     } catch (err) {
-      console.error('Failed to initialize MediaPipe FaceDetector:', err);
+      console.error('Failed to initialize MediaPipe FaceDetector (VIDEO):', err);
+      videoInitPromise = null;
       return null;
     } finally {
-      isInitializing = false;
+      isVideoInitializing = false;
     }
   })();
 
-  return initPromise;
+  return videoInitPromise;
+}
+
+let imageDetectorInstance: FaceDetector | null = null;
+let imageInitPromise: Promise<FaceDetector | null> | null = null;
+
+/**
+ * Initializes a dedicated CPU-backed FaceDetector for static images/canvases (IMAGE runningMode).
+ * Completely immune to WebGL canvas texture binding errors and timestamp constraints.
+ */
+export async function getImageFaceDetector(): Promise<FaceDetector | null> {
+  if (imageDetectorInstance) return imageDetectorInstance;
+  if (imageInitPromise) return imageInitPromise;
+
+  imageInitPromise = (async () => {
+    try {
+      const vision = await getVisionResolver();
+      const modelPath = '/models/blaze_face_short_range.tflite';
+      imageDetectorInstance = await FaceDetector.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: modelPath,
+          delegate: 'CPU',
+        },
+        runningMode: 'IMAGE',
+        minDetectionConfidence: 0.5,
+      });
+      return imageDetectorInstance;
+    } catch (err) {
+      console.error('Failed to initialize MediaPipe Image FaceDetector (IMAGE):', err);
+      imageInitPromise = null;
+      return null;
+    }
+  })();
+
+  return imageInitPromise;
 }
 
 /**
@@ -100,8 +157,7 @@ export async function detectFace(
 
   const detector = await getFaceDetector();
   if (!detector) {
-    // If MediaPipe is still initializing or unavailable
-    if (isInitializing) {
+    if (isVideoInitializing) {
       return {
         detected: false,
         isModelLoading: true,
@@ -115,7 +171,7 @@ export async function detectFace(
   }
 
   try {
-    const timestamp = performance.now();
+    const timestamp = getMonotonicTimestamp();
     const result = detector.detectForVideo(videoElement, timestamp);
     const detections: Detection[] = result.detections || [];
 
@@ -142,7 +198,7 @@ export async function detectFace(
     const detection = detections[0];
     const confidence = detection.categories?.[0]?.score ?? 0;
 
-    if (confidence < 0.6) {
+    if (confidence < 0.55) {
       return {
         detected: false,
         faceCount: 1,
@@ -158,7 +214,7 @@ export async function detectFace(
     if (box) {
       // Check face scale (must not be tiny / far away)
       const faceArea = (box.width * box.height) / (vWidth * vHeight);
-      if (faceArea < 0.04) {
+      if (faceArea < 0.03) {
         return {
           detected: false,
           faceCount: 1,
@@ -173,10 +229,10 @@ export async function detectFace(
       const normalizedCenterY = faceCenterY / vHeight;
 
       if (
-        normalizedCenterX < 0.2 ||
-        normalizedCenterX > 0.8 ||
-        normalizedCenterY < 0.15 ||
-        normalizedCenterY > 0.85
+        normalizedCenterX < 0.15 ||
+        normalizedCenterX > 0.85 ||
+        normalizedCenterY < 0.10 ||
+        normalizedCenterY > 0.90
       ) {
         return {
           detected: false,
@@ -219,6 +275,7 @@ export async function detectFace(
             height: box.height,
           }
         : undefined,
+      rawDetection: detection,
     };
   } catch (detectErr) {
     console.error('Error during MediaPipe detectForVideo:', detectErr);
@@ -230,13 +287,13 @@ export async function detectFace(
 }
 
 /**
- * Captures a compressed, low-quality JPEG snapshot suitable for S3 storage.
- * Target dimensions: 320x240, quality: 0.5 (typically 15-25 KB).
+ * Captures a high-fidelity verification photo aligned with live video sensor coordinates.
+ * Target dimensions: 640x480 (or native), quality: 0.85 (typically 35-50 KB).
  */
 export function captureCompressedPhoto(videoElement: HTMLVideoElement): string | null {
   try {
-    const targetWidth = 320;
-    const targetHeight = 240;
+    const targetWidth = videoElement.videoWidth || 640;
+    const targetHeight = videoElement.videoHeight || 480;
 
     const canvas = document.createElement('canvas');
     canvas.width = targetWidth;
@@ -245,13 +302,11 @@ export function captureCompressedPhoto(videoElement: HTMLVideoElement): string |
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
-    // Draw video frame mirrored to match candidate's preview orientation
-    ctx.translate(targetWidth, 0);
-    ctx.scale(-1, 1);
+    // Draw frame in matching native orientation so landmark coordinates and chromaticity align 100%
     ctx.drawImage(videoElement, 0, 0, targetWidth, targetHeight);
 
-    // Export as JPEG with 0.5 quality
-    return canvas.toDataURL('image/jpeg', 0.5);
+    // Export crisp JPEG with 0.85 quality (~40 KB)
+    return canvas.toDataURL('image/jpeg', 0.85);
   } catch (err) {
     console.error('Failed to capture compressed photo:', err);
     return null;

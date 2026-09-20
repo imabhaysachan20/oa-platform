@@ -1,8 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Camera, CameraOff, ChevronDown, ChevronUp, ShieldCheck, GripHorizontal } from 'lucide-react';
+import { Camera, CameraOff, ChevronDown, ChevronUp, ShieldCheck, GripHorizontal, AlertTriangle } from 'lucide-react';
+import {
+  analyzeFrameFaces,
+  captureLocalSnapshot,
+} from '../utils/faceMatcher';
+import { getFaceDetector, getMonotonicTimestamp } from '../utils/faceDetection';
+import { examsApi } from '../api/exams';
 
 interface LiveWebcamHUDProps {
   onCameraInterrupted?: () => void;
+  examId?: string | number;
+  assignmentId?: number;
+  attemptNumber?: number;
 }
 
 /**
@@ -26,10 +35,21 @@ export function stopAllActiveMediaTracks() {
   }
 }
 
-export const LiveWebcamHUD: React.FC<LiveWebcamHUDProps> = ({ onCameraInterrupted }) => {
+export const LiveWebcamHUD: React.FC<LiveWebcamHUDProps> = ({
+  onCameraInterrupted,
+  examId,
+  assignmentId,
+  attemptNumber = 1,
+}) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [hasStream, setHasStream] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Real-time camera warning state (shown only on HUD video, zero logs stored on client)
+  const [anomalyWarning, setAnomalyWarning] = useState<string | null>(null);
+  const lastAnomalyCaptureTimeRef = useRef<{ [reason: string]: number }>({});
+  const isCheckingAnomalyRef = useRef(false);
+  const consecutiveNoFaceCountRef = useRef(0);
 
   // Draggable position state
   const [position, setPosition] = useState<{ x: number; y: number } | null>(() => {
@@ -268,6 +288,142 @@ export const LiveWebcamHUD: React.FC<LiveWebcamHUDProps> = ({ onCameraInterrupte
     };
   }, [initCamera, stopTracks]);
 
+  // Real-time anomaly detection loop (sampled every 1.2s - pure client-side)
+  useEffect(() => {
+    if (!hasStream || !examId) return;
+
+    const intervalId = setInterval(async () => {
+      if (isCheckingAnomalyRef.current || !videoRef.current) return;
+
+      // Resume video playback if stream is attached but paused
+      if (videoRef.current.paused && videoRef.current.srcObject) {
+        videoRef.current.play().catch(() => {});
+      }
+      if (videoRef.current.readyState < 2) return;
+
+      isCheckingAnomalyRef.current = true;
+      try {
+        const detector = await getFaceDetector();
+        if (!detector) return;
+
+        const timestamp = getMonotonicTimestamp();
+        const result = detector.detectForVideo(videoRef.current, timestamp);
+        const detections = result.detections || [];
+        const now = Date.now();
+
+        const vWidth = videoRef.current.videoWidth || 320;
+        const vHeight = videoRef.current.videoHeight || 240;
+
+        // Smart frame face analysis: separates primary candidate from secondary faces & ignores lab background people
+        const { primaryFace, suspiciousExtraFaces } = analyzeFrameFaces(
+          detections,
+          vWidth,
+          vHeight
+        );
+
+        const sendAnomalyLog = async (
+          eventType: 'NO_FACE' | 'MULTIPLE_FACES',
+          title: string,
+          description: string,
+          snapshot: string | null,
+          extraMeta?: Record<string, any>
+        ) => {
+          if (!examId || !assignmentId) {
+            console.warn('[Proctoring] Skipping anomaly log: examId or assignmentId missing', { examId, assignmentId });
+            return;
+          }
+
+          let s3Key: string | null = null;
+          if (snapshot) {
+            try {
+              console.log(`[Proctoring] Requesting S3 presigned upload URL for ${eventType}...`);
+              const uploadRes = await examsApi.getPhotoUploadUrl(
+                Number(examId),
+                eventType.toLowerCase(),
+                attemptNumber || 1,
+                assignmentId
+              );
+              if (uploadRes?.upload_url && uploadRes?.s3_key) {
+                console.log(`[Proctoring] Uploading snapshot directly to S3 (${uploadRes.s3_key})...`);
+                await examsApi.uploadPhotoDirectToS3(uploadRes.upload_url, snapshot);
+                s3Key = uploadRes.s3_key;
+                console.log(`[Proctoring] Direct S3 upload successful for ${eventType}! Key: ${s3Key}`);
+              }
+            } catch (uploadErr) {
+              console.warn(`[Proctoring] Direct S3 upload failed for ${eventType}:`, uploadErr);
+            }
+          }
+
+          // GUARANTEED: Save proctoring log to FastAPI backend regardless of S3 direct upload status
+          try {
+            console.log(`[Proctoring] Saving ${eventType} log to backend database...`);
+            await examsApi.saveProctoringLogs(Number(examId), assignmentId, [
+              {
+                event_type: eventType,
+                title,
+                description,
+                occurred_at: new Date().toISOString(),
+                meta_data: JSON.stringify({
+                  s3_key: s3Key,
+                  photo_url: s3Key,
+                  ...extraMeta,
+                }),
+              },
+            ]);
+            console.log(`[Proctoring] Successfully saved ${eventType} log to backend database.`);
+          } catch (logErr) {
+            console.error(`[Proctoring] Failed to save ${eventType} log to backend:`, logErr);
+          }
+        };
+
+        // 1. MULTIPLE PEOPLE DETECTED (Another person looking directly into camera/screen)
+        if (suspiciousExtraFaces.length > 0) {
+          setAnomalyWarning(`Multiple people detected looking into camera (${suspiciousExtraFaces.length + 1})`);
+          const lastTime = lastAnomalyCaptureTimeRef.current['MULTIPLE_FACES'] || 0;
+          if (now - lastTime > 6000) {
+            lastAnomalyCaptureTimeRef.current['MULTIPLE_FACES'] = now;
+            const snapshot = captureLocalSnapshot(videoRef.current);
+            sendAnomalyLog(
+              'MULTIPLE_FACES',
+              'Additional Person Looking into Camera',
+              `${suspiciousExtraFaces.length + 1} people detected looking directly into the camera. Distant background occupants were ignored.`,
+              snapshot,
+              { face_count: suspiciousExtraFaces.length + 1 }
+            );
+          }
+        }
+        // 2. CANDIDATE NOT IN FRAME (Camera covered or candidate stepped away)
+        else if (!primaryFace) {
+          consecutiveNoFaceCountRef.current++;
+          // Immediately display warning on UI so candidate has instant, responsive feedback
+          setAnomalyWarning('Candidate not visible in frame');
+          const lastTime = lastAnomalyCaptureTimeRef.current['NO_FACE'] || 0;
+          if (now - lastTime > 6000) {
+            lastAnomalyCaptureTimeRef.current['NO_FACE'] = now;
+            const snapshot = captureLocalSnapshot(videoRef.current);
+            sendAnomalyLog(
+              'NO_FACE',
+              'Candidate Missing / Camera Covered',
+              'Candidate face was not detected in front of the screen. Camera may be blocked or candidate stepped away.',
+              snapshot
+            );
+          }
+        }
+        // 3. CANDIDATE PRESENT & NORMAL (Single face visible in frame)
+        else {
+          consecutiveNoFaceCountRef.current = 0;
+          setAnomalyWarning(null);
+        }
+      } catch (err) {
+        console.warn('Proctoring anomaly check warning:', err);
+      } finally {
+        isCheckingAnomalyRef.current = false;
+      }
+    }, 1200);
+
+    return () => clearInterval(intervalId);
+  }, [hasStream, examId, assignmentId, attemptNumber]);
+
   const containerStyle: React.CSSProperties = position
     ? {
         position: 'fixed',
@@ -311,7 +467,7 @@ export const LiveWebcamHUD: React.FC<LiveWebcamHUDProps> = ({ onCameraInterrupte
             {hasStream ? (
               <>
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                <span className="text-[11px] font-medium text-emerald-300 truncate">Live Proctor Active</span>
+                <span className="text-[11px] font-medium text-emerald-300 truncate">Live Proctor</span>
               </>
             ) : (
               <>
@@ -321,15 +477,17 @@ export const LiveWebcamHUD: React.FC<LiveWebcamHUDProps> = ({ onCameraInterrupte
             )}
           </div>
 
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => setIsMinimized((prev) => !prev)}
-            className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-700/60 transition-colors shrink-0 ml-1"
-            title={isMinimized ? 'Expand camera' : 'Minimize camera'}
-          >
-            {isMinimized ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
+          <div className="flex items-center gap-1 shrink-0 ml-auto">
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setIsMinimized((prev) => !prev)}
+              className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-700/60 transition-colors shrink-0"
+              title={isMinimized ? 'Expand camera' : 'Minimize camera'}
+            >
+              {isMinimized ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+          </div>
         </div>
 
         {/* Video Frame */}
@@ -352,6 +510,14 @@ export const LiveWebcamHUD: React.FC<LiveWebcamHUDProps> = ({ onCameraInterrupte
             className="w-full h-full object-cover bg-black"
             style={{ transform: 'scaleX(-1)' }}
           />
+
+          {/* Real-time anomaly warning pill on video */}
+          {anomalyWarning && hasStream && !isMinimized && (
+            <div className="absolute top-1.5 left-1.5 right-1.5 bg-rose-600/90 backdrop-blur-sm text-white text-[10px] font-semibold px-2 py-0.5 rounded shadow flex items-center justify-center gap-1 animate-pulse z-10">
+              <AlertTriangle size={11} className="shrink-0 text-amber-300" />
+              <span className="truncate">{anomalyWarning}</span>
+            </div>
+          )}
 
           {!hasStream && (
             <div className="absolute inset-0 bg-slate-900/90 flex flex-col items-center justify-center p-2 text-center text-rose-300">
@@ -379,3 +545,4 @@ export const LiveWebcamHUD: React.FC<LiveWebcamHUDProps> = ({ onCameraInterrupte
     </div>
   );
 };
+

@@ -23,10 +23,14 @@ export const examsApi = {
 
   getPhotoUploadUrl: async (
     id: number,
-    eventType: 'start' | 'resume' = 'start'
+    eventType: string = 'start',
+    attemptNumber?: number,
+    assignmentId?: number
   ): Promise<PhotoUploadUrlResponse> => {
     const res = await api.post<PhotoUploadUrlResponse>(`/exams/${id}/photo-upload-url`, {
       event_type: eventType,
+      attempt_number: attemptNumber,
+      assignment_id: assignmentId,
     });
     return res.data;
   },

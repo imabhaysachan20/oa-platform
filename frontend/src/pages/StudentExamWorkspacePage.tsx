@@ -1372,6 +1372,9 @@ export const StudentExamWorkspacePage: React.FC = () => {
       {/* Live Proctoring Webcam HUD - Remains Active Throughout Assessment */}
       {examData && examData.status === 'in_progress' && !isSubmittingExam && (
         <LiveWebcamHUD
+          examId={id}
+          assignmentId={examData.assignment_id}
+          attemptNumber={examData.attempt_number || 1}
           onCameraInterrupted={handleCameraInterrupted}
         />
       )}

@@ -49,10 +49,15 @@ export const StudentResultPage: React.FC = () => {
 
   if (error || !result) {
     return (
-      <div className="max-w-md mx-auto py-16 px-4 text-center">
-        <Card className="space-y-4">
-          <p className="text-sm text-rose-600 dark:text-rose-400 font-medium">Could not retrieve submission status.</p>
-          <Button onClick={handleLogout}>Log Out</Button>
+      <div className="max-w-md mx-auto px-4 py-12 text-center">
+        <Card className="p-6">
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Result Unavailable</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+            {error ? (error as any).response?.data?.detail || 'Failed to load exam result.' : 'Exam result could not be found.'}
+          </p>
+          <Button variant="primary" onClick={() => navigate('/')}>
+            Return to Dashboard
+          </Button>
         </Card>
       </div>
     );
@@ -150,13 +155,6 @@ export const StudentResultPage: React.FC = () => {
             className="h-10 w-auto object-contain"
           />
         </div>
-
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-          Admin Review: Assessment Completed
-        </h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-semibold mt-1">
-          {result.exam_title}
-        </p>
 
         <div className="mt-6 flex flex-wrap items-center justify-center gap-4 sm:gap-6">
           <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-6 py-4 min-w-[160px] shadow-sm">
@@ -257,7 +255,7 @@ export const StudentResultPage: React.FC = () => {
         </div>
       )}
 
-      <div className="flex items-center justify-center gap-4 pt-4">
+      <div className="flex items-center justify-center gap-4 pt-4 flex-wrap">
         <Button variant="primary" onClick={() => navigate('/')} className="gap-2 font-semibold">
           <Home size={16} />
           <span>Return to Assessments</span>

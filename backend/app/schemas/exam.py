@@ -92,6 +92,8 @@ class ExamStartRequest(BaseModel):
 
 class PhotoUploadUrlRequest(BaseModel):
     event_type: Optional[str] = "start"
+    attempt_number: Optional[int] = None
+    assignment_id: Optional[int] = None
 
 
 class PhotoUploadUrlResponse(BaseModel):

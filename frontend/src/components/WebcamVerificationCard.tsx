@@ -14,6 +14,7 @@ import {
   getFaceDetector,
   FaceDetectionResult,
 } from '../utils/faceDetection';
+import { extractFaceFeaturesFromDetection } from '../utils/faceMatcher';
 
 interface WebcamVerificationCardProps {
   onPhotoCaptured: (photoDataUrl: string | null) => void;
@@ -30,6 +31,7 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const lastValidDetectionRef = useRef<any>(null);
 
   const [detection, setDetection] = useState<FaceDetectionResult>({
     detected: false,
@@ -180,6 +182,9 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
       const result = await detectFace(videoRef.current);
       if (active) {
         setDetection(result);
+        if (result.detected && result.rawDetection) {
+          lastValidDetectionRef.current = result.rawDetection;
+        }
       }
     }, 400);
 
@@ -202,6 +207,26 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
     // Estimate size in KB from base64 string length
     const sizeInBytes = Math.round((photoDataUrl.length * 3) / 4);
     const sizeKb = Number((sizeInBytes / 1024).toFixed(1));
+
+    // Extract and cache baseline biometric landmarks from active video stream synchronously before stopping camera
+    if (lastValidDetectionRef.current && videoRef.current) {
+      try {
+        const feat = extractFaceFeaturesFromDetection(
+          lastValidDetectionRef.current,
+          videoRef.current,
+          videoRef.current.videoWidth || 320,
+          videoRef.current.videoHeight || 240
+        );
+        if (feat) {
+          sessionStorage.setItem('ubicode_ref_features_latest', JSON.stringify(feat));
+        }
+      } catch (err) {
+        console.warn('Failed to extract baseline features on capture:', err);
+      }
+    }
+    try {
+      sessionStorage.setItem('ubicode_ref_photo_latest', photoDataUrl);
+    } catch {}
 
     setCapturedPhoto(photoDataUrl);
     setCapturedSizeKb(sizeKb);
@@ -373,6 +398,7 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
                   src={capturedPhoto}
                   alt="Candidate Verification Snapshot"
                   className="w-full h-full object-cover"
+                  style={{ transform: 'scaleX(-1)' }}
                 />
                 <div className="absolute bottom-2 left-2 right-2 bg-emerald-950/85 backdrop-blur-sm border border-emerald-500/40 text-emerald-200 text-[11px] font-semibold px-2 py-1 rounded text-center flex items-center justify-center gap-1.5">
                   <CheckCircle2 size={13} className="text-emerald-400" />

@@ -25,6 +25,7 @@ import {
   Laptop,
   Globe,
   Camera,
+  X,
 } from 'lucide-react';
 
 interface CandidateDossierModalProps {
@@ -43,6 +44,8 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
   const [activeTab, setActiveTab] = useState<'code' | 'proctoring' | 'devices' | 'scoring' | 'network'>('code');
   const [selectedQuestionIndex, setSelectedQuestionIndex] = useState(0);
   const [viewingAssignmentId, setViewingAssignmentId] = useState<number>(assignmentId);
+  const [previewPhoto, setPreviewPhoto] = useState<{ url: string; title: string; time: string } | null>(null);
+  const [proctoringFilter, setProctoringFilter] = useState<'all' | 'camera' | 'device' | 'focus'>('all');
 
   React.useEffect(() => {
     setViewingAssignmentId(assignmentId);
@@ -76,6 +79,15 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
 
   const deviceSwitchesCount = (dossier?.proctoring_logs || []).filter(
     (l) => l.event_type === 'DEVICE_SWITCH_DETECTED'
+  ).length;
+
+  const cameraLogs = (dossier?.proctoring_logs || []).filter((l) =>
+    ['NO_FACE', 'MULTIPLE_FACES', 'CAMERA_ANOMALY', 'VERIFICATION_SNAPSHOT'].includes(l.event_type) ||
+    Boolean(parseLogMetadata(l.meta_data)?.photo_url || parseLogMetadata(l.meta_data)?.s3_key)
+  );
+
+  const cameraIncidentsCount = (dossier?.proctoring_logs || []).filter((l) =>
+    ['NO_FACE', 'MULTIPLE_FACES', 'CAMERA_ANOMALY'].includes(l.event_type)
   ).length;
 
   const startDeviceLog = (dossier?.proctoring_logs || []).find(
@@ -270,6 +282,25 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                 ) : (
                   <span className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                     <Wifi size={13} /> Connected
+                  </span>
+                )}
+              </div>
+
+              {/* Camera Proctoring Snapshots */}
+              <div className="bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center gap-2">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Camera Incidents</span>
+                  <span className="text-xs font-bold font-mono">
+                    {cameraIncidentsCount} flag{cameraIncidentsCount === 1 ? '' : 's'}
+                  </span>
+                </div>
+                {cameraIncidentsCount === 0 ? (
+                  <span className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                    <Camera size={13} /> Clean
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
+                    <Camera size={13} /> {cameraIncidentsCount} Anomaly{cameraIncidentsCount === 1 ? '' : 'ies'}
                   </span>
                 )}
               </div>
@@ -549,108 +580,238 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
           {/* Tab 2: Anti-Cheat & Proctoring Timeline */}
           {activeTab === 'proctoring' && (
             <div className="flex-1 overflow-y-auto pr-2 space-y-3 min-h-0">
+              {/* Category Filter Pills */}
+              <div className="flex items-center gap-1.5 pb-2 border-b border-slate-200/80 dark:border-slate-800/80 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setProctoringFilter('all')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${
+                    proctoringFilter === 'all'
+                      ? 'bg-ubi-800 text-white border-ubi-800 dark:bg-ubi-600 dark:border-ubi-600'
+                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Activity size={12} />
+                  <span>All Events ({dossier.proctoring_logs.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setProctoringFilter('camera')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${
+                    proctoringFilter === 'camera'
+                      ? 'bg-amber-600 text-white border-amber-600 dark:bg-amber-600 dark:border-amber-600'
+                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Camera size={12} />
+                  <span>Camera Snapshots ({cameraLogs.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setProctoringFilter('device')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${
+                    proctoringFilter === 'device'
+                      ? 'bg-sky-600 text-white border-sky-600 dark:bg-sky-600 dark:border-sky-600'
+                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Laptop size={12} />
+                  <span>Device & Hardware ({deviceLogs.length})</span>
+                </button>
+              </div>
+
               {dossier.proctoring_logs.length > 0 ? (
-                <div className="relative pl-6 border-l-2 border-slate-200 dark:border-slate-800 space-y-4 my-2">
-                  {dossier.proctoring_logs.map((log) => {
-                    const meta = parseLogMetadata(log.meta_data);
-                    const isStart = log.event_type === 'EXAM_START_DEVICE';
-                    const isResume = log.event_type === 'EXAM_RESUME_DEVICE';
-                    const isSwitch = log.event_type === 'DEVICE_SWITCH_DETECTED';
+                (() => {
+                  const filteredLogs = dossier.proctoring_logs.filter((log) => {
+                    if (proctoringFilter === 'all') return true;
+                    if (proctoringFilter === 'camera') {
+                      return (
+                        ['NO_FACE', 'MULTIPLE_FACES', 'CAMERA_ANOMALY', 'VERIFICATION_SNAPSHOT'].includes(log.event_type) ||
+                        Boolean(parseLogMetadata(log.meta_data)?.photo_url || parseLogMetadata(log.meta_data)?.s3_key)
+                      );
+                    }
+                    if (proctoringFilter === 'device') {
+                      return ['EXAM_START_DEVICE', 'EXAM_RESUME_DEVICE', 'DEVICE_SWITCH_DETECTED', 'VERIFICATION_SNAPSHOT'].includes(log.event_type);
+                    }
+                    return true;
+                  });
 
-                    const dotColor = isStart
-                      ? 'bg-emerald-500 ring-2 ring-emerald-200 dark:ring-emerald-900/60'
-                      : isResume
-                      ? 'bg-sky-500 ring-2 ring-sky-200 dark:ring-sky-900/60'
-                      : isSwitch
-                      ? 'bg-rose-600 ring-4 ring-rose-300 dark:ring-rose-900 animate-pulse'
-                      : 'bg-rose-500';
-
-                    const badgeStyle = isStart
-                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
-                      : isResume
-                      ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-400 border-sky-200 dark:border-sky-800'
-                      : isSwitch
-                      ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200 border-rose-300 dark:border-rose-700 font-bold'
-                      : 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border-rose-200 dark:border-rose-800';
-
+                  if (filteredLogs.length === 0) {
                     return (
-                      <div key={log.id} className="relative group">
-                        {/* Timeline dot */}
-                        <div className={`absolute -left-[31px] top-1 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-slate-900 ${dotColor}`}></div>
-
-                        <div className="p-3.5 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5 transition hover:border-slate-300 dark:hover:border-slate-700">
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-mono border font-bold ${badgeStyle}`}>
-                                {log.event_type}
-                              </span>
-                              <span>{log.title}</span>
-                            </span>
-                            <span className="text-[11px] font-mono text-slate-500">
-                              {new Date(log.occurred_at).toLocaleTimeString()}
-                            </span>
-                          </div>
-
-                          <p className="text-xs text-slate-600 dark:text-slate-400">
-                            {log.description}
-                          </p>
-
-                          {/* Geolocation & Device Metadata Card Footer */}
-                          {meta && (
-                            <div className="pt-2 mt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex flex-wrap items-center justify-between gap-2">
-                              {meta.latitude && meta.longitude ? (
-                                <div className="flex items-center gap-2">
-                                  <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                    <MapPin size={11} className="text-emerald-600 dark:text-emerald-400" />
-                                    {meta.latitude.toFixed(4)}, {meta.longitude.toFixed(4)}
-                                    {meta.accuracy ? ` (±${meta.accuracy}m)` : ''}
-                                  </span>
-                                  <a
-                                    href={`https://www.google.com/maps?q=${meta.latitude},${meta.longitude}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-ubi-700 hover:text-ubi-900 dark:text-ubi-400 dark:hover:text-ubi-200 hover:underline"
-                                  >
-                                    <span>Map</span>
-                                    <ExternalLink size={10} />
-                                  </a>
-                                </div>
-                              ) : meta.location_status ? (
-                                <span className="text-[10px] font-mono text-slate-400">
-                                  Location: {meta.location_status}
-                                </span>
-                              ) : null}
-
-                              {/* Specs Tags */}
-                              <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-slate-500 dark:text-slate-400">
-                                {meta.ip_address && (
-                                  <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                                    IP: {meta.ip_address}
-                                  </span>
-                                )}
-                                {meta.browser && (
-                                  <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                                    {meta.browser}
-                                  </span>
-                                )}
-                                {meta.os && (
-                                  <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                                    {meta.os}
-                                  </span>
-                                )}
-                                {meta.screen_resolution && (
-                                  <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                                    {meta.screen_resolution}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
+                      <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2 py-16">
+                        <Camera size={36} className="text-slate-300 dark:text-slate-700" />
+                        <p className="text-xs font-medium">No logs match the selected filter.</p>
                       </div>
                     );
-                  })}
-                </div>
+                  }
+
+                  return (
+                    <div className="relative pl-6 border-l-2 border-slate-200 dark:border-slate-800 space-y-4 my-2">
+                      {filteredLogs.map((log) => {
+                        const meta = parseLogMetadata(log.meta_data);
+                        const isStart = log.event_type === 'EXAM_START_DEVICE';
+                        const isResume = log.event_type === 'EXAM_RESUME_DEVICE';
+                        const isSwitch = log.event_type === 'DEVICE_SWITCH_DETECTED';
+                        const isNoFace = log.event_type === 'NO_FACE';
+                        const isMultipleFaces = log.event_type === 'MULTIPLE_FACES';
+                        const isSnapshot = log.event_type === 'VERIFICATION_SNAPSHOT';
+                        const photoUrl = meta?.photo_url || meta?.s3_key || (isSnapshot ? dossier.verification_photo_url : null);
+
+                        const dotColor = isStart
+                          ? 'bg-emerald-500 ring-2 ring-emerald-200 dark:ring-emerald-900/60'
+                          : isResume
+                          ? 'bg-sky-500 ring-2 ring-sky-200 dark:ring-sky-900/60'
+                          : isSwitch || isNoFace
+                          ? 'bg-rose-600 ring-4 ring-rose-300 dark:ring-rose-900 animate-pulse'
+                          : isMultipleFaces
+                          ? 'bg-amber-500 ring-4 ring-amber-300 dark:ring-amber-900 animate-pulse'
+                          : isSnapshot
+                          ? 'bg-purple-500 ring-2 ring-purple-200 dark:ring-purple-900/60'
+                          : 'bg-rose-500';
+
+                        const badgeStyle = isStart
+                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+                          : isResume
+                          ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-400 border-sky-200 dark:border-sky-800'
+                          : isSwitch || isNoFace
+                          ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200 border-rose-300 dark:border-rose-700 font-bold'
+                          : isMultipleFaces
+                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-bold'
+                          : isSnapshot
+                          ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-400 border-purple-200 dark:border-purple-800'
+                          : 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border-rose-200 dark:border-rose-800';
+
+                        return (
+                          <div key={log.id} className="relative group">
+                            {/* Timeline dot */}
+                            <div className={`absolute -left-[31px] top-1 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-slate-900 ${dotColor}`}></div>
+
+                            <div className="p-3.5 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5 transition hover:border-slate-300 dark:hover:border-slate-700">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono border font-bold ${badgeStyle}`}>
+                                    {log.event_type}
+                                  </span>
+                                  <span>{log.title}</span>
+                                </span>
+                                <span className="text-[11px] font-mono text-slate-500">
+                                  {new Date(log.occurred_at).toLocaleTimeString()}
+                                </span>
+                              </div>
+
+                              <p className="text-xs text-slate-600 dark:text-slate-400">
+                                {log.description}
+                              </p>
+
+                              {/* S3 Presigned Snapshot Photo Preview */}
+                              {photoUrl && (
+                                <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex items-center gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewPhoto({ url: photoUrl, title: log.title, time: new Date(log.occurred_at).toLocaleTimeString() })}
+                                    className="group relative w-24 h-16 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700 shrink-0 shadow-sm cursor-pointer"
+                                    title="Click to zoom snapshot"
+                                  >
+                                    <img
+                                      src={photoUrl}
+                                      alt={log.title}
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                    />
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-bold gap-1">
+                                      <Camera size={13} />
+                                      <span>Zoom</span>
+                                    </div>
+                                  </button>
+                                  <div className="text-xs">
+                                    <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                                      <Camera size={13} className={isNoFace ? 'text-rose-500' : isMultipleFaces ? 'text-amber-500' : 'text-purple-500'} />
+                                      {isNoFace ? 'Camera Blocked / Candidate Absent' : isMultipleFaces ? 'Multiple Faces in Frame' : 'Identity Verification Snapshot'}
+                                    </span>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">
+                                      Uploaded directly to S3 via presigned URL at {new Date(log.occurred_at).toLocaleTimeString()}.
+                                    </p>
+                                    <div className="flex items-center gap-3 mt-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => setPreviewPhoto({ url: photoUrl, title: log.title, time: new Date(log.occurred_at).toLocaleTimeString() })}
+                                        className="text-[11px] font-semibold text-ubi-700 dark:text-ubi-400 hover:underline flex items-center gap-1 cursor-pointer"
+                                      >
+                                        <span>Enlarge snapshot</span>
+                                      </button>
+                                      <a
+                                        href={photoUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:underline flex items-center gap-1"
+                                      >
+                                        <span>Open raw S3 URL</span>
+                                        <ExternalLink size={10} />
+                                      </a>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Geolocation & Device Metadata Card Footer */}
+                              {meta && (
+                                <div className="pt-2 mt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex flex-wrap items-center justify-between gap-2">
+                                  {meta.latitude && meta.longitude ? (
+                                    <div className="flex items-center gap-2">
+                                      <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                        <MapPin size={11} className="text-emerald-600 dark:text-emerald-400" />
+                                        {meta.latitude.toFixed(4)}, {meta.longitude.toFixed(4)}
+                                        {meta.accuracy ? ` (±${meta.accuracy}m)` : ''}
+                                      </span>
+                                      <a
+                                        href={`https://www.google.com/maps?q=${meta.latitude},${meta.longitude}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-ubi-700 hover:text-ubi-900 dark:text-ubi-400 dark:hover:text-ubi-200 hover:underline"
+                                      >
+                                        <span>Map</span>
+                                        <ExternalLink size={10} />
+                                      </a>
+                                    </div>
+                                  ) : meta.location_status ? (
+                                    <span className="text-[10px] font-mono text-slate-400">
+                                      Location: {meta.location_status}
+                                    </span>
+                                  ) : null}
+
+                                  {/* Specs Tags */}
+                                  <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                                    {meta.ip_address && (
+                                      <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                        IP: {meta.ip_address}
+                                      </span>
+                                    )}
+                                    {meta.browser && (
+                                      <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                        {meta.browser}
+                                      </span>
+                                    )}
+                                    {meta.os && (
+                                      <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                        {meta.os}
+                                      </span>
+                                    )}
+                                    {meta.screen_resolution && (
+                                      <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                        {meta.screen_resolution}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-3 py-16">
                   <ShieldCheck size={44} className="text-emerald-500" />
@@ -1059,6 +1220,53 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
       ) : (
         <div className="py-16 text-center text-slate-500 text-xs">
           Candidate data could not be retrieved.
+        </div>
+      )}
+
+      {/* Full-Resolution Snapshot Zoom Lightbox Modal */}
+      {previewPhoto && (
+        <div
+          className="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn"
+          onClick={() => setPreviewPhoto(null)}
+        >
+          <div
+            className="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl animate-scaleIn flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-950/80">
+              <div className="flex items-center gap-2">
+                <Camera size={16} className="text-amber-400" />
+                <span className="font-bold text-sm text-white">{previewPhoto.title}</span>
+                <span className="text-xs font-mono text-slate-400">({previewPhoto.time})</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewPhoto(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-4 flex items-center justify-center bg-black/95">
+              <img
+                src={previewPhoto.url}
+                alt={previewPhoto.title}
+                className="max-h-[65vh] w-auto object-contain rounded-lg border border-slate-800 shadow"
+              />
+            </div>
+            <div className="px-4 py-2.5 border-t border-slate-800 bg-slate-950/80 flex items-center justify-between text-xs text-slate-400">
+              <span>Candidate Camera Anomaly Snapshot (Stored in AWS S3)</span>
+              <a
+                href={previewPhoto.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-ubi-400 hover:underline inline-flex items-center gap-1 font-semibold"
+              >
+                <span>Full resolution</span>
+                <ExternalLink size={11} />
+              </a>
+            </div>
+          </div>
         </div>
       )}
     </Modal>

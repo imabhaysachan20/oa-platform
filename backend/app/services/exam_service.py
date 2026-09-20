@@ -1524,7 +1524,7 @@ async def get_candidate_dossier(
         "TAB_SWITCH", "WINDOW_BLUR", "FULLSCREEN_EXIT", "PASTE_ATTEMPT",
         "COPY_ATTEMPT", "DEVTOOLS_SHORTCUT", "PRINT_SAVE_SHORTCUT",
         "DEVTOOLS_DOCK_OPENED", "MOUSE_LEAVE", "CONTEXT_MENU",
-        "DEVICE_SWITCH_DETECTED"
+        "DEVICE_SWITCH_DETECTED", "NO_FACE", "MULTIPLE_FACES"
     }
     infraction_rows = [l for l in log_rows if l.event_type in INFRACTION_EVENT_TYPES]
     total_flags = len(infraction_rows)
@@ -1706,6 +1706,23 @@ async def get_candidate_dossier(
         for att in attempts_records
     ]
 
+    enriched_logs = []
+    for l in log_rows:
+        log_item = ProctoringLogItem.model_validate(l)
+        if log_item.meta_data:
+            try:
+                meta_dict = json.loads(log_item.meta_data)
+                if isinstance(meta_dict, dict):
+                    photo_key = meta_dict.get("photo_url") or meta_dict.get("s3_key")
+                    if photo_key:
+                        presigned = get_presigned_view_url(photo_key)
+                        if presigned:
+                            meta_dict["photo_url"] = presigned
+                            log_item.meta_data = json.dumps(meta_dict)
+            except Exception:
+                pass
+        enriched_logs.append(log_item)
+
     return CandidateDossierResponse(
         assignment_id=assignment.id,
         exam_id=exam.id,
@@ -1731,7 +1748,7 @@ async def get_candidate_dossier(
         total_flags=total_flags,
         flag_counts_by_type=flag_counts_by_type,
         integrity_status=integrity_status,
-        proctoring_logs=[ProctoringLogItem.model_validate(l) for l in log_rows],
+        proctoring_logs=enriched_logs,
         questions=question_dossiers,
         network_status=network_status,
         disconnect_incidents_count=disconnect_incidents_count,

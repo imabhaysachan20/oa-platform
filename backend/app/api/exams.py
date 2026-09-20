@@ -209,13 +209,38 @@ async def get_photo_upload_url(
 ):
     """
     Generates an AWS S3 presigned PUT URL allowing candidates to upload verification
-    snapshots directly to S3 without sending image data through FastAPI.
+    and proctoring anomaly snapshots directly to S3 without sending image data through FastAPI.
+    Supports multi-attempt exams, fresh restarts, and initial attempts.
     """
     event_type = body.event_type if body and body.event_type else "start"
+    attempt_num = body.attempt_number if body and body.attempt_number else None
+
+    if not attempt_num and body and body.assignment_id:
+        assign = await db.get(ExamAssignment, body.assignment_id)
+        if assign and getattr(assign, 'attempt_number', None):
+            attempt_num = assign.attempt_number
+
+    if not attempt_num:
+        # Check active/latest assignment for this user & exam in DB
+        stmt = (
+            select(ExamAssignment)
+            .where(
+                ExamAssignment.exam_id == exam_id,
+                ExamAssignment.user_id == current_user.id
+            )
+            .order_by(ExamAssignment.attempt_number.desc())
+            .limit(1)
+        )
+        latest_assign = (await db.execute(stmt)).scalar_one_or_none()
+        if latest_assign and getattr(latest_assign, 'attempt_number', None):
+            attempt_num = latest_assign.attempt_number
+        else:
+            attempt_num = 1
+
     res = generate_presigned_upload_url(
         exam_id=exam_id,
         user_id=current_user.id,
-        attempt_number=1,
+        attempt_number=attempt_num,
         event_type=event_type,
         content_type="image/jpeg"
     )

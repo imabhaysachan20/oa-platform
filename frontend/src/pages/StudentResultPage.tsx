@@ -39,48 +39,49 @@ export const StudentResultPage: React.FC = () => {
 
   if (error || !result) {
     return (
-      <div className="max-w-md mx-auto py-16 px-4 text-center">
-        <Card className="space-y-4">
-          <p className="text-sm text-rose-600 dark:text-rose-400 font-medium">Could not retrieve submission status.</p>
-          <Button onClick={handleLogout}>Log Out</Button>
+      <div className="max-w-md mx-auto px-4 py-12 text-center">
+        <Card className="p-6">
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Result Unavailable</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+            {error ? (error as any).response?.data?.detail || 'Failed to load exam result.' : 'Exam result could not be found.'}
+          </p>
+          <Button variant="primary" onClick={() => navigate('/')}>
+            Return to Dashboard
+          </Button>
         </Card>
       </div>
     );
   }
 
-  // Student View: Just "Thank you for attending" and Logout screen
+  // Candidate View (Score Hidden per requirement, Clean Acknowledgment)
   if (!isAdmin) {
     return (
-      <div className="min-h-[80vh] flex items-center justify-center px-4 py-12 animate-fadeIn">
-        <div className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 sm:p-10 shadow-xl dark:shadow-2xl text-center space-y-6">
-          {/* UsefulBI Logo */}
-          <div className="inline-flex items-center justify-center">
-            <img
-              src="/UsefulBI_Logo_Main.webp"
-              alt="UsefulBI"
-              className="h-10 w-auto object-contain"
-            />
+      <div className="max-w-xl mx-auto px-4 py-16 animate-fadeIn">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 shadow-xl text-center space-y-6">
+          {/* Success Icon */}
+          <div className="w-16 h-16 bg-emerald-50 dark:bg-emerald-950/60 rounded-full flex items-center justify-center mx-auto border-4 border-emerald-100 dark:border-emerald-900/40">
+            <CheckCircle className="w-8 h-8 text-emerald-500" />
           </div>
 
-          {/* Success Check Icon */}
-          <div className="flex justify-center">
-            <div className="w-20 h-20 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-sm animate-scaleIn">
-              <CheckCircle size={44} />
-            </div>
-          </div>
-
-          {/* Thank you message */}
+          {/* Assessment Title & Submission Info */}
           <div className="space-y-2">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              Thank you for attending!
-            </h1>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
+              Assessment Completed
+            </h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              {result.exam_title}
+            </p>
+          </div>
+
+          {/* Clean Card Message */}
+          <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 rounded-xl p-5 text-center">
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
               Your test has been successfully submitted. You may now safely log out of the testing platform.
             </p>
           </div>
 
           {/* Logout Action */}
-          <div className="pt-4">
+          <div className="pt-4 space-y-3">
             <Button
               variant="primary"
               size="lg"
@@ -107,13 +108,6 @@ export const StudentResultPage: React.FC = () => {
             className="h-10 w-auto object-contain"
           />
         </div>
-
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-          Admin Review: Assessment Completed
-        </h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-semibold mt-1">
-          {result.exam_title}
-        </p>
 
         <div className="mt-6 flex flex-wrap items-center justify-center gap-4 sm:gap-6">
           <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-6 py-4 min-w-[160px] shadow-sm">
@@ -214,7 +208,7 @@ export const StudentResultPage: React.FC = () => {
         </div>
       )}
 
-      <div className="flex items-center justify-center gap-4 pt-4">
+      <div className="flex items-center justify-center gap-4 pt-4 flex-wrap">
         <Button variant="primary" onClick={() => navigate('/')} className="gap-2 font-semibold">
           <Home size={16} />
           <span>Return to Assessments</span>

@@ -250,6 +250,17 @@ export const StudentExamInstructionsPage: React.FC = () => {
 
       // Single-use authorization for workspace entry
       sessionStorage.setItem(`ubicode_verified_entry_${id}`, 'true');
+      if (verificationPhoto) {
+        try {
+          sessionStorage.setItem(`ubicode_ref_photo_${id}`, verificationPhoto);
+          const latestFeat = sessionStorage.getItem('ubicode_ref_features_latest');
+          if (latestFeat) {
+            sessionStorage.setItem(`ubicode_ref_features_${id}`, latestFeat);
+          }
+        } catch (e) {
+          console.warn('Failed to store reference photo in sessionStorage:', e);
+        }
+      }
       // Release camera hardware tracks from verification card before switching to workspace live feed
       stopAllActiveMediaTracks();
       navigate(`/exam/${id}/workspace`, { replace: true });

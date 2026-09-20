@@ -5,6 +5,27 @@ interface LiveWebcamHUDProps {
   onCameraInterrupted?: () => void;
 }
 
+/**
+ * Global helper to immediately shut off any active webcam tracks across the application.
+ */
+export function stopAllActiveMediaTracks() {
+  try {
+    document.querySelectorAll('video').forEach((v) => {
+      if (v.srcObject) {
+        try {
+          const stream = v.srcObject as MediaStream;
+          if (stream && stream.getTracks) {
+            stream.getTracks().forEach((t) => t.stop());
+          }
+        } catch {}
+        v.srcObject = null;
+      }
+    });
+  } catch (err) {
+    console.warn('Error stopping all active media tracks:', err);
+  }
+}
+
 export const LiveWebcamHUD: React.FC<LiveWebcamHUDProps> = ({ onCameraInterrupted }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [hasStream, setHasStream] = useState(false);
@@ -12,11 +33,33 @@ export const LiveWebcamHUD: React.FC<LiveWebcamHUDProps> = ({ onCameraInterrupte
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const isMountedRef = useRef(true);
+
+  // Keep callback reference stable across parent re-renders
+  const onCameraInterruptedRef = useRef(onCameraInterrupted);
+  useEffect(() => {
+    onCameraInterruptedRef.current = onCameraInterrupted;
+  }, [onCameraInterrupted]);
 
   const stopTracks = useCallback(() => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {}
+      });
       streamRef.current = null;
+    }
+    if (videoRef.current) {
+      if (videoRef.current.srcObject) {
+        try {
+          const s = videoRef.current.srcObject as MediaStream;
+          if (s && s.getTracks) {
+            s.getTracks().forEach((track) => track.stop());
+          }
+        } catch {}
+      }
+      videoRef.current.srcObject = null;
     }
   }, []);
 
@@ -25,6 +68,9 @@ export const LiveWebcamHUD: React.FC<LiveWebcamHUDProps> = ({ onCameraInterrupte
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Webcam media unsupported');
       }
+
+      // Stop any existing stream before starting a new one
+      stopTracks();
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -35,18 +81,28 @@ export const LiveWebcamHUD: React.FC<LiveWebcamHUDProps> = ({ onCameraInterrupte
         audio: false,
       });
 
+      // Prevent race condition: if unmounted while getUserMedia was resolving, stop immediately
+      if (!isMountedRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
       streamRef.current = stream;
 
       // Handle stream track ending / device disconnected
       stream.getVideoTracks().forEach((track) => {
         track.onended = () => {
-          setHasStream(false);
-          setErrorMsg('Camera stream ended');
-          if (onCameraInterrupted) onCameraInterrupted();
+          if (isMountedRef.current) {
+            setHasStream(false);
+            setErrorMsg('Camera stream ended');
+            if (onCameraInterruptedRef.current) onCameraInterruptedRef.current();
+          }
         };
       });
 
       if (videoRef.current) {
+        videoRef.current.muted = true;
+        videoRef.current.defaultMuted = true;
         videoRef.current.srcObject = stream;
         await videoRef.current.play().catch(() => {});
       }
@@ -55,15 +111,19 @@ export const LiveWebcamHUD: React.FC<LiveWebcamHUDProps> = ({ onCameraInterrupte
       setErrorMsg(null);
     } catch (err: any) {
       console.warn('Live proctoring webcam initialization failed:', err);
-      setHasStream(false);
-      setErrorMsg('Camera offline');
-      if (onCameraInterrupted) onCameraInterrupted();
+      if (isMountedRef.current) {
+        setHasStream(false);
+        setErrorMsg('Camera offline');
+        if (onCameraInterruptedRef.current) onCameraInterruptedRef.current();
+      }
     }
-  }, [onCameraInterrupted]);
+  }, [stopTracks]);
 
   const attachVideoRef = useCallback((el: HTMLVideoElement | null) => {
     videoRef.current = el;
     if (el && streamRef.current) {
+      el.muted = true;
+      el.defaultMuted = true;
       if (el.srcObject !== streamRef.current) {
         el.srcObject = streamRef.current;
       }
@@ -71,10 +131,39 @@ export const LiveWebcamHUD: React.FC<LiveWebcamHUDProps> = ({ onCameraInterrupte
     }
   }, []);
 
+  // Ensure stream playback is always connected when hasStream is true
   useEffect(() => {
+    if (hasStream && videoRef.current && streamRef.current) {
+      videoRef.current.muted = true;
+      videoRef.current.defaultMuted = true;
+      if (videoRef.current.srcObject !== streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+      }
+      videoRef.current.play().catch(() => {});
+    }
+  }, [hasStream]);
+
+  // Initialize camera strictly ONCE when component mounts
+  useEffect(() => {
+    isMountedRef.current = true;
     initCamera();
-    return () => {
+
+    const handleLeave = () => {
       stopTracks();
+      stopAllActiveMediaTracks();
+    };
+
+    window.addEventListener('beforeunload', handleLeave);
+    window.addEventListener('pagehide', handleLeave);
+    window.addEventListener('popstate', handleLeave);
+
+    return () => {
+      isMountedRef.current = false;
+      window.removeEventListener('beforeunload', handleLeave);
+      window.removeEventListener('pagehide', handleLeave);
+      window.removeEventListener('popstate', handleLeave);
+      stopTracks();
+      stopAllActiveMediaTracks();
     };
   }, [initCamera, stopTracks]);
 
@@ -114,6 +203,16 @@ export const LiveWebcamHUD: React.FC<LiveWebcamHUDProps> = ({ onCameraInterrupte
             autoPlay
             playsInline
             muted
+            onLoadedMetadata={() => {
+              if (videoRef.current) {
+                videoRef.current.play().catch(() => {});
+              }
+            }}
+            onCanPlay={() => {
+              if (videoRef.current) {
+                videoRef.current.play().catch(() => {});
+              }
+            }}
             className="w-full h-full object-cover bg-black"
             style={{ transform: 'scaleX(-1)' }}
           />

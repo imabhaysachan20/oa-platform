@@ -39,13 +39,23 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [capturedSizeKb, setCapturedSizeKb] = useState<number | null>(null);
 
+  const isMountedRef = useRef(true);
+
   // Stop camera tracks helper
   const stopStream = useCallback(() => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current.getTracks().forEach((track) => {
+        track.stop();
+      });
       streamRef.current = null;
     }
     if (videoRef.current) {
+      if (videoRef.current.srcObject) {
+        const s = videoRef.current.srcObject as MediaStream;
+        if (s && s.getTracks) {
+          s.getTracks().forEach((track) => track.stop());
+        }
+      }
       videoRef.current.srcObject = null;
     }
   }, []);
@@ -72,6 +82,12 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
         audio: false,
       });
 
+      // Prevent race condition: if unmounted while prompt was pending, stop immediately
+      if (!isMountedRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
       streamRef.current = stream;
       setCamStatus('granted');
       setErrorMsg(null);
@@ -83,15 +99,17 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
       }
     } catch (err: any) {
       console.warn('Webcam permission error:', err);
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setCamStatus('denied');
-        setErrorMsg('Camera permission was denied. Please allow camera access in browser settings and click Retry.');
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        setCamStatus('error');
-        setErrorMsg('No web camera detected on this device. Please connect a working webcam.');
-      } else {
-        setCamStatus('error');
-        setErrorMsg(err.message || 'Unable to access web camera.');
+      if (isMountedRef.current) {
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          setCamStatus('denied');
+          setErrorMsg('Camera permission was denied. Please allow camera access in browser settings and click Retry.');
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          setCamStatus('error');
+          setErrorMsg('No web camera detected on this device. Please connect a working webcam.');
+        } else {
+          setCamStatus('error');
+          setErrorMsg(err.message || 'Unable to access web camera.');
+        }
       }
       stopStream();
     }
@@ -110,9 +128,23 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
 
   // Request camera and preload AI detector automatically on mount
   useEffect(() => {
+    isMountedRef.current = true;
     getFaceDetector().catch(() => {});
     requestCamera();
+
+    const handleLeave = () => {
+      stopStream();
+    };
+
+    window.addEventListener('beforeunload', handleLeave);
+    window.addEventListener('pagehide', handleLeave);
+    window.addEventListener('popstate', handleLeave);
+
     return () => {
+      isMountedRef.current = false;
+      window.removeEventListener('beforeunload', handleLeave);
+      window.removeEventListener('pagehide', handleLeave);
+      window.removeEventListener('popstate', handleLeave);
       stopStream();
     };
   }, [requestCamera, stopStream]);
@@ -174,6 +206,8 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
     setCapturedPhoto(photoDataUrl);
     setCapturedSizeKb(sizeKb);
     onPhotoCaptured(photoDataUrl);
+    // Shut off camera stream to release webcam hardware once photo is taken
+    stopStream();
   };
 
   // Retake photo action
@@ -181,13 +215,8 @@ export const WebcamVerificationCard: React.FC<WebcamVerificationCardProps> = ({
     setCapturedPhoto(null);
     setCapturedSizeKb(null);
     onPhotoCaptured(null);
-    // Restart detection and reconnect stream if needed
-    if (streamRef.current && videoRef.current) {
-      videoRef.current.srcObject = streamRef.current;
-      videoRef.current.play().catch(() => {});
-    } else {
-      requestCamera();
-    }
+    // Re-acquire camera stream for retake
+    requestCamera();
   };
 
   return (

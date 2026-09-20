@@ -22,7 +22,7 @@ import { useExamSecurity } from '../hooks/useExamSecurity';
 import { useCandidateHeartbeat } from '../hooks/useCandidateHeartbeat';
 import { useQuestionTimer } from '../hooks/useQuestionTimer';
 import { collectDeviceTelemetry } from '../utils/deviceInfo';
-import { LiveWebcamHUD } from '../components/LiveWebcamHUD';
+import { LiveWebcamHUD, stopAllActiveMediaTracks } from '../components/LiveWebcamHUD';
 
 export const StudentExamWorkspacePage: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
@@ -130,15 +130,19 @@ export const StudentExamWorkspacePage: React.FC = () => {
     }
   }, [id, navigate]);
 
-  // When refreshing the browser page or closing the tab, clear the verification token so reload forces re-verifying
+  // When refreshing the browser page, closing tab, or unmounting workspace, stop all camera tracks
   useEffect(() => {
     if (!id) return;
     const handleBeforeUnload = () => {
       sessionStorage.removeItem(`ubicode_verified_entry_${id}`);
+      stopAllActiveMediaTracks();
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handleBeforeUnload);
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handleBeforeUnload);
+      stopAllActiveMediaTracks();
     };
   }, [id]);
 
@@ -714,14 +718,21 @@ export const StudentExamWorkspacePage: React.FC = () => {
     }
   };
 
+  const handleCameraInterrupted = useCallback(() => {
+    logInfraction('CAMERA_INTERRUPTED');
+  }, [logInfraction]);
+
   // Finish exam early
   const handleFinishExam = async () => {
     setIsSubmittingExam(true);
+    // Explicitly terminate camera stream immediately upon clicking submit
+    stopAllActiveMediaTracks();
     try {
       if (flushLogs) {
         await flushLogs();
       }
       await examsApi.finish(id);
+      stopAllActiveMediaTracks();
       setIsFinishModalOpen(false);
       resetExamState();
       navigate(`/exam/${id}/result`);
@@ -734,11 +745,13 @@ export const StudentExamWorkspacePage: React.FC = () => {
 
   // Auto-submit callback triggered when Timer hits 00:00:00
   const handleTimeoutExpire = async () => {
+    stopAllActiveMediaTracks();
     if (flushLogs) {
       try {
         await flushLogs();
       } catch {}
     }
+    stopAllActiveMediaTracks();
     resetExamState();
     navigate(`/exam/${id}/result`);
   };
@@ -1225,9 +1238,9 @@ export const StudentExamWorkspacePage: React.FC = () => {
       </Modal>
 
       {/* Live Proctoring Webcam HUD - Remains Active Throughout Assessment */}
-      {examData && examData.status === 'in_progress' && (
+      {examData && examData.status === 'in_progress' && !isSubmittingExam && (
         <LiveWebcamHUD
-          onCameraInterrupted={() => logInfraction('CAMERA_INTERRUPTED')}
+          onCameraInterrupted={handleCameraInterrupted}
         />
       )}
     </div>

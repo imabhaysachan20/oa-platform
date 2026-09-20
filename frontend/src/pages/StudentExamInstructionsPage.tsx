@@ -18,6 +18,7 @@ import {
   Camera,
 } from 'lucide-react';
 import { WebcamVerificationCard } from '../components/WebcamVerificationCard';
+import { stopAllActiveMediaTracks } from '../components/LiveWebcamHUD';
 
 export const StudentExamInstructionsPage: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
@@ -28,6 +29,13 @@ export const StudentExamInstructionsPage: React.FC = () => {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [verificationPhoto, setVerificationPhoto] = useState<string | null>(null);
+
+  // Ensure any active camera tracks from verification card are cleaned up when unmounting
+  useEffect(() => {
+    return () => {
+      stopAllActiveMediaTracks();
+    };
+  }, []);
 
   // Device Location Verification State
   type LocationStatus = 'prompt' | 'requesting' | 'granted' | 'denied' | 'error' | 'unsupported';
@@ -223,6 +231,8 @@ export const StudentExamInstructionsPage: React.FC = () => {
 
       // Single-use authorization for workspace entry
       sessionStorage.setItem(`ubicode_verified_entry_${id}`, 'true');
+      // Release camera hardware tracks from verification card before switching to workspace live feed
+      stopAllActiveMediaTracks();
       navigate(`/exam/${id}/workspace`, { replace: true });
     } catch (err: any) {
       alert(err.response?.data?.detail || 'Failed to start or resume assessment');
@@ -466,7 +476,10 @@ export const StudentExamInstructionsPage: React.FC = () => {
         {/* Back Link Button */}
         <div className="pt-6 border-t border-slate-200/80 dark:border-slate-800/80 mt-8">
           <button
-            onClick={() => navigate('/')}
+            onClick={() => {
+              stopAllActiveMediaTracks();
+              navigate('/');
+            }}
             className="group inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg text-xs font-semibold transition-all border border-slate-200/80 dark:border-slate-700/80 shadow-2xs cursor-pointer"
           >
             <ArrowLeft size={14} className="transition-transform group-hover:-translate-x-0.5" />
@@ -728,7 +741,10 @@ export const StudentExamInstructionsPage: React.FC = () => {
             </button>
 
             <button
-              onClick={() => navigate('/')}
+              onClick={() => {
+                stopAllActiveMediaTracks();
+                navigate('/');
+              }}
               disabled={isStarting}
               className="px-6 py-3 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-sm rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
             >

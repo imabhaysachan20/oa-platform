@@ -104,6 +104,94 @@ async def test_record_exam_resume_with_verification_photo():
             verification_photo=SAMPLE_BASE64_JPEG,
         )
 
-        assert assignment.verification_photo_url == fake_s3_url
-        assert res.verification_photo_url == fake_s3_url
+        assert assignment.verification_photo_url == "proctoring/key.jpg"
+        assert res.verification_photo_url is not None
         assert db.add.call_count >= 2  # device log + photo log
+
+
+def test_generate_presigned_upload_url_success():
+    from backend.app.services.s3_service import generate_presigned_upload_url
+
+    mock_s3 = MagicMock()
+    mock_s3.generate_presigned_url.return_value = "https://ubi-code.s3.ap-south-1.amazonaws.com/proctoring/test_upload.jpg?AWSAccessKeyId=123"
+
+    with patch("backend.app.services.s3_service._get_s3_client", return_value=mock_s3):
+        res = generate_presigned_upload_url(
+            exam_id=2,
+            user_id=10,
+            attempt_number=1,
+            event_type="start",
+            content_type="image/jpeg"
+        )
+
+        assert res is not None
+        assert res["upload_url"].startswith("https://ubi-code.s3")
+        assert "proctoring/exam_2/user_10/attempt_1/start_" in res["s3_key"]
+        assert res["expires_in"] == 900
+        mock_s3.generate_presigned_url.assert_called_once()
+        call_kwargs = mock_s3.generate_presigned_url.call_args.kwargs
+        assert call_kwargs["ClientMethod"] == "put_object"
+        assert call_kwargs["Params"]["Bucket"] == "ubi-code"
+        assert call_kwargs["Params"]["ContentType"] == "image/jpeg"
+
+
+def test_get_presigned_view_url():
+    from backend.app.services.s3_service import get_presigned_view_url
+
+    mock_s3 = MagicMock()
+    mock_s3.generate_presigned_url.return_value = "https://ubi-code.s3.ap-south-1.amazonaws.com/proctoring/fresh_view.jpg?token=fresh"
+
+    with patch("backend.app.services.s3_service._get_s3_client", return_value=mock_s3):
+        # 1. Using canonical S3 key
+        view_url = get_presigned_view_url("proctoring/exam_1/user_2/attempt_1/start_123.jpg")
+        assert "token=fresh" in view_url
+        call_kwargs = mock_s3.generate_presigned_url.call_args.kwargs
+        assert call_kwargs["ClientMethod"] == "get_object"
+        assert call_kwargs["Params"]["Key"] == "proctoring/exam_1/user_2/attempt_1/start_123.jpg"
+
+        # 2. Using full S3 URL with query params (should strip query params and extract key)
+        old_url = "https://ubi-code.s3.ap-south-1.amazonaws.com/proctoring/exam_1/user_2/attempt_1/start_123.jpg?expired_token=123"
+        view_url_2 = get_presigned_view_url(old_url)
+        assert "token=fresh" in view_url_2
+
+        # 3. None or empty string
+        assert get_presigned_view_url(None) is None
+        assert get_presigned_view_url("") is None
+
+
+@pytest.mark.asyncio
+async def test_record_exam_resume_with_direct_s3_key():
+    assignment = ExamAssignment(
+        id=102,
+        exam_id=1,
+        user_id=5,
+        attempt_number=1,
+        status=AssignmentStatus.IN_PROGRESS,
+        verification_photo_url=None,
+    )
+
+    db = MagicMock()
+    db.commit = AsyncMock()
+
+    mock_result_assignment = MagicMock()
+    mock_result_assignment.scalar_one_or_none.return_value = assignment
+    mock_result_logs = MagicMock()
+    mock_result_logs.scalars.return_value.all.return_value = []
+    db.execute = AsyncMock(side_effect=[mock_result_assignment, mock_result_logs])
+
+    telemetry = DeviceTelemetryPayload(browser="Chrome 120", os="Windows 10")
+    s3_key = "proctoring/exam_1/user_5/attempt_1/resume_12345.jpg"
+
+    res = await record_exam_resume_telemetry(
+        db=db,
+        exam_id=1,
+        assignment_id=102,
+        user_id=5,
+        telemetry=telemetry,
+        s3_key=s3_key,
+    )
+
+    assert assignment.verification_photo_url == s3_key
+    assert res.verification_photo_url is not None
+    assert db.add.call_count >= 2  # device log + direct photo log
+

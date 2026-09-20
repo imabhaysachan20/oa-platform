@@ -78,6 +78,7 @@ class DeviceTelemetryPayload(BaseModel):
 class ExamStartRequest(BaseModel):
     telemetry: Optional[DeviceTelemetryPayload] = None
     verification_photo: Optional[str] = None
+    s3_key: Optional[str] = None
     browser: Optional[str] = None
     os: Optional[str] = None
     device_type: Optional[str] = None
@@ -87,6 +88,16 @@ class ExamStartRequest(BaseModel):
     longitude: Optional[float] = None
     accuracy: Optional[float] = None
     location_status: Optional[str] = None
+
+
+class PhotoUploadUrlRequest(BaseModel):
+    event_type: Optional[str] = "start"
+
+
+class PhotoUploadUrlResponse(BaseModel):
+    upload_url: str
+    s3_key: str
+    expires_in: int
 
 
 class ExamStartResponse(BaseModel):
@@ -313,6 +324,7 @@ class ResumeExamRequest(BaseModel):
     assignment_id: int
     telemetry: Optional[DeviceTelemetryPayload] = None
     verification_photo: Optional[str] = None
+    s3_key: Optional[str] = None
 
 
 class ResumeExamResponse(BaseModel):

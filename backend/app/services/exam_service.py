@@ -45,7 +45,12 @@ from backend.app.services.question_templates import (
     get_question_starter_templates,
     get_question_signature
 )
-from backend.app.services.s3_service import upload_verification_photo_to_s3
+from backend.app.core.config import settings
+from backend.app.services.s3_service import (
+    upload_verification_photo_to_s3,
+    get_presigned_view_url,
+    generate_presigned_upload_url
+)
 
 
 async def sync_unsubmitted_assignments_for_exam(db: AsyncSession, exam_id: int):
@@ -379,7 +384,8 @@ async def start_exam_for_student(
     telemetry: Optional[DeviceTelemetryPayload] = None,
     client_ip: Optional[str] = None,
     redis: Optional[aioredis.Redis] = None,
-    verification_photo: Optional[str] = None
+    verification_photo: Optional[str] = None,
+    s3_key: Optional[str] = None
 ) -> ExamStartResponse:
     """
     Idempotently starts the exam for a student:
@@ -478,7 +484,7 @@ async def start_exam_for_student(
         await sync_unsubmitted_assignments_for_exam(db, exam_id)
 
         # If already started, record resume telemetry or photo if provided
-        if telemetry or verification_photo:
+        if telemetry or verification_photo or s3_key:
             await record_exam_resume_telemetry(
                 db=db,
                 exam_id=exam_id,
@@ -487,7 +493,8 @@ async def start_exam_for_student(
                 telemetry=telemetry,
                 client_ip=client_ip,
                 redis=redis,
-                verification_photo=verification_photo
+                verification_photo=verification_photo,
+                s3_key=s3_key
             )
 
         # Return existing locked questions
@@ -500,7 +507,7 @@ async def start_exam_for_student(
             deadline_at=assignment.deadline_at or (now + timedelta(minutes=exam.duration_minutes)),
             duration_minutes=exam.duration_minutes,
             attempt_number=getattr(assignment, 'attempt_number', 1),
-            verification_photo_url=getattr(assignment, 'verification_photo_url', None),
+            verification_photo_url=get_presigned_view_url(getattr(assignment, 'verification_photo_url', None)),
             questions=assigned_views
         )
 
@@ -580,8 +587,23 @@ async def start_exam_for_student(
     )
     db.add(start_log)
 
-    # Verification Photo Upload to AWS S3
-    if verification_photo:
+    # Verification Photo: Prefer direct S3 key (enterprise-scale direct upload)
+    if s3_key:
+        expected_prefix = f"{settings.S3_PHOTO_PREFIX}/exam_{exam.id}/user_{user_id}/"
+        if s3_key.startswith(expected_prefix) or settings.S3_PHOTO_PREFIX in s3_key:
+            assignment.verification_photo_url = s3_key
+            photo_log = ExamProctoringLog(
+                assignment_id=assignment.id,
+                event_type="VERIFICATION_SNAPSHOT",
+                title="Candidate Identity Photo (Start)",
+                description="Identity verification webcam snapshot captured and stored directly in S3 bucket ubi-code",
+                occurred_at=now,
+                meta_data=json.dumps({"s3_key": s3_key, "event": "start"})
+            )
+            db.add(photo_log)
+        else:
+            logger.warning(f"[S3] Mismatched s3_key prefix '{s3_key}' for exam {exam.id}, user {user_id}")
+    elif verification_photo:
         upload_res = upload_verification_photo_to_s3(
             base64_data=verification_photo,
             exam_id=exam.id,
@@ -590,15 +612,15 @@ async def start_exam_for_student(
             event_type="start"
         )
         if upload_res:
-            s3_key, photo_url = upload_res
-            assignment.verification_photo_url = photo_url
+            s3_key_res, photo_url = upload_res
+            assignment.verification_photo_url = s3_key_res
             photo_log = ExamProctoringLog(
                 assignment_id=assignment.id,
                 event_type="VERIFICATION_SNAPSHOT",
                 title="Candidate Identity Photo (Start)",
                 description="Identity verification webcam snapshot captured and stored in S3 bucket ubi-code",
                 occurred_at=now,
-                meta_data=json.dumps({"s3_key": s3_key, "photo_url": photo_url, "event": "start"})
+                meta_data=json.dumps({"s3_key": s3_key_res, "photo_url": photo_url, "event": "start"})
             )
             db.add(photo_log)
 
@@ -635,7 +657,7 @@ async def start_exam_for_student(
         deadline_at=assignment.deadline_at,
         duration_minutes=exam.duration_minutes,
         attempt_number=getattr(assignment, 'attempt_number', 1),
-        verification_photo_url=getattr(assignment, 'verification_photo_url', None),
+        verification_photo_url=get_presigned_view_url(getattr(assignment, 'verification_photo_url', None)),
         questions=assigned_views
     )
 
@@ -648,7 +670,8 @@ async def record_exam_resume_telemetry(
     telemetry: Optional[DeviceTelemetryPayload],
     client_ip: Optional[str] = None,
     redis: Optional[aioredis.Redis] = None,
-    verification_photo: Optional[str] = None
+    verification_photo: Optional[str] = None,
+    s3_key: Optional[str] = None
 ) -> ResumeExamResponse:
     """
     Records device details and geolocation each time a candidate resumes, refreshes, or reconnects.
@@ -757,8 +780,23 @@ async def record_exam_resume_telemetry(
     )
     db.add(resume_log)
 
-    # Verification Photo Upload to AWS S3 on resume
-    if verification_photo:
+    # Verification Photo on resume: Prefer direct S3 key
+    if s3_key:
+        expected_prefix = f"{settings.S3_PHOTO_PREFIX}/exam_{exam_id}/user_{user_id}/"
+        if s3_key.startswith(expected_prefix) or settings.S3_PHOTO_PREFIX in s3_key:
+            assignment.verification_photo_url = s3_key
+            photo_log = ExamProctoringLog(
+                assignment_id=assignment.id,
+                event_type="VERIFICATION_SNAPSHOT",
+                title="Candidate Identity Photo (Resume)",
+                description="Identity verification webcam snapshot captured on resume and stored directly in S3 bucket ubi-code",
+                occurred_at=now,
+                meta_data=json.dumps({"s3_key": s3_key, "event": "resume"})
+            )
+            db.add(photo_log)
+        else:
+            logger.warning(f"[S3] Mismatched s3_key prefix '{s3_key}' on resume for exam {exam_id}, user {user_id}")
+    elif verification_photo:
         upload_res = upload_verification_photo_to_s3(
             base64_data=verification_photo,
             exam_id=exam_id,
@@ -767,15 +805,15 @@ async def record_exam_resume_telemetry(
             event_type="resume"
         )
         if upload_res:
-            s3_key, photo_url = upload_res
-            assignment.verification_photo_url = photo_url
+            s3_key_res, photo_url = upload_res
+            assignment.verification_photo_url = s3_key_res
             photo_log = ExamProctoringLog(
                 assignment_id=assignment.id,
                 event_type="VERIFICATION_SNAPSHOT",
                 title="Candidate Identity Photo (Resume)",
                 description="Identity verification webcam snapshot captured on resume and stored in S3 bucket ubi-code",
                 occurred_at=now,
-                meta_data=json.dumps({"s3_key": s3_key, "photo_url": photo_url, "event": "resume"})
+                meta_data=json.dumps({"s3_key": s3_key_res, "photo_url": photo_url, "event": "resume"})
             )
             db.add(photo_log)
 
@@ -804,7 +842,7 @@ async def record_exam_resume_telemetry(
     return ResumeExamResponse(
         status="ok",
         device_switch_detected=device_switch_detected,
-        verification_photo_url=getattr(assignment, 'verification_photo_url', None),
+        verification_photo_url=get_presigned_view_url(getattr(assignment, 'verification_photo_url', None)),
         message="Device switch recorded" if device_switch_detected else "Assessment resumed telemetry logged."
     )
 
@@ -824,12 +862,27 @@ async def mark_question_viewed(
     """
     now = datetime.now(timezone.utc)
 
-    # 1. Fetch assignment
-    assign_stmt = select(ExamAssignment).where(
-        ExamAssignment.exam_id == exam_id,
-        ExamAssignment.user_id == user_id
+    # 1. Fetch assignment (prioritize active assignment / latest attempt)
+    assign_stmt = (
+        select(ExamAssignment)
+        .where(
+            ExamAssignment.exam_id == exam_id,
+            ExamAssignment.user_id == user_id,
+            ExamAssignment.is_active == True
+        )
+        .order_by(desc(ExamAssignment.attempt_number))
     )
-    assignment = (await db.execute(assign_stmt)).scalar_one_or_none()
+    assignment = (await db.execute(assign_stmt)).scalars().first()
+    if not assignment:
+        assign_stmt_fallback = (
+            select(ExamAssignment)
+            .where(
+                ExamAssignment.exam_id == exam_id,
+                ExamAssignment.user_id == user_id
+            )
+            .order_by(desc(ExamAssignment.attempt_number))
+        )
+        assignment = (await db.execute(assign_stmt_fallback)).scalars().first()
     if not assignment:
         raise HTTPException(status_code=404, detail="Exam assignment not found")
 
@@ -873,12 +926,27 @@ async def lock_assigned_question(
     """
     now = datetime.now(timezone.utc)
 
-    # 1. Fetch assignment
-    assign_stmt = select(ExamAssignment).where(
-        ExamAssignment.exam_id == exam_id,
-        ExamAssignment.user_id == user_id
+    # 1. Fetch assignment (prioritize active assignment / latest attempt)
+    assign_stmt = (
+        select(ExamAssignment)
+        .where(
+            ExamAssignment.exam_id == exam_id,
+            ExamAssignment.user_id == user_id,
+            ExamAssignment.is_active == True
+        )
+        .order_by(desc(ExamAssignment.attempt_number))
     )
-    assignment = (await db.execute(assign_stmt)).scalar_one_or_none()
+    assignment = (await db.execute(assign_stmt)).scalars().first()
+    if not assignment:
+        assign_stmt_fallback = (
+            select(ExamAssignment)
+            .where(
+                ExamAssignment.exam_id == exam_id,
+                ExamAssignment.user_id == user_id
+            )
+            .order_by(desc(ExamAssignment.attempt_number))
+        )
+        assignment = (await db.execute(assign_stmt_fallback)).scalars().first()
     if not assignment:
         raise HTTPException(status_code=404, detail="Exam assignment not found")
 
@@ -1395,7 +1463,7 @@ async def get_live_exam_monitoring(
             started_at=assign.started_at,
             deadline_at=assign.deadline_at,
             submitted_at=assign.submitted_at,
-            verification_photo_url=getattr(assign, 'verification_photo_url', None),
+            verification_photo_url=get_presigned_view_url(getattr(assign, 'verification_photo_url', None)),
             time_remaining_sec=remaining_sec,
             submissions_count=submission_count,
             flags_count=flags_count,
@@ -1652,7 +1720,7 @@ async def get_candidate_dossier(
         reset_by_admin=getattr(assignment, 'reset_by_admin', False),
         reset_reason=getattr(assignment, 'reset_reason', None),
         available_attempts=available_attempts,
-        verification_photo_url=getattr(assignment, 'verification_photo_url', None),
+        verification_photo_url=get_presigned_view_url(getattr(assignment, 'verification_photo_url', None)),
         started_at=assignment.started_at,
         submitted_at=assignment.submitted_at,
         total_time_sec=round(total_time_sec, 1) if total_time_sec is not None else None,

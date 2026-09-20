@@ -30,7 +30,8 @@ export function useQuestionTimer(
   examId?: number | null,
   question?: StudentQuestionView | null,
   onExpire?: () => void,
-  serverTime?: string | null
+  serverTime?: string | null,
+  assignmentId?: number | null
 ): QuestionTimerState {
   // Compute clock skew between server wall-clock time and client Date.now()
   const serverSkewMs = useMemo(() => {
@@ -71,7 +72,9 @@ export function useQuestionTimer(
   }, [question?.mcq_time_limit_seconds, question?.question_started_at, question?.question_deadline_at]);
 
   const storageKey =
-    userId && examId && question?.id
+    userId && assignmentId && question?.id
+      ? `u_${userId}_assign_${assignmentId}_q_${question.id}_timer`
+      : userId && examId && question?.id
       ? `u_${userId}_exam_${examId}_q_${question.id}_timer`
       : examId && question?.id
       ? `exam_${examId}_q_${question.id}_timer`
@@ -85,14 +88,20 @@ export function useQuestionTimer(
       const raw = localStorage.getItem(storageKey);
       if (raw) {
         const parsed: StoredQuestionTimer = JSON.parse(raw);
-        // If server provided deadline and it is earlier, sync to earlier deadline
-        if (question?.question_deadline_at) {
-          const serverExpires = new Date(question.question_deadline_at).getTime();
-          if (serverExpires < parsed.expiresAt) {
-            parsed.expiresAt = serverExpires;
+        // Stale check: if server says question is NOT locked and has no active deadline,
+        // any cached timer marked locked is from a previous expired attempt and must be discarded
+        if (!question?.is_mcq_locked && !question?.question_deadline_at && parsed.locked) {
+          // Discard stale lock from previous attempt
+        } else {
+          // If server provided deadline and it is earlier, sync to earlier deadline
+          if (question?.question_deadline_at) {
+            const serverExpires = new Date(question.question_deadline_at).getTime();
+            if (serverExpires < parsed.expiresAt) {
+              parsed.expiresAt = serverExpires;
+            }
           }
+          return parsed;
         }
-        return parsed;
       }
     } catch {}
 

@@ -15,13 +15,15 @@ export const submissionsApi = {
     examId: number,
     questionId: number,
     code: string,
-    language: string
+    language: string,
+    assignmentId?: number | null
   ): Promise<SubmitCodeResponse> => {
     const res = await api.post<SubmitCodeResponse>('/submissions/submit', {
       exam_id: examId,
       question_id: questionId,
       code,
       language,
+      assignment_id: assignmentId ?? undefined,
     });
     return res.data;
   },

@@ -18,6 +18,7 @@ from backend.app.services.exam_service import (
     fresh_restart_candidate_exam,
     get_candidate_dossier,
 )
+from backend.app.services.submission_service import submit_code_solution
 
 
 @pytest.mark.asyncio
@@ -334,3 +335,27 @@ async def test_admin_fresh_restart_preserves_old_and_creates_new():
         assert dossier_1.attempt_number == 1
         assert dossier_1.is_active is False
         assert dossier_1.raw_score == 10.0
+
+        # 10. Verify student can submit code solutions in Attempt 2 without MultipleResultsFound error
+        sub_resp = await submit_code_solution(
+            db=db,
+            user_id=student.id,
+            exam_id=exam.id,
+            question_id=questions[0].id,
+            code="print('attempt 2 code solution')",
+            language="python",
+            assignment_id=assignment_2.id,
+        )
+        assert sub_resp.assignment_id == assignment_2.id
+        assert sub_resp.question_id == questions[0].id
+
+        # Also test without explicit assignment_id (should auto-detect active attempt)
+        sub_resp_auto = await submit_code_solution(
+            db=db,
+            user_id=student.id,
+            exam_id=exam.id,
+            question_id=questions[0].id,
+            code="print('attempt 2 auto-detected assignment')",
+            language="python",
+        )
+        assert sub_resp_auto.assignment_id == assignment_2.id

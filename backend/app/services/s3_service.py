@@ -63,6 +63,98 @@ def _get_s3_client():
     return boto3.client("s3", region_name=settings.AWS_REGION)
 
 
+def generate_presigned_upload_url(
+    exam_id: int,
+    user_id: int,
+    attempt_number: int = 1,
+    event_type: str = "start",
+    content_type: str = "image/jpeg"
+) -> Optional[dict]:
+    """
+    Generates an AWS S3 presigned PUT URL allowing candidates to upload
+    their verification snapshot directly to S3 without proxying through FastAPI.
+    
+    Returns:
+        dict with keys {"upload_url": str, "s3_key": str, "expires_in": int} or None.
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        timestamp_str = now.strftime("%Y%m%d_%H%M%S")
+        unique_token = uuid.uuid4().hex[:8]
+        s3_key = (
+            f"{settings.S3_PHOTO_PREFIX}/exam_{exam_id}/user_{user_id}/"
+            f"attempt_{attempt_number}/{event_type}_{timestamp_str}_{unique_token}.jpg"
+        )
+
+        s3_client = _get_s3_client()
+        expires_in = 900  # 15 minutes
+        upload_url = s3_client.generate_presigned_url(
+            ClientMethod="put_object",
+            Params={
+                "Bucket": settings.S3_BUCKET_NAME,
+                "Key": s3_key,
+                "ContentType": content_type
+            },
+            ExpiresIn=expires_in
+        )
+
+        logger.info(f"[S3] Generated presigned upload URL for key: {s3_key}")
+        return {
+            "upload_url": upload_url,
+            "s3_key": s3_key,
+            "expires_in": expires_in
+        }
+    except (BotoCoreError, ClientError) as aws_err:
+        logger.error(f"[S3] AWS error generating presigned upload URL: {aws_err}")
+        return None
+    except Exception as exc:
+        logger.error(f"[S3] Unexpected error generating presigned upload URL: {exc}")
+        return None
+
+
+def get_presigned_view_url(
+    s3_key_or_url: Optional[str],
+    expires_in: int = 3600
+) -> Optional[str]:
+    """
+    Generates a fresh presigned GET URL for secure viewing of candidate snapshots.
+    Accepts either a canonical S3 key (e.g. 'proctoring/exam_1/...') or an existing S3 URL.
+    This guarantees URLs never expire permanently in candidate dossiers.
+    """
+    if not s3_key_or_url or not isinstance(s3_key_or_url, str):
+        return None
+
+    # Strip query parameters if an existing presigned URL was stored
+    cleaned = s3_key_or_url.split("?")[0].strip()
+    if not cleaned:
+        return None
+
+    # Extract S3 key if a full URL was passed
+    s3_key = cleaned
+    if "amazonaws.com/" in cleaned:
+        s3_key = cleaned.split("amazonaws.com/", 1)[1]
+    elif cleaned.startswith("http://") or cleaned.startswith("https://"):
+        # Handle custom endpoint / minio paths
+        parts = cleaned.split("/")
+        if len(parts) > 4:
+            s3_key = "/".join(parts[4:])
+
+    try:
+        s3_client = _get_s3_client()
+        presigned_get_url = s3_client.generate_presigned_url(
+            ClientMethod="get_object",
+            Params={
+                "Bucket": settings.S3_BUCKET_NAME,
+                "Key": s3_key
+            },
+            ExpiresIn=expires_in
+        )
+        return presigned_get_url
+    except Exception as exc:
+        logger.warning(f"[S3] Could not generate dynamic presigned view URL for key '{s3_key}': {exc}")
+        return s3_key_or_url
+
+
 def upload_verification_photo_to_s3(
     base64_data: str,
     exam_id: int,
@@ -72,6 +164,7 @@ def upload_verification_photo_to_s3(
 ) -> Optional[Tuple[str, str]]:
     """
     Decodes a base64 verification snapshot and uploads it to AWS S3 bucket 'ubi-code'.
+    Kept for resilient server-side fallback if client direct upload fails.
     
     Returns:
         (s3_key, photo_url) if upload succeeds, or None if error occurs.
@@ -107,7 +200,7 @@ def upload_verification_photo_to_s3(
             ContentType="image/jpeg"
         )
 
-        # Generate presigned URL valid for 7 days (604800 seconds) for secure viewing in Dossier
+        # Generate presigned URL for viewing
         try:
             presigned_url = s3_client.generate_presigned_url(
                 "get_object",
@@ -128,3 +221,4 @@ def upload_verification_photo_to_s3(
     except Exception as exc:
         logger.error(f"[S3] Unexpected error uploading verification snapshot: {exc}")
         return None
+

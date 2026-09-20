@@ -56,6 +56,7 @@ class SubmitCodeRequest(BaseModel):
     question_id: int
     code: str
     language: str
+    assignment_id: Optional[int] = None
 
 
 class SubmitCodeResponse(BaseModel):

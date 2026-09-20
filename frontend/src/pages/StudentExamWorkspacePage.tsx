@@ -271,46 +271,74 @@ export const StudentExamWorkspacePage: React.FC = () => {
 
   const { user } = useAuthStore();
   const userId = user?.id;
+  const assignmentId = examData?.assignment_id;
+  const lockedStorageKey =
+    userId && assignmentId
+      ? `u_${userId}_assign_${assignmentId}_locked_questions`
+      : null;
 
-  // Set of locked question IDs (strictly scoped to current user so candidates never share state)
-  const [lockedQuestionIds, setLockedQuestionIds] = useState<Set<number>>(() => {
-    const set = new Set<number>();
-    if (!userId) return set;
-    try {
-      const raw = localStorage.getItem(`u_${userId}_exam_${id}_locked_questions`);
-      if (raw) {
-        const arr = JSON.parse(raw);
-        if (Array.isArray(arr)) arr.forEach((qId) => set.add(Number(qId)));
+  // Set of locked question IDs (strictly scoped to current attempt session)
+  const [lockedQuestionIds, setLockedQuestionIds] = useState<Set<number>>(new Set());
+
+  // Detect when assignment ID changes (e.g. admin restarted test) and purge old attempt caches
+  useEffect(() => {
+    if (!userId || !id || !assignmentId) return;
+
+    const activeAssignKey = `u_${userId}_exam_${id}_active_assignment`;
+    const lastSeenAssignId = localStorage.getItem(activeAssignKey);
+
+    if (lastSeenAssignId && Number(lastSeenAssignId) !== assignmentId) {
+      // Admin gave candidate a fresh restart or new attempt!
+      // Thoroughly purge all cached state belonging to the old attempt
+      try {
+        const prefixExam = `u_${userId}_exam_${id}_`;
+        const prefixAssignOld = `u_${userId}_assign_${lastSeenAssignId}_`;
+        Object.keys(localStorage).forEach((k) => {
+          if (
+            k.startsWith(prefixExam) ||
+            k.startsWith(prefixAssignOld) ||
+            k.startsWith(`exam_${id}_`)
+          ) {
+            if (k !== activeAssignKey) {
+              localStorage.removeItem(k);
+            }
+          }
+        });
+      } catch (e) {
+        console.warn('Error purging stale attempt storage:', e);
       }
-    } catch {}
-    return set;
-  });
+    }
+    localStorage.setItem(activeAssignKey, String(assignmentId));
+  }, [id, userId, assignmentId]);
 
   const markQuestionLocked = (qId: number) => {
     setLockedQuestionIds((prev) => {
       const next = new Set(prev);
       next.add(qId);
-      if (userId) {
+      if (lockedStorageKey) {
         try {
-          localStorage.setItem(`u_${userId}_exam_${id}_locked_questions`, JSON.stringify(Array.from(next)));
+          localStorage.setItem(lockedStorageKey, JSON.stringify(Array.from(next)));
         } catch {}
       }
       return next;
     });
   };
 
-  // Sync server-locked questions and reload when userId changes
+  // Sync server-locked questions and reload when assignmentId or questions change
   useEffect(() => {
+    if (!assignmentId) return;
+
     const set = new Set<number>();
-    if (userId) {
+    if (lockedStorageKey) {
       try {
-        const raw = localStorage.getItem(`u_${userId}_exam_${id}_locked_questions`);
+        const raw = localStorage.getItem(lockedStorageKey);
         if (raw) {
           const arr = JSON.parse(raw);
           if (Array.isArray(arr)) arr.forEach((qId) => set.add(Number(qId)));
         }
       } catch {}
     }
+
     if (questions && questions.length > 0) {
       questions.forEach((q) => {
         if (q.is_mcq_locked) {
@@ -318,13 +346,14 @@ export const StudentExamWorkspacePage: React.FC = () => {
         }
       });
     }
+
     setLockedQuestionIds((prev) => {
       if (prev.size === set.size && [...set].every((qId) => prev.has(qId))) {
         return prev;
       }
       return set;
     });
-  }, [questions, userId, id]);
+  }, [assignmentId, lockedStorageKey, questions]);
 
   // Timed MCQ Sequential Flow Phase Detection
   const isTimedQuestion = useCallback((q?: StudentQuestionView | null) => {
@@ -360,7 +389,10 @@ export const StudentExamWorkspacePage: React.FC = () => {
       if (!e.key || !userId) return;
 
       // 1. Sync locked questions across tabs immediately
-      if (e.key === `u_${userId}_exam_${id}_locked_questions`) {
+      const lockedKey = assignmentId
+        ? `u_${userId}_assign_${assignmentId}_locked_questions`
+        : `u_${userId}_exam_${id}_locked_questions`;
+      if (e.key === lockedKey || e.key === `u_${userId}_exam_${id}_locked_questions`) {
         try {
           const arr = e.newValue ? JSON.parse(e.newValue) : [];
           if (Array.isArray(arr)) {
@@ -376,12 +408,13 @@ export const StudentExamWorkspacePage: React.FC = () => {
       }
 
       // 2. Sync selection across tabs if student updated in another tab
-      const prefix = `u_${userId}_exam_${id}_q_`;
-      if (e.key.startsWith(prefix) && e.key.endsWith('_selection') && e.newValue) {
+      if (!e.key || !e.newValue || !assignmentId) return;
+      const prefix = `u_${userId}_assign_${assignmentId}_q_`;
+      if (e.key.startsWith(prefix) && e.key.endsWith('_selection')) {
         try {
-          const match = e.key.match(/_q_(\d+)_selection$/);
-          if (match) {
-            const qId = parseInt(match[1], 10);
+          const qIdStr = e.key.replace(prefix, '').replace('_selection', '');
+          const qId = Number(qIdStr);
+          if (!isNaN(qId)) {
             const val = JSON.parse(e.newValue);
             if (Array.isArray(val)) {
               setMCQSelection(qId, val);
@@ -393,20 +426,21 @@ export const StudentExamWorkspacePage: React.FC = () => {
 
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, [id, userId, setMCQSelection]);
+  }, [id, userId, assignmentId, setMCQSelection]);
 
   // Hydration Auto-Recovery: Restore cached selections from localStorage ONCE on initial load
   const hasHydratedSelectionsRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
-    const sessionKey = `${userId}_${id}`;
-    if (!questions || questions.length === 0 || !userId || hasHydratedSelectionsRef.current[sessionKey]) return;
+    if (!questions || questions.length === 0 || !userId || !assignmentId) return;
+    const sessionKey = `${userId}_${assignmentId}`;
+    if (hasHydratedSelectionsRef.current[sessionKey]) return;
     hasHydratedSelectionsRef.current[sessionKey] = true;
 
     questions.forEach((q) => {
       if (q.question_type === 'mcq') {
         try {
-          const raw = localStorage.getItem(`u_${userId}_exam_${id}_q_${q.id}_selection`);
+          const raw = localStorage.getItem(`u_${userId}_assign_${assignmentId}_q_${q.id}_selection`);
           if (raw) {
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed) && parsed.length > 0) {
@@ -414,15 +448,15 @@ export const StudentExamWorkspacePage: React.FC = () => {
 
               // If server has no recorded answer and question is not locked, sync in background
               const serverHasAnswer = q.selected_option_ids && q.selected_option_ids.length > 0;
-              if (!serverHasAnswer && !q.is_mcq_locked && !lockedQuestionIds.has(q.id) && examData?.assignment_id) {
-                submissionsApi.submitMCQ(examData.assignment_id, q.id, parsed).catch(() => {});
+              if (!serverHasAnswer && !q.is_mcq_locked && !lockedQuestionIds.has(q.id)) {
+                submissionsApi.submitMCQ(assignmentId, q.id, parsed).catch(() => {});
               }
             }
           }
         } catch {}
       }
     });
-  }, [questions.length, id, userId, examData?.assignment_id, lockedQuestionIds, setMCQSelection]);
+  }, [questions.length, id, userId, assignmentId, lockedQuestionIds, setMCQSelection]);
 
   const currentQ = questions[activeQuestionIndex];
 
@@ -591,7 +625,14 @@ export const StudentExamWorkspacePage: React.FC = () => {
     }
   };
 
-  const questionTimer = useQuestionTimer(userId, id, currentQ, handleCurrentQuestionExpire, examData?.server_time);
+  const questionTimer = useQuestionTimer(
+    userId,
+    id,
+    currentQ,
+    handleCurrentQuestionExpire,
+    examData?.server_time,
+    examData?.assignment_id
+  );
 
   const currentLang = currentQ ? selectedLanguage[currentQ.id] || 'python' : 'python';
   const currentStarter = currentQ?.starter_code?.[currentLang] || STARTER_CODE[currentLang] || '';
@@ -636,9 +677,9 @@ export const StudentExamWorkspacePage: React.FC = () => {
     // Update store state and localStorage immediately for snappy UI
     setMCQSelection(qId, newSelectedIds);
     setMcqSaveError(null);
-    if (userId) {
+    if (userId && assignId) {
       try {
-        localStorage.setItem(`u_${userId}_exam_${id}_q_${qId}_selection`, JSON.stringify(newSelectedIds));
+        localStorage.setItem(`u_${userId}_assign_${assignId}_q_${qId}_selection`, JSON.stringify(newSelectedIds));
       } catch {}
     }
 
@@ -703,7 +744,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
     setSubmissionFeedback(null);
 
     try {
-      const res = await submissionsApi.submit(id, currentQ.id, currentCode, currentLang);
+      const res = await submissionsApi.submit(id, currentQ.id, currentCode, currentLang, assignmentId);
       setSubmissionFeedback(
         `Question ${activeQuestionIndex + 1} Submitted: ${res.test_cases_passed}/${res.total_test_cases} test cases passed (${res.status})`
       );
@@ -999,6 +1040,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
                 <MCQPanel
                   userId={userId}
                   examId={id}
+                  assignmentId={examData?.assignment_id}
                   question={currentQ}
                   selectedOptionIds={mcqSelections[currentQ.id] || currentQ.selected_option_ids || []}
                   onChangeSelection={handleMCQSelectionChange}

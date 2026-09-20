@@ -66,7 +66,8 @@ async def submit_code(
         exam_id=body.exam_id,
         question_id=body.question_id,
         code=body.code,
-        language=body.language
+        language=body.language,
+        assignment_id=body.assignment_id,
     )
 
 

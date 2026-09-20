@@ -27,8 +27,11 @@ from backend.app.schemas.exam import (
     CandidateHeartbeatResponse,
     DeviceTelemetryPayload,
     ResumeExamRequest,
-    ResumeExamResponse
+    ResumeExamResponse,
+    PhotoUploadUrlRequest,
+    PhotoUploadUrlResponse
 )
+from backend.app.services.s3_service import generate_presigned_upload_url
 from backend.app.services.exam_service import (
     start_exam_for_student,
     record_exam_resume_telemetry,
@@ -197,6 +200,33 @@ async def get_exam_details(
     return resp
 
 
+@router.post("/{exam_id}/photo-upload-url", response_model=PhotoUploadUrlResponse)
+async def get_photo_upload_url(
+    exam_id: int,
+    body: Optional[PhotoUploadUrlRequest] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Generates an AWS S3 presigned PUT URL allowing candidates to upload verification
+    snapshots directly to S3 without sending image data through FastAPI.
+    """
+    event_type = body.event_type if body and body.event_type else "start"
+    res = generate_presigned_upload_url(
+        exam_id=exam_id,
+        user_id=current_user.id,
+        attempt_number=1,
+        event_type=event_type,
+        content_type="image/jpeg"
+    )
+    if not res:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate secure S3 upload URL."
+        )
+    return PhotoUploadUrlResponse(**res)
+
+
 @router.post("/{exam_id}/start", response_model=ExamStartResponse)
 async def start_exam(
     exam_id: int,
@@ -212,9 +242,11 @@ async def start_exam(
     """
     telemetry = None
     verification_photo = None
+    s3_key = None
 
     if body:
         verification_photo = body.verification_photo
+        s3_key = body.s3_key
         if body.telemetry and body.telemetry.latitude is not None and body.telemetry.longitude is not None:
             telemetry = body.telemetry
         elif body.latitude is not None and body.longitude is not None:
@@ -237,6 +269,8 @@ async def start_exam(
             if isinstance(raw_data, dict):
                 if not verification_photo and raw_data.get("verification_photo"):
                     verification_photo = raw_data.get("verification_photo")
+                if not s3_key and raw_data.get("s3_key"):
+                    s3_key = raw_data.get("s3_key")
 
                 t_dict = raw_data.get("telemetry") if isinstance(raw_data.get("telemetry"), dict) else raw_data
                 lat = t_dict.get("latitude")
@@ -270,7 +304,8 @@ async def start_exam(
         telemetry=telemetry,
         client_ip=client_ip,
         redis=redis,
-        verification_photo=verification_photo
+        verification_photo=verification_photo,
+        s3_key=s3_key
     )
 
 
@@ -306,7 +341,8 @@ async def resume_exam(
         telemetry=body.telemetry,
         client_ip=client_ip,
         redis=redis,
-        verification_photo=body.verification_photo
+        verification_photo=body.verification_photo,
+        s3_key=body.s3_key
     )
 
 

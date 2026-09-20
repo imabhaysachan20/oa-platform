@@ -11,6 +11,7 @@ import { QuestionTabs } from './QuestionTabs';
 interface QuestionPanelProps {
   userId?: number | null;
   examId?: number | null;
+  assignmentId?: number | null;
   questions: StudentQuestionView[];
   activeIndex: number;
   onSelectIndex: (idx: number) => void;
@@ -23,6 +24,7 @@ interface QuestionPanelProps {
 export const QuestionPanel: React.FC<QuestionPanelProps> = ({
   userId,
   examId,
+  assignmentId,
   questions,
   activeIndex,
   onSelectIndex,
@@ -32,7 +34,7 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({
   activeTimedQuestionId,
 }) => {
   const currentQ = questions[activeIndex];
-  const timer = useQuestionTimer(userId, examId, currentQ, undefined, serverTime);
+  const timer = useQuestionTimer(userId, examId, currentQ, undefined, serverTime, assignmentId);
 
   if (!currentQ) {
     return (

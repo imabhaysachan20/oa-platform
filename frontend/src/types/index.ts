@@ -410,12 +410,14 @@ export interface DeviceTelemetryPayload {
 export interface StartExamPayload {
   telemetry?: DeviceTelemetryPayload;
   verification_photo?: string;
+  s3_key?: string;
 }
 
 export interface ResumeExamRequest {
   assignment_id: number;
   telemetry?: DeviceTelemetryPayload;
   verification_photo?: string;
+  s3_key?: string;
 }
 
 export interface ResumeExamResponse {
@@ -423,6 +425,12 @@ export interface ResumeExamResponse {
   device_switch_detected: boolean;
   message: string;
   verification_photo_url?: string | null;
+}
+
+export interface PhotoUploadUrlResponse {
+  upload_url: string;
+  s3_key: string;
+  expires_in: number;
 }
 
 

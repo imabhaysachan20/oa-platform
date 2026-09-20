@@ -218,7 +218,26 @@ export const StudentExamInstructionsPage: React.FC = () => {
       telemetry.accuracy = locationCoords.accuracy;
       telemetry.location_status = 'granted';
 
-      const res = await examsApi.start(id, telemetry, verificationPhoto);
+      // Enterprise Scalable Direct-to-S3 Upload with Presigned PUT URL
+      let uploadedS3Key: string | undefined = undefined;
+      try {
+        if (verificationPhoto) {
+          const uploadInfo = await examsApi.getPhotoUploadUrl(id, 'start');
+          await examsApi.uploadPhotoDirectToS3(uploadInfo.upload_url, verificationPhoto);
+          uploadedS3Key = uploadInfo.s3_key;
+        }
+      } catch (uploadErr) {
+        console.warn('Direct S3 upload failed; using server-side fallback:', uploadErr);
+      }
+
+      // If direct S3 upload succeeded, send uploadedS3Key (0-byte image proxy through FastAPI)
+      // Otherwise, pass verificationPhoto base64 as resilient server fallback
+      const res = await examsApi.start(
+        id,
+        telemetry,
+        uploadedS3Key ? undefined : verificationPhoto,
+        uploadedS3Key
+      );
       setExamSession(
         res.exam_id,
         res.assignment_id,

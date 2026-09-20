@@ -92,8 +92,9 @@ export const AdminExamsPage: React.FC = () => {
       if (examSearchQuery.trim()) {
         const q = examSearchQuery.toLowerCase();
         const matchesTitle = exam.title.toLowerCase().includes(q);
+        const matchesColleges = exam.target_colleges?.some((col) => col.toLowerCase().includes(q));
         const matchesGroups = exam.target_groups?.some((grp) => grp.toLowerCase().includes(q));
-        if (!matchesTitle && !matchesGroups) return false;
+        if (!matchesTitle && !matchesColleges && !matchesGroups) return false;
       }
 
       if (examStatusFilter !== 'all') {
@@ -320,21 +321,40 @@ export const AdminExamsPage: React.FC = () => {
                       </span>
                     </div>
 
-                    {/* Groups Assigned */}
-                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 pt-0.5">
-                      <Layers size={13} className="text-slate-400 shrink-0" />
-                      <span className="font-semibold text-slate-700 dark:text-slate-300">Target Groups:</span>
-                      {exam.target_groups && exam.target_groups.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {exam.target_groups.map((grp) => (
-                            <Badge key={grp} variant="brand" className="text-[9px]">
-                              {grp}
-                            </Badge>
-                          ))}
+                    {/* Colleges & Groups Assigned */}
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400 pt-0.5">
+                      {/* Colleges */}
+                      {exam.target_colleges && exam.target_colleges.length > 0 && (
+                        <div className="flex items-center gap-1">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300 text-[11px]">Colleges:</span>
+                          <div className="flex flex-wrap gap-1">
+                            {exam.target_colleges.map((col) => (
+                              <Badge key={col} variant="brand" className="text-[9px]">
+                                🏛️ {col}
+                              </Badge>
+                            ))}
+                          </div>
                         </div>
-                      ) : (
-                        <span className="text-[11px] text-slate-400 italic">Open to All Groups</span>
                       )}
+
+                      {/* Groups */}
+                      <div className="flex items-center gap-1">
+                        <Layers size={13} className="text-slate-400 shrink-0" />
+                        <span className="font-semibold text-slate-700 dark:text-slate-300 text-[11px]">Groups:</span>
+                        {exam.target_groups && exam.target_groups.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {exam.target_groups.map((grp) => (
+                              <Badge key={grp} variant="neutral" className="text-[9px]">
+                                {grp}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : !exam.target_colleges || exam.target_colleges.length === 0 ? (
+                          <span className="text-[11px] text-slate-400 italic">Open to All Candidates</span>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 italic">All batches in college</span>
+                        )}
+                      </div>
                     </div>
                   </div>
 

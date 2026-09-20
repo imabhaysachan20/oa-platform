@@ -9,6 +9,7 @@ import {
   StudentCreatePayload,
   StudentUpdatePayload,
   FreshRestartResponse,
+  StudentGroupsResponse,
 } from '../types';
 
 export const adminApi = {
@@ -113,8 +114,8 @@ export const adminApi = {
     return res.data;
   },
 
-  listStudentGroups: async (): Promise<{ groups: string[]; colleges: string[] }> => {
-    const res = await api.get<{ groups: string[]; colleges: string[] }>('/admin/students/groups');
+  listStudentGroups: async (): Promise<StudentGroupsResponse> => {
+    const res = await api.get<StudentGroupsResponse>('/admin/students/groups');
     return res.data;
   },
 

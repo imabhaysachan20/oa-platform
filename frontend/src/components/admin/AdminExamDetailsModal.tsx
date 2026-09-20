@@ -718,32 +718,56 @@ export const AdminExamDetailsModal: React.FC<AdminExamDetailsModalProps> = ({
               )}
             </div>
 
-            {/* Target Candidate Groups */}
+            {/* Target Colleges & Candidate Groups */}
             <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
               <h3 className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
-                <Layers size={15} className="text-ubi-700 dark:text-ubi-400" /> Target Candidate Groups Access
+                <Layers size={15} className="text-ubi-700 dark:text-ubi-400" /> Target Colleges & Candidate Groups Access
               </h3>
 
-              {exam.target_groups && exam.target_groups.length > 0 ? (
-                <div className="space-y-2">
-                  <p className="text-xs text-slate-600 dark:text-slate-300">
-                    Only candidates belonging to the following groups are authorized to view and start this assessment:
-                  </p>
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {exam.target_groups.map((grp) => (
-                      <span
-                        key={grp}
-                        className="px-3 py-1 bg-ubi-50 border border-ubi-200 text-ubi-800 dark:bg-ubi-950 dark:border-ubi-800 dark:text-ubi-300 rounded-lg text-xs font-bold flex items-center gap-1.5"
-                      >
-                        <Users size={13} />
-                        <span>{grp}</span>
+              {(exam.target_colleges && exam.target_colleges.length > 0) || (exam.target_groups && exam.target_groups.length > 0) ? (
+                <div className="space-y-3">
+                  {/* Colleges */}
+                  {exam.target_colleges && exam.target_colleges.length > 0 && (
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                        Target Colleges ({exam.target_colleges.length})
                       </span>
-                    ))}
-                  </div>
+                      <div className="flex flex-wrap gap-2">
+                        {exam.target_colleges.map((col) => (
+                          <span
+                            key={col}
+                            className="px-3 py-1 bg-ubi-50 border border-ubi-200 text-ubi-800 dark:bg-ubi-950 dark:border-ubi-800 dark:text-ubi-300 rounded-lg text-xs font-bold flex items-center gap-1.5"
+                          >
+                            <span>🏛️ {col}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Groups */}
+                  {exam.target_groups && exam.target_groups.length > 0 && (
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                        Target Groups / Batches ({exam.target_groups.length})
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {exam.target_groups.map((grp) => (
+                          <span
+                            key={grp}
+                            className="px-3 py-1 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5"
+                          >
+                            <Users size={13} />
+                            <span>{grp}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="p-3 bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg text-emerald-900 dark:text-emerald-200 text-xs">
-                  <span className="font-bold">Open to All Candidates:</span> No candidate group filters applied. All registered students can attempt this assessment.
+                  <span className="font-bold">Open to All Candidates:</span> No college or group restrictions applied. All registered students across all colleges can attempt this assessment.
                 </div>
               )}
             </div>

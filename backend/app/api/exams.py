@@ -1,37 +1,60 @@
-from datetime import datetime, timezone
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+import logging
+from datetime import datetime, timezone, timedelta
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger("uvicorn.error")
 
 import redis.asyncio as aioredis
 from backend.app.core.database import get_db
 from backend.app.core.redis import get_redis
 from backend.app.core.security import get_current_user, get_current_admin
 from backend.app.models.user import User, UserRole
-from backend.app.models.exam import Exam, ExamAssignment, AssignmentStatus
+from backend.app.models.exam import Exam, ExamQuestionPool, ExamAssignment, AssignmentStatus
 from backend.app.models.proctoring import ExamProctoringLog
 from backend.app.models.network_incident import ExamNetworkIncident
 from backend.app.schemas.exam import (
     ExamResponse,
+    ExamStartRequest,
     ExamStartResponse,
     MyQuestionsResponse,
     LeaderboardEntry,
     ExamResultDetail,
     BatchProctoringLogRequest,
     CandidateHeartbeatRequest,
-    CandidateHeartbeatResponse
+    CandidateHeartbeatResponse,
+    DeviceTelemetryPayload,
+    ResumeExamRequest,
+    ResumeExamResponse,
+    PhotoUploadUrlRequest,
+    PhotoUploadUrlResponse
 )
+from backend.app.services.s3_service import generate_presigned_upload_url
 from backend.app.services.exam_service import (
     start_exam_for_student,
+    record_exam_resume_telemetry,
     get_student_exam_questions,
     finish_exam_for_student,
     get_exam_leaderboard,
     get_exam_result_detail,
-    mark_question_viewed
+    mark_question_viewed,
+    lock_assigned_question
 )
 
 router = APIRouter(prefix="/exams", tags=["exams"])
+
+
+def get_client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+    return request.client.host if request.client else "Unknown IP"
+
 
 
 @router.get("", response_model=List[ExamResponse])
@@ -63,21 +86,46 @@ async def list_available_exams(
     exam_ids = [e.id for e in exams]
     assign_stmt = select(ExamAssignment).where(
         ExamAssignment.user_id == current_user.id,
-        ExamAssignment.exam_id.in_(exam_ids)
+        ExamAssignment.exam_id.in_(exam_ids),
+        ExamAssignment.is_active == True
     )
     assignments = (await db.execute(assign_stmt)).scalars().all()
     assignments_by_exam_id = {a.exam_id: a for a in assignments}
+
+    # Fetch pool counts for all available exams
+    pool_counts_stmt = (
+        select(ExamQuestionPool.exam_id, func.count(ExamQuestionPool.id))
+        .where(ExamQuestionPool.exam_id.in_(exam_ids))
+        .group_by(ExamQuestionPool.exam_id)
+    )
+    pool_counts_rows = (await db.execute(pool_counts_stmt)).all()
+    pool_counts_by_exam_id = {row[0]: row[1] for row in pool_counts_rows}
 
     now = datetime.now(timezone.utc)
     results = []
     for exam in exams:
         resp = ExamResponse.model_validate(exam)
+        resp.pool_count = pool_counts_by_exam_id.get(exam.id, 0)
         resp.server_time = now
         resp.is_upcoming = bool(exam.start_time and now < exam.start_time)
         resp.is_expired = bool(exam.end_time and now > exam.end_time)
 
         assign = assignments_by_exam_id.get(exam.id)
+
+        # Late Entry Window computation
+        late_window = getattr(exam, 'late_entry_window_minutes', 15) or 15
+        if exam.start_time and exam.duration_minutes > late_window:
+            entry_deadline = exam.start_time + timedelta(minutes=late_window)
+            resp.entry_deadline = entry_deadline
+            is_waived = assign is not None and getattr(assign, 'reset_by_admin', False)
+            is_already_started = assign is not None and assign.status in [AssignmentStatus.IN_PROGRESS, AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]
+            resp.is_entry_closed = bool(now > entry_deadline and not is_waived and not is_already_started)
+        else:
+            resp.is_entry_closed = False
+            resp.entry_deadline = None
+
         if assign:
+            resp.attempt_number = getattr(assign, 'attempt_number', 1)
             is_done = (
                 assign.status in [AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]
                 or bool(assign.deadline_at and assign.deadline_at <= now)
@@ -109,16 +157,32 @@ async def get_exam_details(
 
     now = datetime.now(timezone.utc)
     resp = ExamResponse.model_validate(exam)
+    pool_stmt = select(func.count(ExamQuestionPool.id)).where(ExamQuestionPool.exam_id == exam.id)
+    resp.pool_count = (await db.execute(pool_stmt)).scalar() or 0
     resp.server_time = now
     resp.is_upcoming = bool(exam.start_time and now < exam.start_time)
     resp.is_expired = bool(exam.end_time and now > exam.end_time)
 
     assign_stmt = select(ExamAssignment).where(
         ExamAssignment.user_id == current_user.id,
-        ExamAssignment.exam_id == exam.id
+        ExamAssignment.exam_id == exam.id,
+        ExamAssignment.is_active == True
     )
     assign = (await db.execute(assign_stmt)).scalar_one_or_none()
+
+    late_window = getattr(exam, 'late_entry_window_minutes', 15) or 15
+    if exam.start_time and exam.duration_minutes > late_window:
+        entry_deadline = exam.start_time + timedelta(minutes=late_window)
+        resp.entry_deadline = entry_deadline
+        is_waived = assign is not None and getattr(assign, 'reset_by_admin', False)
+        is_already_started = assign is not None and assign.status in [AssignmentStatus.IN_PROGRESS, AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]
+        resp.is_entry_closed = bool(now > entry_deadline and not is_waived and not is_already_started)
+    else:
+        resp.is_entry_closed = False
+        resp.entry_deadline = None
+
     if assign:
+        resp.attempt_number = getattr(assign, 'attempt_number', 1)
         is_done = (
             assign.status in [AssignmentStatus.SUBMITTED, AssignmentStatus.AUTO_SUBMITTED]
             or bool(assign.deadline_at and assign.deadline_at <= now)
@@ -136,19 +200,149 @@ async def get_exam_details(
     return resp
 
 
-@router.post("/{exam_id}/start", response_model=ExamStartResponse)
-async def start_exam(
+@router.post("/{exam_id}/photo-upload-url", response_model=PhotoUploadUrlResponse)
+async def get_photo_upload_url(
     exam_id: int,
+    body: Optional[PhotoUploadUrlRequest] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Idempotently assigns questions based on exam configuration and starts the timer.
+    Generates an AWS S3 presigned PUT URL allowing candidates to upload verification
+    snapshots directly to S3 without sending image data through FastAPI.
     """
+    event_type = body.event_type if body and body.event_type else "start"
+    res = generate_presigned_upload_url(
+        exam_id=exam_id,
+        user_id=current_user.id,
+        attempt_number=1,
+        event_type=event_type,
+        content_type="image/jpeg"
+    )
+    if not res:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate secure S3 upload URL."
+        )
+    return PhotoUploadUrlResponse(**res)
+
+
+@router.post("/{exam_id}/start", response_model=ExamStartResponse)
+async def start_exam(
+    exam_id: int,
+    request: Request,
+    body: Optional[ExamStartRequest] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis)
+):
+    """
+    Idempotently assigns questions based on exam configuration and starts the timer.
+    Enforces location provision before allowing exam start or resume.
+    """
+    telemetry = None
+    verification_photo = None
+    s3_key = None
+
+    if body:
+        verification_photo = body.verification_photo
+        s3_key = body.s3_key
+        if body.telemetry and body.telemetry.latitude is not None and body.telemetry.longitude is not None:
+            telemetry = body.telemetry
+        elif body.latitude is not None and body.longitude is not None:
+            telemetry = DeviceTelemetryPayload(
+                browser=body.browser,
+                os=body.os,
+                device_type=body.device_type,
+                screen_resolution=body.screen_resolution,
+                device_fingerprint=body.device_fingerprint,
+                latitude=body.latitude,
+                longitude=body.longitude,
+                accuracy=body.accuracy,
+                location_status=body.location_status,
+            )
+
+    # Fallback to direct request.json() parsing if telemetry was not bound
+    if telemetry is None or telemetry.latitude is None or telemetry.longitude is None:
+        try:
+            raw_data = await request.json()
+            if isinstance(raw_data, dict):
+                if not verification_photo and raw_data.get("verification_photo"):
+                    verification_photo = raw_data.get("verification_photo")
+                if not s3_key and raw_data.get("s3_key"):
+                    s3_key = raw_data.get("s3_key")
+
+                t_dict = raw_data.get("telemetry") if isinstance(raw_data.get("telemetry"), dict) else raw_data
+                lat = t_dict.get("latitude")
+                lng = t_dict.get("longitude")
+                if lat is not None and lng is not None:
+                    telemetry = DeviceTelemetryPayload(
+                        browser=t_dict.get("browser"),
+                        os=t_dict.get("os"),
+                        device_type=t_dict.get("device_type"),
+                        screen_resolution=t_dict.get("screen_resolution"),
+                        device_fingerprint=t_dict.get("device_fingerprint"),
+                        latitude=float(lat),
+                        longitude=float(lng),
+                        accuracy=float(t_dict.get("accuracy")) if t_dict.get("accuracy") is not None else None,
+                        location_status=t_dict.get("location_status") or "granted",
+                    )
+        except Exception as e:
+            logger.warning(f"Could not parse raw request body for telemetry: {e}")
+
+    if telemetry is None or telemetry.latitude is None or telemetry.longitude is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Device location is strictly required to start or resume this assessment. Please grant location access in your browser."
+        )
+
+    client_ip = get_client_ip(request)
     return await start_exam_for_student(
         db=db,
         exam_id=exam_id,
-        user_id=current_user.id
+        user_id=current_user.id,
+        telemetry=telemetry,
+        client_ip=client_ip,
+        redis=redis,
+        verification_photo=verification_photo,
+        s3_key=s3_key
+    )
+
+
+@router.post("/{exam_id}/resume", response_model=ResumeExamResponse)
+async def resume_exam(
+    exam_id: int,
+    request: Request,
+    body: ResumeExamRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis)
+):
+    """
+    Records device details and geolocation each time candidate resumes, refreshes, or reconnects.
+    Enforces location provision on resume.
+    """
+    if (
+        body.telemetry is None
+        or body.telemetry.latitude is None
+        or body.telemetry.longitude is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Device location is strictly required to resume this assessment. Please grant location access in your browser."
+        )
+
+    client_ip = get_client_ip(request)
+    return await record_exam_resume_telemetry(
+        db=db,
+        exam_id=exam_id,
+        user_id=current_user.id,
+        assignment_id=body.assignment_id,
+        telemetry=body.telemetry,
+        client_ip=client_ip,
+        redis=redis,
+        verification_photo=body.verification_photo,
+        s3_key=body.s3_key
     )
 
 
@@ -197,7 +391,11 @@ async def get_my_exam_result(
     """
     stmt = (
         select(ExamAssignment)
-        .where(ExamAssignment.exam_id == exam_id, ExamAssignment.user_id == current_user.id)
+        .where(
+            ExamAssignment.exam_id == exam_id,
+            ExamAssignment.user_id == current_user.id,
+            ExamAssignment.is_active == True
+        )
     )
     assignment = (await db.execute(stmt)).scalar_one_or_none()
     if not assignment:
@@ -286,6 +484,24 @@ async def mark_question_as_viewed(
     """
     deadline = await mark_question_viewed(db, exam_id, question_id, current_user.id)
     return {"question_deadline_at": deadline}
+
+
+@router.post("/{exam_id}/questions/{question_id}/lock")
+async def lock_question(
+    exam_id: int,
+    question_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Explicitly locks an assigned timed MCQ when candidate advances or time expires.
+    """
+    return await lock_assigned_question(
+        db=db,
+        exam_id=exam_id,
+        question_id=question_id,
+        user_id=current_user.id
+    )
 
 
 @router.post("/{exam_id}/heartbeat", response_model=CandidateHeartbeatResponse)

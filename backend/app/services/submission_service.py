@@ -18,16 +18,34 @@ from backend.app.schemas.submission import (
     SubmitCodeResponse
 )
 from backend.app.services.question_templates import wrap_code_with_driver
+from backend.app.services.output_comparator import normalize_output, compare_outputs
+
+_normalize_output = normalize_output
 
 
-def _normalize_output(text: Optional[str]) -> str:
-    if not text:
-        return ""
-    # Strip carriage returns and trailing whitespaces
-    lines = [line.rstrip() for line in text.replace("\r\n", "\n").split("\n")]
-    while lines and not lines[-1]:
-        lines.pop()
-    return "\n".join(lines)
+def get_execution_limits(language: str, time_limit_ms: Optional[int], memory_limit_kb: Optional[int]) -> tuple[float, int]:
+    """
+    Computes language-aware CPU time and memory limits for Judge0 sandbox.
+    Prevents virtual memory starvation for JVM and Node.js runtimes in isolate.
+    """
+    lang = (language or "").lower().strip()
+    base_cpu = float(time_limit_ms) / 1000.0 if time_limit_ms else 2.0
+    base_mem = int(memory_limit_kb) if memory_limit_kb else 128000
+
+    if lang in ["java"]:
+        cpu_limit = max(base_cpu * 2.0, 4.0)
+        mem_limit = max(base_mem, 1048576)
+    elif lang in ["javascript", "js", "node", "nodejs"]:
+        cpu_limit = max(base_cpu * 2.0, 3.0)
+        mem_limit = max(base_mem, 1048576)
+    elif lang in ["python", "python3", "py"]:
+        cpu_limit = max(base_cpu * 1.5, 2.5)
+        mem_limit = max(base_mem, 512000)
+    else:
+        cpu_limit = max(base_cpu, 2.0)
+        mem_limit = max(base_mem, 256000)
+
+    return cpu_limit, mem_limit
 
 
 async def execute_judge0_test_cases(
@@ -42,6 +60,8 @@ async def execute_judge0_test_cases(
     Core function to execute code against a list of test cases (duck-typed to have id, input, expected_output).
     Returns a RunCodeResponse with the result.
     """
+    # Enforce language-safe execution limits
+    cpu_limit, mem_limit = get_execution_limits(language, int(cpu_limit * 1000.0), mem_limit)
     lang_id = get_language_id(language)
     results: List[TestCaseRunResult] = []
     compile_error: Optional[str] = None
@@ -100,7 +120,11 @@ async def execute_judge0_test_cases(
         norm_actual = _normalize_output(raw_stdout)
         norm_expected = _normalize_output(tc.expected_output)
 
-        is_passed = (status_id == 3) or (norm_actual == norm_expected and not raw_stderr)
+        is_passed = (status_id == 3) or (
+            status_id not in [5, 6, 7, 8, 9, 10, 11, 12]
+            and not raw_stderr
+            and compare_outputs(raw_stdout, tc.expected_output)
+        )
         if is_passed:
             passed_count += 1
             status_desc = "Accepted"
@@ -187,7 +211,8 @@ async def submit_code_solution(
     exam_id: int,
     question_id: int,
     code: str,
-    language: str
+    language: str,
+    assignment_id: Optional[int] = None
 ) -> SubmitCodeResponse:
     """
     Submits code to Judge0 against ALL test cases (visible + hidden).
@@ -195,11 +220,40 @@ async def submit_code_solution(
     """
     # 1. Verify active exam assignment
     now = datetime.now(timezone.utc)
-    stmt_assign = (
-        select(ExamAssignment)
-        .where(ExamAssignment.exam_id == exam_id, ExamAssignment.user_id == user_id)
-    )
-    assignment = (await db.execute(stmt_assign)).scalar_one_or_none()
+    if assignment_id:
+        stmt_assign = (
+            select(ExamAssignment)
+            .where(
+                ExamAssignment.id == assignment_id,
+                ExamAssignment.exam_id == exam_id,
+                ExamAssignment.user_id == user_id
+            )
+        )
+        assignment = (await db.execute(stmt_assign)).scalar_one_or_none()
+    else:
+        stmt_assign = (
+            select(ExamAssignment)
+            .where(
+                ExamAssignment.exam_id == exam_id,
+                ExamAssignment.user_id == user_id,
+                ExamAssignment.is_active == True
+            )
+            .order_by(desc(ExamAssignment.attempt_number))
+        )
+        assignment = (await db.execute(stmt_assign)).scalars().first()
+
+    if not assignment:
+        # Fallback to most recent attempt if is_active flag was not populated
+        stmt_assign_fallback = (
+            select(ExamAssignment)
+            .where(
+                ExamAssignment.exam_id == exam_id,
+                ExamAssignment.user_id == user_id
+            )
+            .order_by(desc(ExamAssignment.attempt_number))
+        )
+        assignment = (await db.execute(stmt_assign_fallback)).scalars().first()
+
     if not assignment:
         raise HTTPException(status_code=404, detail="Exam assignment not found. Please start the exam first.")
 
@@ -241,8 +295,7 @@ async def submit_code_solution(
         test_cases = [mock_tc]
 
     lang_id = get_language_id(language)
-    cpu_limit = float(question.time_limit_ms) / 1000.0
-    mem_limit = question.memory_limit_kb
+    cpu_limit, mem_limit = get_execution_limits(language, question.time_limit_ms, question.memory_limit_kb)
 
     code_to_run = wrap_code_with_driver(question.title, code, language, question=question)
 
@@ -285,7 +338,11 @@ async def submit_code_solution(
         norm_actual = _normalize_output(raw_stdout)
         norm_expected = _normalize_output(tc.expected_output)
 
-        is_passed = (status_id == 3) or (norm_actual == norm_expected and not raw_stderr)
+        is_passed = (status_id == 3) or (
+            status_id not in [5, 6, 7, 8, 9, 10, 11, 12]
+            and not raw_stderr
+            and compare_outputs(raw_stdout, tc.expected_output)
+        )
         if is_passed:
             passed_count += 1
         else:

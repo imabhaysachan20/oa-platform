@@ -1,22 +1,28 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { examsApi } from '../api/exams';
 import { submissionsApi } from '../api/submissions';
+import { StudentQuestionView } from '../types';
 import { useExamStore, STARTER_CODE } from '../store/examStore';
 import { useThemeStore } from '../store/themeStore';
 import { QuestionPanel } from '../components/QuestionPanel';
 import { MCQPanel } from '../components/MCQPanel';
+import { QuestionTabs } from '../components/QuestionTabs';
+import { MarkdownRenderer } from '../components/ui/RichTextEditor';
 import { CodeEditor } from '../components/CodeEditor';
 import { OutputConsole } from '../components/OutputConsole';
 import { Timer } from '../components/ui/Timer';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { Play, Send, CheckCircle, AlertTriangle, Sun, Moon, ShieldAlert, ShieldCheck, Maximize2, Minimize2, Wifi, WifiOff } from 'lucide-react';
+import { Badge } from '../components/ui/Badge';
+import { Play, Send, CheckCircle, AlertTriangle, Sun, Moon, ShieldAlert, Maximize2, WifiOff, Clock, HardDrive, Code2, AlignLeft } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useExamSecurity } from '../hooks/useExamSecurity';
 import { useCandidateHeartbeat } from '../hooks/useCandidateHeartbeat';
 import { useQuestionTimer } from '../hooks/useQuestionTimer';
+import { collectDeviceTelemetry } from '../utils/deviceInfo';
+import { LiveWebcamHUD, stopAllActiveMediaTracks } from '../components/LiveWebcamHUD';
 
 export const StudentExamWorkspacePage: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
@@ -27,6 +33,64 @@ export const StudentExamWorkspacePage: React.FC = () => {
   const [isSubmittingExam, setIsSubmittingExam] = useState(false);
   const [submissionFeedback, setSubmissionFeedback] = useState<string | null>(null);
   const [isConsoleExpanded, setIsConsoleExpanded] = useState(false);
+  const [isEditorExpanded, setIsEditorExpanded] = useState(false);
+
+  // Interactive Panel Resizing (Splitter handles like Antigravity IDE)
+  const [leftWidthPercent, setLeftWidthPercent] = useState<number>(40); // 40% problem statement default (double-click target)
+  const [editorHeightPercent, setEditorHeightPercent] = useState<number>(60); // 60% code editor, 40% output console
+  const [isDraggingHorizontal, setIsDraggingHorizontal] = useState(false);
+  const [isDraggingVertical, setIsDraggingVertical] = useState(false);
+
+  const horizontalContainerRef = useRef<HTMLDivElement | null>(null);
+  const verticalContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const handleHorizontalMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDraggingHorizontal(true);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!horizontalContainerRef.current) return;
+      const rect = horizontalContainerRef.current.getBoundingClientRect();
+      const relativeX = moveEvent.clientX - rect.left;
+      let newPercent = (relativeX / rect.width) * 100;
+      if (newPercent < 33) newPercent = 33;
+      if (newPercent > 67) newPercent = 67;
+      setLeftWidthPercent(newPercent);
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingHorizontal(false);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleVerticalMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDraggingVertical(true);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!verticalContainerRef.current) return;
+      const rect = verticalContainerRef.current.getBoundingClientRect();
+      const relativeY = moveEvent.clientY - rect.top;
+      let newPercent = (relativeY / rect.height) * 100;
+      if (newPercent < 20) newPercent = 20;
+      if (newPercent > 80) newPercent = 80;
+      setEditorHeightPercent(newPercent);
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingVertical(false);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
 
 
   const { theme, toggleTheme } = useThemeStore();
@@ -53,6 +117,34 @@ export const StudentExamWorkspacePage: React.FC = () => {
     setIsSubmittingCode,
     resetExamState,
   } = useExamStore();
+
+  // Mandatory Location & Device Verification Guard
+  // Candidate must pass through /instructions to verify geolocation before entering or resuming workspace
+  useEffect(() => {
+    if (!id) return;
+    const verifiedKey = `ubicode_verified_entry_${id}`;
+    const isVerified = sessionStorage.getItem(verifiedKey);
+    if (!isVerified) {
+      navigate(`/exam/${id}/instructions`, { replace: true });
+      return;
+    }
+  }, [id, navigate]);
+
+  // When refreshing the browser page, closing tab, or unmounting workspace, stop all camera tracks
+  useEffect(() => {
+    if (!id) return;
+    const handleBeforeUnload = () => {
+      sessionStorage.removeItem(`ubicode_verified_entry_${id}`);
+      stopAllActiveMediaTracks();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handleBeforeUnload);
+      stopAllActiveMediaTracks();
+    };
+  }, [id]);
 
   // Load exam questions & state (supports resume on reload)
   const { data: examData, isLoading, error, refetch } = useQuery({
@@ -179,46 +271,74 @@ export const StudentExamWorkspacePage: React.FC = () => {
 
   const { user } = useAuthStore();
   const userId = user?.id;
+  const assignmentId = examData?.assignment_id;
+  const lockedStorageKey =
+    userId && assignmentId
+      ? `u_${userId}_assign_${assignmentId}_locked_questions`
+      : null;
 
-  // Set of locked question IDs (strictly scoped to current user so candidates never share state)
-  const [lockedQuestionIds, setLockedQuestionIds] = useState<Set<number>>(() => {
-    const set = new Set<number>();
-    if (!userId) return set;
-    try {
-      const raw = localStorage.getItem(`u_${userId}_exam_${id}_locked_questions`);
-      if (raw) {
-        const arr = JSON.parse(raw);
-        if (Array.isArray(arr)) arr.forEach((qId) => set.add(Number(qId)));
+  // Set of locked question IDs (strictly scoped to current attempt session)
+  const [lockedQuestionIds, setLockedQuestionIds] = useState<Set<number>>(new Set());
+
+  // Detect when assignment ID changes (e.g. admin restarted test) and purge old attempt caches
+  useEffect(() => {
+    if (!userId || !id || !assignmentId) return;
+
+    const activeAssignKey = `u_${userId}_exam_${id}_active_assignment`;
+    const lastSeenAssignId = localStorage.getItem(activeAssignKey);
+
+    if (lastSeenAssignId && Number(lastSeenAssignId) !== assignmentId) {
+      // Admin gave candidate a fresh restart or new attempt!
+      // Thoroughly purge all cached state belonging to the old attempt
+      try {
+        const prefixExam = `u_${userId}_exam_${id}_`;
+        const prefixAssignOld = `u_${userId}_assign_${lastSeenAssignId}_`;
+        Object.keys(localStorage).forEach((k) => {
+          if (
+            k.startsWith(prefixExam) ||
+            k.startsWith(prefixAssignOld) ||
+            k.startsWith(`exam_${id}_`)
+          ) {
+            if (k !== activeAssignKey) {
+              localStorage.removeItem(k);
+            }
+          }
+        });
+      } catch (e) {
+        console.warn('Error purging stale attempt storage:', e);
       }
-    } catch {}
-    return set;
-  });
+    }
+    localStorage.setItem(activeAssignKey, String(assignmentId));
+  }, [id, userId, assignmentId]);
 
   const markQuestionLocked = (qId: number) => {
     setLockedQuestionIds((prev) => {
       const next = new Set(prev);
       next.add(qId);
-      if (userId) {
+      if (lockedStorageKey) {
         try {
-          localStorage.setItem(`u_${userId}_exam_${id}_locked_questions`, JSON.stringify(Array.from(next)));
+          localStorage.setItem(lockedStorageKey, JSON.stringify(Array.from(next)));
         } catch {}
       }
       return next;
     });
   };
 
-  // Sync server-locked questions and reload when userId changes
+  // Sync server-locked questions and reload when assignmentId or questions change
   useEffect(() => {
+    if (!assignmentId) return;
+
     const set = new Set<number>();
-    if (userId) {
+    if (lockedStorageKey) {
       try {
-        const raw = localStorage.getItem(`u_${userId}_exam_${id}_locked_questions`);
+        const raw = localStorage.getItem(lockedStorageKey);
         if (raw) {
           const arr = JSON.parse(raw);
           if (Array.isArray(arr)) arr.forEach((qId) => set.add(Number(qId)));
         }
       } catch {}
     }
+
     if (questions && questions.length > 0) {
       questions.forEach((q) => {
         if (q.is_mcq_locked) {
@@ -226,13 +346,42 @@ export const StudentExamWorkspacePage: React.FC = () => {
         }
       });
     }
+
     setLockedQuestionIds((prev) => {
       if (prev.size === set.size && [...set].every((qId) => prev.has(qId))) {
         return prev;
       }
       return set;
     });
-  }, [questions, userId, id]);
+  }, [assignmentId, lockedStorageKey, questions]);
+
+  // Timed MCQ Sequential Flow Phase Detection
+  const isTimedQuestion = useCallback((q?: StudentQuestionView | null) => {
+    if (!q) return false;
+    return q.question_type === 'mcq' && Boolean(q.mcq_time_limit_seconds && q.mcq_time_limit_seconds > 0);
+  }, []);
+
+  const timedMCQs = useMemo(
+    () => questions.filter((q: StudentQuestionView) => isTimedQuestion(q)),
+    [questions, isTimedQuestion]
+  );
+
+  const pendingTimedMCQs = useMemo(
+    () => timedMCQs.filter((q: StudentQuestionView) => !lockedQuestionIds.has(q.id) && !q.is_mcq_locked),
+    [timedMCQs, lockedQuestionIds]
+  );
+
+  const isSequentialTimedPhase = pendingTimedMCQs.length > 0;
+  const activeTimedQuestion = isSequentialTimedPhase ? pendingTimedMCQs[0] : null;
+
+  // Enforce candidate stays on active timed question until it is completed/locked
+  useEffect(() => {
+    if (!isSequentialTimedPhase || !activeTimedQuestion) return;
+    const targetIdx = questions.findIndex((q) => q.id === activeTimedQuestion.id);
+    if (targetIdx !== -1 && activeQuestionIndex !== targetIdx) {
+      setActiveQuestionIndex(targetIdx);
+    }
+  }, [isSequentialTimedPhase, activeTimedQuestion?.id, questions, activeQuestionIndex, setActiveQuestionIndex]);
 
   // Multi-tab real-time synchronization via StorageEvent
   useEffect(() => {
@@ -240,7 +389,10 @@ export const StudentExamWorkspacePage: React.FC = () => {
       if (!e.key || !userId) return;
 
       // 1. Sync locked questions across tabs immediately
-      if (e.key === `u_${userId}_exam_${id}_locked_questions`) {
+      const lockedKey = assignmentId
+        ? `u_${userId}_assign_${assignmentId}_locked_questions`
+        : `u_${userId}_exam_${id}_locked_questions`;
+      if (e.key === lockedKey || e.key === `u_${userId}_exam_${id}_locked_questions`) {
         try {
           const arr = e.newValue ? JSON.parse(e.newValue) : [];
           if (Array.isArray(arr)) {
@@ -256,12 +408,13 @@ export const StudentExamWorkspacePage: React.FC = () => {
       }
 
       // 2. Sync selection across tabs if student updated in another tab
-      const prefix = `u_${userId}_exam_${id}_q_`;
-      if (e.key.startsWith(prefix) && e.key.endsWith('_selection') && e.newValue) {
+      if (!e.key || !e.newValue || !assignmentId) return;
+      const prefix = `u_${userId}_assign_${assignmentId}_q_`;
+      if (e.key.startsWith(prefix) && e.key.endsWith('_selection')) {
         try {
-          const match = e.key.match(/_q_(\d+)_selection$/);
-          if (match) {
-            const qId = parseInt(match[1], 10);
+          const qIdStr = e.key.replace(prefix, '').replace('_selection', '');
+          const qId = Number(qIdStr);
+          if (!isNaN(qId)) {
             const val = JSON.parse(e.newValue);
             if (Array.isArray(val)) {
               setMCQSelection(qId, val);
@@ -273,20 +426,21 @@ export const StudentExamWorkspacePage: React.FC = () => {
 
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, [id, userId, setMCQSelection]);
+  }, [id, userId, assignmentId, setMCQSelection]);
 
   // Hydration Auto-Recovery: Restore cached selections from localStorage ONCE on initial load
   const hasHydratedSelectionsRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
-    const sessionKey = `${userId}_${id}`;
-    if (!questions || questions.length === 0 || !userId || hasHydratedSelectionsRef.current[sessionKey]) return;
+    if (!questions || questions.length === 0 || !userId || !assignmentId) return;
+    const sessionKey = `${userId}_${assignmentId}`;
+    if (hasHydratedSelectionsRef.current[sessionKey]) return;
     hasHydratedSelectionsRef.current[sessionKey] = true;
 
     questions.forEach((q) => {
       if (q.question_type === 'mcq') {
         try {
-          const raw = localStorage.getItem(`u_${userId}_exam_${id}_q_${q.id}_selection`);
+          const raw = localStorage.getItem(`u_${userId}_assign_${assignmentId}_q_${q.id}_selection`);
           if (raw) {
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed) && parsed.length > 0) {
@@ -294,15 +448,15 @@ export const StudentExamWorkspacePage: React.FC = () => {
 
               // If server has no recorded answer and question is not locked, sync in background
               const serverHasAnswer = q.selected_option_ids && q.selected_option_ids.length > 0;
-              if (!serverHasAnswer && !q.is_mcq_locked && !lockedQuestionIds.has(q.id) && examData?.assignment_id) {
-                submissionsApi.submitMCQ(examData.assignment_id, q.id, parsed).catch(() => {});
+              if (!serverHasAnswer && !q.is_mcq_locked && !lockedQuestionIds.has(q.id)) {
+                submissionsApi.submitMCQ(assignmentId, q.id, parsed).catch(() => {});
               }
             }
           }
         } catch {}
       }
     });
-  }, [questions.length, id, userId, examData?.assignment_id, lockedQuestionIds, setMCQSelection]);
+  }, [questions.length, id, userId, assignmentId, lockedQuestionIds, setMCQSelection]);
 
   const currentQ = questions[activeQuestionIndex];
 
@@ -386,41 +540,99 @@ export const StudentExamWorkspacePage: React.FC = () => {
     return () => window.removeEventListener('online', flushOfflineQueue);
   }, []);
 
+  // Advance timed MCQ: flushes response, seals/locks on backend & locally, and moves to next
+  const [isAdvancingTimedMCQ, setIsAdvancingTimedMCQ] = useState(false);
+
+  const handleAdvanceTimedMCQ = useCallback(async () => {
+    if (!currentQ || isAdvancingTimedMCQ) return;
+    const qId = currentQ.id;
+    setIsAdvancingTimedMCQ(true);
+
+    try {
+      // 1. Immediately flush any pending MCQ answer to backend
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+      pendingMCQSaveRef.current = null;
+
+      const currentSelection = mcqSelections[qId] || currentQ.selected_option_ids || [];
+      if (examData?.assignment_id && currentSelection.length > 0) {
+        try {
+          await submissionsApi.submitMCQ(examData.assignment_id, qId, currentSelection);
+        } catch (err) {
+          console.warn('Failed to flush expired question answer:', err);
+        }
+      }
+
+      // 2. Explicitly lock question on backend
+      try {
+        await examsApi.lockQuestion(id, qId);
+      } catch (err) {
+        console.warn('Backend lock question failed:', err);
+      }
+
+      // 3. Mark this question as locked locally
+      markQuestionLocked(qId);
+
+      // 4. Determine next question
+      const remainingPending = timedMCQs.filter(
+        (q: StudentQuestionView) => q.id !== qId && !lockedQuestionIds.has(q.id) && !q.is_mcq_locked
+      );
+
+      if (remainingPending.length > 0) {
+        const nextTimedQ = remainingPending[0];
+        const nextIdx = questions.findIndex((q) => q.id === nextTimedQ.id);
+        if (nextIdx !== -1) {
+          setActiveQuestionIndex(nextIdx);
+          setSubmissionFeedback(`Question ${currentQ.title} locked. Proceeding to next timed question.`);
+        }
+      } else {
+        // Transition to free navigation across all untimed MCQs and coding questions
+        const firstUntimedIdx = questions.findIndex((q) => !isTimedQuestion(q));
+        if (firstUntimedIdx !== -1) {
+          setActiveQuestionIndex(firstUntimedIdx);
+        } else if (activeQuestionIndex < questions.length - 1) {
+          setActiveQuestionIndex(activeQuestionIndex + 1);
+        }
+        setSubmissionFeedback(`Timed section completed! You can now freely navigate all remaining untimed MCQs and coding questions.`);
+      }
+    } finally {
+      setIsAdvancingTimedMCQ(false);
+    }
+  }, [
+    currentQ,
+    isAdvancingTimedMCQ,
+    mcqSelections,
+    examData?.assignment_id,
+    id,
+    markQuestionLocked,
+    timedMCQs,
+    lockedQuestionIds,
+    questions,
+    setActiveQuestionIndex,
+    isTimedQuestion,
+    activeQuestionIndex,
+  ]);
+
   // Auto-advance & lock when individual question timer reaches zero
   const handleCurrentQuestionExpire = async () => {
     if (!currentQ) return;
-    const qId = currentQ.id;
-
-    // 1. Immediately flush any pending MCQ answer to backend
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = null;
-    }
-    pendingMCQSaveRef.current = null;
-
-    const currentSelection = mcqSelections[qId] || currentQ.selected_option_ids || [];
-    if (examData?.assignment_id && currentSelection.length > 0) {
-      try {
-        await submissionsApi.submitMCQ(examData.assignment_id, qId, currentSelection);
-      } catch (err) {
-        console.warn('Failed to flush expired question answer:', err);
-      }
-    }
-
-    // 2. Mark this question as locked
-    markQuestionLocked(qId);
-
-    // 3. Auto-advance to next question if available
-    if (activeQuestionIndex < questions.length - 1) {
-      const nextIdx = activeQuestionIndex + 1;
-      setActiveQuestionIndex(nextIdx);
-      setSubmissionFeedback(`Time limit reached for ${currentQ.title}. Auto-advanced to next question.`);
+    if (isTimedQuestion(currentQ)) {
+      await handleAdvanceTimedMCQ();
     } else {
-      setSubmissionFeedback(`Time limit reached for ${currentQ.title}. Assessment questions completed.`);
+      markQuestionLocked(currentQ.id);
     }
   };
 
-  const questionTimer = useQuestionTimer(userId, id, currentQ, handleCurrentQuestionExpire, examData?.server_time);
+  const questionTimer = useQuestionTimer(
+    userId,
+    id,
+    currentQ,
+    handleCurrentQuestionExpire,
+    examData?.server_time,
+    examData?.assignment_id
+  );
 
   const currentLang = currentQ ? selectedLanguage[currentQ.id] || 'python' : 'python';
   const currentStarter = currentQ?.starter_code?.[currentLang] || STARTER_CODE[currentLang] || '';
@@ -465,9 +677,9 @@ export const StudentExamWorkspacePage: React.FC = () => {
     // Update store state and localStorage immediately for snappy UI
     setMCQSelection(qId, newSelectedIds);
     setMcqSaveError(null);
-    if (userId) {
+    if (userId && assignId) {
       try {
-        localStorage.setItem(`u_${userId}_exam_${id}_q_${qId}_selection`, JSON.stringify(newSelectedIds));
+        localStorage.setItem(`u_${userId}_assign_${assignId}_q_${qId}_selection`, JSON.stringify(newSelectedIds));
       } catch {}
     }
 
@@ -519,7 +731,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
       const res = await submissionsApi.run(currentQ.id, currentCode, currentLang);
       setRunOutput(currentQ.id, res);
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to run code');
+      setSubmissionFeedback(`Error: ${err.response?.data?.detail || 'Failed to run code'}`);
     } finally {
       setIsRunningCode(false);
     }
@@ -532,7 +744,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
     setSubmissionFeedback(null);
 
     try {
-      const res = await submissionsApi.submit(id, currentQ.id, currentCode, currentLang);
+      const res = await submissionsApi.submit(id, currentQ.id, currentCode, currentLang, assignmentId);
       setSubmissionFeedback(
         `Question ${activeQuestionIndex + 1} Submitted: ${res.test_cases_passed}/${res.total_test_cases} test cases passed (${res.status})`
       );
@@ -541,25 +753,32 @@ export const StudentExamWorkspacePage: React.FC = () => {
       // Refresh backend session in background
       refetch();
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to submit solution');
+      setSubmissionFeedback(`Error: ${err.response?.data?.detail || 'Failed to submit solution'}`);
     } finally {
       setIsSubmittingCode(false);
     }
   };
 
+  const handleCameraInterrupted = useCallback(() => {
+    logInfraction('CAMERA_INTERRUPTED');
+  }, [logInfraction]);
+
   // Finish exam early
   const handleFinishExam = async () => {
     setIsSubmittingExam(true);
+    // Explicitly terminate camera stream immediately upon clicking submit
+    stopAllActiveMediaTracks();
     try {
       if (flushLogs) {
         await flushLogs();
       }
       await examsApi.finish(id);
+      stopAllActiveMediaTracks();
       setIsFinishModalOpen(false);
       resetExamState();
       navigate(`/exam/${id}/result`);
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to finish exam');
+      setSubmissionFeedback(`Error: ${err.response?.data?.detail || 'Failed to finish exam'}`);
     } finally {
       setIsSubmittingExam(false);
     }
@@ -567,12 +786,13 @@ export const StudentExamWorkspacePage: React.FC = () => {
 
   // Auto-submit callback triggered when Timer hits 00:00:00
   const handleTimeoutExpire = async () => {
+    stopAllActiveMediaTracks();
     if (flushLogs) {
       try {
         await flushLogs();
       } catch {}
     }
-    alert('Time limit reached! Your assessment has been automatically submitted.');
+    stopAllActiveMediaTracks();
     resetExamState();
     navigate(`/exam/${id}/result`);
   };
@@ -613,50 +833,14 @@ export const StudentExamWorkspacePage: React.FC = () => {
           </div>
 
           <div className="border-l border-slate-200 dark:border-slate-800 pl-3">
-            <h1 className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-xs sm:max-w-md">
+            <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate max-w-xs sm:max-w-md">
               {examTitle || 'Coding Assessment'}
             </h1>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5">
-              <span>Autosave Active</span>
-              <span>•</span>
-              <span className={`inline-flex items-center gap-1 font-semibold ${isOnline ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                {isOnline ? <Wifi size={12} /> : <WifiOff size={12} />}
-                <span>{isOnline ? 'Connected' : 'Offline'}</span>
-              </span>
-            </span>
           </div>
         </div>
 
-        {/* Proctoring Status Badge, Server-Driven Countdown Timer, Theme Toggle & Finish Button */}
+        {/* Server-Driven Countdown Timer, Theme Toggle & Finish Button */}
         <div className="flex items-center gap-2.5 sm:gap-3">
-          {/* Anti-Cheat Proctoring Status & Fullscreen Trigger */}
-          <div className="hidden md:flex items-center gap-2">
-            <button
-              onClick={enterFullscreen}
-              title={isFullscreen ? 'Full Screen Active' : 'Enter Full Screen'}
-              className={`px-2.5 py-1 rounded-full transition border text-xs font-semibold flex items-center gap-1.5 ${
-                isFullscreen
-                  ? 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-950/60 dark:border-emerald-800'
-                  : 'text-amber-800 bg-amber-50 border-amber-300 dark:text-amber-300 dark:bg-amber-950/60 dark:border-amber-800 animate-pulse'
-              }`}
-            >
-              {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-              <span>{isFullscreen ? 'Fullscreen Active' : 'Enable Fullscreen'}</span>
-            </button>
-
-            {strikeCount === 0 ? (
-              <span className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                <ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400" />
-                <span>Proctored (0/{maxStrikes} Strikes)</span>
-              </span>
-            ) : (
-              <span className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200 dark:border-rose-800 animate-pulse">
-                <AlertTriangle size={14} className="text-rose-600 dark:text-rose-400" />
-                <span>{strikeCount}/{maxStrikes} Infractions</span>
-              </span>
-            )}
-          </div>
-
           {deadlineAt && (
             <Timer deadlineAt={deadlineAt} onExpire={handleTimeoutExpire} />
           )}
@@ -674,7 +858,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
           </button>
 
           <Button
-            variant="success"
+            variant="primary"
             size="sm"
             onClick={() => setIsFinishModalOpen(true)}
             className="gap-1.5 font-semibold"
@@ -701,111 +885,222 @@ export const StudentExamWorkspacePage: React.FC = () => {
         </div>
       )}
 
-      {/* Main 2-Column Workspace Grid */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 overflow-hidden min-h-0">
-        {/* Left Column: Question Panel (5 cols on large) */}
-        <div className="lg:col-span-5 h-full overflow-hidden">
-          <QuestionPanel
-            userId={userId}
-            examId={id}
+      {/* Main Workspace Container */}
+      <div className="flex-1 p-3 overflow-hidden min-h-0">
+        <div className="h-full flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
+          {/* Top Question Tabs Bar (Shared across MCQ and Coding questions) */}
+          <QuestionTabs
             questions={questions}
             activeIndex={activeQuestionIndex}
             onSelectIndex={(idx) => {
+              if (isSequentialTimedPhase) {
+                if (questions[idx]?.id !== activeTimedQuestion?.id) {
+                  setSubmissionFeedback(
+                    `Timed Section in progress: Please complete Question ${
+                      questions.findIndex((q) => q.id === activeTimedQuestion?.id) + 1
+                    } first.`
+                  );
+                  return;
+                }
+              }
               const targetQ = questions[idx];
               if (
                 targetQ &&
                 targetQ.question_type === 'mcq' &&
-                lockedQuestionIds.has(targetQ.id) &&
+                (lockedQuestionIds.has(targetQ.id) || targetQ.is_mcq_locked) &&
                 idx !== activeQuestionIndex
               ) {
                 setSubmissionFeedback(`Question ${idx + 1} is locked and cannot be reopened.`);
                 return;
               }
+              setIsEditorExpanded(false);
               setActiveQuestionIndex(idx);
               setSubmissionFeedback(null);
             }}
             lockedQuestionIds={lockedQuestionIds}
-            serverTime={examData?.server_time}
           />
+          {/* Seamless Resizable Workspace Content */}
+          <div
+            ref={horizontalContainerRef}
+            className={`flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0 relative ${
+              isDraggingHorizontal || isDraggingVertical ? 'select-none' : ''
+            }`}
+          >
+            {/* Left Column: Problem Statement */}
+            <div
+              style={{ flexBasis: `${leftWidthPercent}%`, width: `${leftWidthPercent}%` }}
+              className="h-full bg-slate-50/70 dark:bg-slate-950/60 overflow-y-auto p-5 sm:p-6 space-y-4 select-none shrink-0"
+            >
+              {currentQ.question_type === 'mcq' ? (
+                <>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="px-2.5 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300/60 dark:border-slate-700 text-[11px] font-semibold tracking-wide">
+                      {currentQ.is_multi_select ? 'Multi-Select' : 'Single-Select'}
+                    </span>
+                    {currentQ.marks != null && (
+                      <span className="px-2.5 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300/60 dark:border-slate-700 text-[11px] font-semibold">
+                        +{currentQ.marks} {currentQ.marks === 1 ? 'Mark' : 'Marks'}
+                      </span>
+                    )}
+                  </div>
+
+                  <h2 className="text-xl font-extrabold text-slate-900 dark:text-white leading-tight">
+                    {currentQ.title}
+                  </h2>
+
+                  <div className="border-t border-slate-200/70 dark:border-slate-800 pt-4 text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                    <MarkdownRenderer content={currentQ.description} />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    <span className="px-2.5 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300/60 dark:border-slate-700 text-[11px] font-semibold">
+                      +{currentQ.marks ?? 10} {(currentQ.marks ?? 10) === 1 ? 'Mark' : 'Marks'}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Clock size={13} className="text-slate-400" />
+                      {currentQ.time_limit_ms}ms limit
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <HardDrive size={13} className="text-slate-400" />
+                      {Math.round(currentQ.memory_limit_kb / 1024)}MB memory
+                    </span>
+                  </div>
+
+                  <h2 className="text-xl font-extrabold text-slate-900 dark:text-white leading-tight">
+                    {currentQ.title}
+                  </h2>
+
+                  <div className="border-t border-slate-200/70 dark:border-slate-800 pt-4 text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                    <MarkdownRenderer content={currentQ.description} />
+                  </div>
+
+                  {/* Input Format */}
+                  {currentQ.input_format && (
+                    <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 rounded-xl p-3.5 space-y-1.5 shadow-xs">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                        <AlignLeft size={13} className="text-ubi-700 dark:text-ubi-400" />
+                        <span>Input Format</span>
+                      </div>
+                      <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        <MarkdownRenderer content={currentQ.input_format} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sample Test Case */}
+                  {(currentQ.sample_input || currentQ.sample_output) && (
+                    <div className="space-y-3 pt-3 border-t border-slate-200/70 dark:border-slate-800">
+                      <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                        Sample Test Case
+                      </h3>
+                      {currentQ.sample_input && (
+                        <div>
+                          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1 block">
+                            Input
+                          </span>
+                          <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 font-mono text-xs text-slate-900 dark:text-slate-200 whitespace-pre-wrap">
+                            {currentQ.sample_input}
+                          </div>
+                        </div>
+                      )}
+                      {currentQ.sample_output && (
+                        <div>
+                          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1 block">
+                            Output
+                          </span>
+                          <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 font-mono text-xs text-slate-900 dark:text-slate-200 whitespace-pre-wrap">
+                            {currentQ.sample_output}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Horizontal Splitter Handle (Between Left Problem Statement & Right Interactive Panel) */}
+            <div
+              onMouseDown={handleHorizontalMouseDown}
+              onDoubleClick={() => setLeftWidthPercent(40)}
+              title="Drag to resize left & right panels (Double-click to reset)"
+              className="hidden lg:flex w-1.5 bg-slate-200/50 hover:bg-slate-300 dark:bg-slate-800/50 dark:hover:bg-slate-700 cursor-col-resize items-center justify-center transition-colors shrink-0 group z-10"
+            >
+              <div className="w-0.5 h-6 rounded-full bg-slate-400/50 group-hover:bg-slate-600 dark:bg-slate-600 dark:group-hover:bg-slate-300 transition-colors" />
+            </div>
+
+            {/* Right Column: Interactive Panel (MCQ Options OR Code Editor & Console) */}
+            <div
+              style={{ flexBasis: `${100 - leftWidthPercent}%`, width: `${100 - leftWidthPercent}%` }}
+              className="h-full overflow-hidden flex flex-col min-h-0 bg-white dark:bg-slate-900 shrink-0"
+            >
+              {currentQ.question_type === 'mcq' ? (
+                <MCQPanel
+                  userId={userId}
+                  examId={id}
+                  assignmentId={examData?.assignment_id}
+                  question={currentQ}
+                  selectedOptionIds={mcqSelections[currentQ.id] || currentQ.selected_option_ids || []}
+                  onChangeSelection={handleMCQSelectionChange}
+                  isSaving={isSavingMCQ}
+                  saveError={mcqSaveError}
+                  onQuestionExpire={handleCurrentQuestionExpire}
+                  serverTime={examData?.server_time}
+                  isTimedMCQ={isTimedQuestion ? isTimedQuestion(currentQ) : false}
+                  hasMoreTimedMCQs={pendingTimedMCQs ? pendingTimedMCQs.filter((q: StudentQuestionView) => q.id !== currentQ.id).length > 0 : false}
+                  onAdvanceTimedQuestion={handleAdvanceTimedMCQ}
+                  isAdvancing={isAdvancingTimedMCQ}
+                />
+              ) : (
+                <div ref={verticalContainerRef} className="h-full flex flex-col overflow-hidden min-h-0 bg-white dark:bg-slate-900 relative">
+                  {/* Editor Container */}
+                  <div
+                    style={{ height: `${editorHeightPercent}%` }}
+                    className="min-h-0 overflow-hidden shrink-0"
+                  >
+                    <CodeEditor
+                      value={currentCode}
+                      onChange={(val) => setCodeDraft(currentQ.id, currentLang, val)}
+                      language={currentLang}
+                      onLanguageChange={(lang) => setSelectedLanguage(currentQ.id, lang)}
+                      starterCode={currentStarter}
+                      onReset={() => currentQ && setCodeDraft(currentQ.id, currentLang, currentStarter)}
+                      onPasteAttempt={() => logInfraction('PASTE_ATTEMPT')}
+                    />
+                  </div>
+
+                  {/* Vertical Splitter Handle (Between Top Code Editor & Lower Output Console) */}
+                  <div
+                    onMouseDown={handleVerticalMouseDown}
+                    onDoubleClick={() => setEditorHeightPercent(60)}
+                    title="Drag to resize editor & console heights (Double-click to reset)"
+                    className="h-1.5 bg-slate-200/50 hover:bg-slate-300 dark:bg-slate-800/50 dark:hover:bg-slate-700 cursor-row-resize flex items-center justify-center transition-colors shrink-0 group z-10"
+                  >
+                    <div className="h-0.5 w-6 rounded-full bg-slate-400/50 group-hover:bg-slate-600 dark:bg-slate-600 dark:group-hover:bg-slate-300 transition-colors" />
+                  </div>
+
+                  {/* Output & Test Cases Console */}
+                  <div
+                    style={{ height: `${100 - editorHeightPercent}%` }}
+                    className="min-h-0 overflow-hidden shrink-0"
+                  >
+                    <OutputConsole
+                      output={currentOutput}
+                      isRunning={isRunningCode}
+                      sampleInput={currentQ?.sample_input}
+                      sampleOutput={currentQ?.sample_output}
+                      onRunCode={handleRunCode}
+                      onSubmitCode={handleSubmitCode}
+                      isSubmitting={isSubmittingCode}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-
-        {/* Right Column: Code Editor & Console OR MCQ Panel */}
-        {currentQ.question_type === 'mcq' ? (
-          <div className="lg:col-span-7 h-full overflow-hidden">
-            <MCQPanel
-              userId={userId}
-              examId={id}
-              question={currentQ}
-              selectedOptionIds={mcqSelections[currentQ.id] || currentQ.selected_option_ids || []}
-              onChangeSelection={handleMCQSelectionChange}
-              isSaving={isSavingMCQ}
-              saveError={mcqSaveError}
-              onQuestionExpire={handleCurrentQuestionExpire}
-              serverTime={examData?.server_time}
-            />
-          </div>
-        ) : (
-          <div className="lg:col-span-7 h-full flex flex-col gap-2.5 overflow-hidden min-h-0">
-            {/* Editor Container */}
-            <div className={`transition-all duration-200 min-h-0 overflow-hidden ${isConsoleExpanded ? 'flex-1' : 'flex-[3]'}`}>
-              <CodeEditor
-                value={currentCode}
-                onChange={(val) => setCodeDraft(currentQ.id, currentLang, val)}
-                language={currentLang}
-                onLanguageChange={(lang) => setSelectedLanguage(currentQ.id, lang)}
-                starterCode={currentStarter}
-                onReset={() => currentQ && setCodeDraft(currentQ.id, currentLang, currentStarter)}
-                onPasteAttempt={() => logInfraction('PASTE_ATTEMPT')}
-              />
-            </div>
-
-            {/* Action Buttons Bar */}
-            <div className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-2 rounded-xl shrink-0 shadow-sm">
-              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
-                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
-                <span>Proctored Exam</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleRunCode}
-                  isLoading={isRunningCode}
-                  disabled={isSubmittingCode}
-                  className="gap-1.5 font-semibold"
-                >
-                  <Play size={14} className="text-ubi-800 dark:text-ubi-400" />
-                  <span>Run Code</span>
-                </Button>
-
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleSubmitCode}
-                  isLoading={isSubmittingCode}
-                  disabled={isRunningCode}
-                  className="gap-1.5 font-semibold"
-                >
-                  <Send size={14} />
-                  <span>Submit Solution</span>
-                </Button>
-              </div>
-            </div>
-
-            {/* Output & Test Cases Console */}
-            <div className={`transition-all duration-200 min-h-0 overflow-hidden ${isConsoleExpanded ? 'flex-[3]' : 'flex-[2]'}`}>
-              <OutputConsole
-                output={currentOutput}
-                isRunning={isRunningCode}
-                sampleInput={currentQ?.sample_input}
-                sampleOutput={currentQ?.sample_output}
-                isExpanded={isConsoleExpanded}
-                onToggleExpand={() => setIsConsoleExpanded(!isConsoleExpanded)}
-              />
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Confirmation Finish Modal */}
@@ -832,7 +1127,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
               return (
                 <div key={q.id} className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-slate-800/60 last:border-0">
                   <span className="font-medium text-slate-700 dark:text-slate-300">
-                    Question {idx + 1} ({isMCQ ? 'MCQ' : q.difficulty}):
+                    Question {idx + 1} ({isMCQ ? 'MCQ' : `+${q.marks ?? 10} ${(q.marks ?? 10) === 1 ? 'Mark' : 'Marks'}`}):
                   </span>
                   <span
                     className={
@@ -983,6 +1278,13 @@ export const StudentExamWorkspacePage: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      {/* Live Proctoring Webcam HUD - Remains Active Throughout Assessment */}
+      {examData && examData.status === 'in_progress' && !isSubmittingExam && (
+        <LiveWebcamHUD
+          onCameraInterrupted={handleCameraInterrupted}
+        />
+      )}
     </div>
   );
 };

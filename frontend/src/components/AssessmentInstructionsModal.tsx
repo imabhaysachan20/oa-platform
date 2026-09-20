@@ -53,14 +53,38 @@ export const AssessmentInstructionsModal: React.FC<AssessmentInstructionsModalPr
 
   const duration = exam.duration_minutes || 45;
   const questionsList = exam.questions || [];
-  const totalCount = questionsList.length || exam.pool_count || 3;
-  
   const codingQuestions = questionsList.filter((q: any) => (q.question_type || 'coding') === 'coding');
   const mcqQuestions = questionsList.filter((q: any) => q.question_type === 'mcq');
   
-  const codingCount = questionsList.length > 0 ? codingQuestions.length : totalCount;
-  const mcqCount = questionsList.length > 0 ? mcqQuestions.length : 0;
-  const questionCount = totalCount;
+  const patternEasy = exam.easy_count ?? 1;
+  const patternMed = exam.medium_count ?? 2;
+  const patternHard = exam.hard_count ?? 0;
+  const patternCoding = patternEasy + patternMed + patternHard;
+  const patternMcq = exam.mcq_count ?? 0;
+
+  let codingCount = 0;
+  let mcqCount = 0;
+  let totalCount = 0;
+
+  if (questionsList.length > 0) {
+    codingCount = codingQuestions.length;
+    mcqCount = mcqQuestions.length;
+    totalCount = questionsList.length;
+  } else {
+    codingCount = patternCoding;
+    mcqCount = patternMcq;
+    totalCount = codingCount + mcqCount;
+  }
+
+  // Format question summary string
+  let questionSummaryText = `${totalCount} question${totalCount > 1 ? 's' : ''}`;
+  if (codingCount > 0 && mcqCount > 0) {
+    questionSummaryText = `${totalCount} questions (${codingCount} Coding, ${mcqCount} MCQ)`;
+  } else if (codingCount > 0) {
+    questionSummaryText = `${codingCount} Coding Question${codingCount > 1 ? 's' : ''}`;
+  } else if (mcqCount > 0) {
+    questionSummaryText = `${mcqCount} MCQ Question${mcqCount > 1 ? 's' : ''}`;
+  }
 
   const formatExamTitle = (rawTitle?: string) => {
     if (!rawTitle) return '';
@@ -193,7 +217,7 @@ export const AssessmentInstructionsModal: React.FC<AssessmentInstructionsModalPr
               <div>
                 <p className="text-xs text-slate-400 font-medium">No. of questions</p>
                 <p className="text-base sm:text-lg font-normal text-slate-800 dark:text-slate-200 mt-0.5">
-                  {questionCount} questions
+                  {questionSummaryText}
                 </p>
               </div>
             </div>

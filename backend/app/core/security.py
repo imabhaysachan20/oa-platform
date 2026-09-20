@@ -7,9 +7,11 @@ from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import uuid
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.models.user import User, UserRole
+
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_PREFIX}/auth/login")
 
@@ -31,6 +33,8 @@ def get_password_hash(password: str) -> str:
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
+    if "session_id" not in to_encode:
+        to_encode["session_id"] = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
     if expires_delta:
         expire = now + expires_delta
@@ -53,6 +57,7 @@ async def get_current_user(
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id: Optional[str] = payload.get("sub")
+        session_id: Optional[str] = payload.get("session_id")
         if user_id is None:
             raise credentials_exception
     except JWTError:
@@ -63,6 +68,35 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     if user is None:
         raise credentials_exception
+
+    # Enforce single active session for student candidates
+    if user.role == UserRole.STUDENT and session_id:
+        try:
+            from backend.app.core.redis import get_redis_client
+            redis = get_redis_client()
+            active_session = await redis.get(f"active_session:{user.id}")
+            if active_session:
+                if active_session != session_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="SESSION_SUPERSEDED: Your account was logged in from another device.",
+                        headers={
+                            "WWW-Authenticate": "Bearer",
+                            "X-Session-Status": "concurrent_session_terminated"
+                        },
+                    )
+            else:
+                # If Redis key is missing, initialize it with the current token session
+                await redis.set(
+                    f"active_session:{user.id}",
+                    session_id,
+                    ex=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
     return user
 
 

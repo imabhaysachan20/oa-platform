@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Lock, Mail, ArrowRight, ShieldCheck, UserCheck, Sun, Moon } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Lock, Mail, ArrowRight, ShieldCheck, ShieldAlert, UserCheck, Sun, Moon } from 'lucide-react';
 import { authApi } from '../api/auth';
 import { useAuthStore } from '../store/authStore';
 import { useThemeStore } from '../store/themeStore';
 import { Button } from '../components/ui/Button';
 
 export const LoginPage: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const isConcurrentSession = searchParams.get('reason') === 'concurrent_session';
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -86,6 +89,16 @@ export const LoginPage: React.FC = () => {
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md z-10 px-4 sm:px-0">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 py-8 px-6 shadow-xl rounded-2xl sm:px-10 transition-colors">
           <form className="space-y-4" onSubmit={handleLogin}>
+            {isConcurrentSession && !error && (
+              <div className="p-3.5 bg-amber-50 border border-amber-300 dark:bg-amber-950/40 dark:border-amber-700/60 rounded-xl text-amber-900 dark:text-amber-200 text-xs font-medium flex items-start gap-2.5 shadow-sm">
+                <ShieldAlert size={18} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  <strong className="font-bold block text-amber-950 dark:text-amber-100">Session Terminated</strong>
+                  Your account was logged in from another device or window. Only one active candidate session is permitted at a time.
+                </div>
+              </div>
+            )}
+
             {error && (
               <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/30 dark:text-rose-400 text-xs font-medium">
                 {error}

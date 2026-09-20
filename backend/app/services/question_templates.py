@@ -1187,7 +1187,7 @@ def wrap_code_with_driver(
                 py_headers = "from __future__ import annotations\nfrom typing import List, Dict, Tuple, Optional, Any, Set\n\n"
                 return f"{py_headers}{code}\n\n{custom_driver}"
             elif lang_clean in ["cpp", "c++"]:
-                cpp_headers = "#include <iostream>\n#include <sstream>\n#include <iomanip>\n#include <vector>\n#include <string>\n#include <algorithm>\n#include <climits>\n#include <cmath>\n#include <stack>\n#include <queue>\n#include <unordered_map>\n#include <unordered_set>\n"
+                cpp_headers = "#include <iostream>\n#include <sstream>\n#include <iomanip>\n#include <vector>\n#include <string>\n#include <algorithm>\n#include <climits>\n#include <cmath>\n#include <stack>\n#include <queue>\n#include <unordered_map>\n#include <unordered_set>\nusing namespace std;\n\n"
                 return f"{cpp_headers}{code}\n\n{custom_driver}"
             else:
                 return f"{code}\n\n{custom_driver}"
@@ -1211,7 +1211,7 @@ def wrap_code_with_driver(
                 py_headers = "from __future__ import annotations\nfrom typing import List, Dict, Tuple, Optional, Any, Set\n\n"
                 return f"{py_headers}{code}\n\n{univ_driver}"
             elif lang_clean in ["cpp", "c++"]:
-                cpp_headers = "#include <iostream>\n#include <sstream>\n#include <iomanip>\n#include <vector>\n#include <string>\n#include <algorithm>\n#include <climits>\n#include <cmath>\n#include <stack>\n#include <queue>\n#include <unordered_map>\n#include <unordered_set>\n"
+                cpp_headers = "#include <iostream>\n#include <sstream>\n#include <iomanip>\n#include <vector>\n#include <string>\n#include <algorithm>\n#include <climits>\n#include <cmath>\n#include <stack>\n#include <queue>\n#include <unordered_map>\n#include <unordered_set>\nusing namespace std;\n\n"
                 return f"{cpp_headers}{code}\n\n{univ_driver}"
             else:
                 return f"{code}\n\n{univ_driver}"

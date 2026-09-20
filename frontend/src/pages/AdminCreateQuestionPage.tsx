@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../api/admin';
@@ -88,6 +88,25 @@ export const AdminCreateQuestionPage: React.FC = () => {
   const [starterCode, setStarterCode] = useState<Record<string, string>>({});
   const [activeLangTab, setActiveLangTab] = useState<'python' | 'javascript' | 'cpp' | 'java'>('python');
   const [isGeneratingStarters, setIsGeneratingStarters] = useState(false);
+
+  // Dynamically derived signature and starter templates matching current inputs
+  const clientSignature = useMemo(() => {
+    if (!functionName.trim()) return '';
+    const sigParams = parameters.map((p) => `${p.name}: ${p.type}`).join(', ');
+    return `${functionName.trim()}(${sigParams}) -> ${returnType || 'void'}`;
+  }, [functionName, parameters, returnType]);
+
+  const clientStarters = useMemo(() => {
+    if (!functionName.trim()) return {};
+    return generateClientStarterTemplates(functionName.trim(), parameters, returnType).starters;
+  }, [functionName, parameters, returnType]);
+
+  const activeStarterCode = useMemo(() => {
+    const fn = functionName.trim();
+    if (!fn) return starterCode;
+    const hasMatching = starterCode && Object.values(starterCode).some((c) => c && c.includes(fn));
+    return hasMatching ? starterCode : clientStarters;
+  }, [starterCode, functionName, clientStarters]);
   const [templateGeneratedFeedback, setTemplateGeneratedFeedback] = useState<string | null>(null);
   const [copiedCodeLang, setCopiedCodeLang] = useState<string | null>(null);
 
@@ -412,10 +431,8 @@ export const AdminCreateQuestionPage: React.FC = () => {
       }
     }
 
-    const effectiveStarterCode =
-      Object.keys(starterCode).length > 0
-        ? starterCode
-        : generateClientStarterTemplates(functionName.trim(), parameters, returnType).starters;
+    // Use activeStarterCode (dynamically derived from current signature if not manually overridden)
+    const finalStarterCode = Object.keys(activeStarterCode).length > 0 ? activeStarterCode : clientStarters;
 
     const payload: any = {
       title: title.trim(),
@@ -430,11 +447,11 @@ export const AdminCreateQuestionPage: React.FC = () => {
       marks: null,
       mcq_time_limit_seconds: null,
       is_multi_select: false,
-      options: [],
       function_name: functionName.trim(),
+      function_signature: clientSignature,
       parameters: parameters,
       return_type: returnType,
-      starter_code: effectiveStarterCode,
+      starter_code: Object.keys(finalStarterCode).length > 0 ? finalStarterCode : undefined,
     };
 
     if (!isEditMode && localTestCases.length > 0) {
@@ -452,6 +469,10 @@ export const AdminCreateQuestionPage: React.FC = () => {
   const handleOpenPlayground = () => {
     if (!title.trim()) {
       setValidationError('Please enter a Question Title before launching Playground.');
+      return;
+    }
+    if (!functionName.trim()) {
+      setValidationError('Please enter a Function Name before launching Playground.');
       return;
     }
     setValidationError(null);
@@ -516,8 +537,8 @@ export const AdminCreateQuestionPage: React.FC = () => {
               type="button"
               onClick={() => setQuestionType('coding')}
               className={`p-3 rounded-xl border text-left cursor-pointer transition flex items-center gap-3 ${questionType === 'coding'
-                  ? 'border-ubi-800 bg-ubi-50/60 dark:bg-ubi-950/40 dark:border-ubi-700 shadow-xs'
-                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
+                ? 'border-ubi-800 bg-ubi-50/60 dark:bg-ubi-950/40 dark:border-ubi-700 shadow-xs'
+                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
                 }`}
             >
               <div className={`p-2 rounded-lg ${questionType === 'coding' ? 'bg-ubi-800 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600'}`}>
@@ -537,8 +558,8 @@ export const AdminCreateQuestionPage: React.FC = () => {
               type="button"
               onClick={() => setQuestionType('mcq')}
               className={`p-3 rounded-xl border text-left cursor-pointer transition flex items-center gap-3 ${questionType === 'mcq'
-                  ? 'border-purple-800 bg-purple-50/60 dark:bg-purple-950/40 dark:border-purple-700 shadow-xs'
-                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
+                ? 'border-purple-800 bg-purple-50/60 dark:bg-purple-950/40 dark:border-purple-700 shadow-xs'
+                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
                 }`}
             >
               <div className={`p-2 rounded-lg ${questionType === 'mcq' ? 'bg-purple-800 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600'}`}>
@@ -738,8 +759,8 @@ export const AdminCreateQuestionPage: React.FC = () => {
                     <div
                       key={idx}
                       className={`p-3 rounded-lg border transition flex items-center gap-3 ${opt.is_correct
-                          ? 'bg-purple-50/60 dark:bg-purple-950/30 border-purple-300 dark:border-purple-800 shadow-xs'
-                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+                        ? 'bg-purple-50/60 dark:bg-purple-950/30 border-purple-300 dark:border-purple-800 shadow-xs'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
                         }`}
                     >
                       {/* Correct Answer Toggle */}
@@ -958,6 +979,13 @@ export const AdminCreateQuestionPage: React.FC = () => {
                 </Button>
               </div>
 
+              {functionName.trim() && (
+                <div className="flex items-center gap-2 p-2 px-3 bg-slate-100/80 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Method Signature:</span>
+                  <span className="text-ubi-700 dark:text-ubi-300 font-semibold">{clientSignature}</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <div className="flex items-center gap-1.5 mb-1">
@@ -977,8 +1005,8 @@ export const AdminCreateQuestionPage: React.FC = () => {
                     onChange={(e) => setFunctionName(e.target.value)}
                     placeholder="e.g. isAnagram, twoSum, reverseList"
                     className={`w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border rounded-md text-slate-900 dark:text-slate-100 text-xs font-mono focus:outline-none ${functionName.length > 0 && !isValidIdentifier(functionName)
-                        ? 'border-rose-400 dark:border-rose-600 focus:ring-1 focus:ring-rose-500'
-                        : 'border-slate-300 dark:border-slate-800 focus:ring-1 focus:ring-ubi-800'
+                      ? 'border-rose-400 dark:border-rose-600 focus:ring-1 focus:ring-rose-500'
+                      : 'border-slate-300 dark:border-slate-800 focus:ring-1 focus:ring-ubi-800'
                       }`}
                   />
                   {functionName.length > 0 && !isValidIdentifier(functionName) && (
@@ -1048,8 +1076,8 @@ export const AdminCreateQuestionPage: React.FC = () => {
                         onChange={(e) => handleParameterChange(idx, 'name', e.target.value)}
                         placeholder="arg name (e.g. nums)"
                         className={`w-1/3 px-3 py-1 bg-slate-50 dark:bg-slate-950 border rounded text-xs font-mono focus:outline-none ${p.name.length > 0 && !isValidIdentifier(p.name)
-                            ? 'border-rose-400 dark:border-rose-600 focus:ring-1 focus:ring-rose-500'
-                            : 'border-slate-300 dark:border-slate-800 focus:ring-1 focus:ring-ubi-800'
+                          ? 'border-rose-400 dark:border-rose-600 focus:ring-1 focus:ring-rose-500'
+                          : 'border-slate-300 dark:border-slate-800 focus:ring-1 focus:ring-ubi-800'
                           }`}
                       />
                       <select
@@ -1097,11 +1125,10 @@ export const AdminCreateQuestionPage: React.FC = () => {
                           key={lang}
                           type="button"
                           onClick={() => setActiveLangTab(lang)}
-                          className={`px-2.5 py-1 rounded-md text-[11px] font-semibold capitalize transition ${
-                            activeLangTab === lang
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-semibold capitalize transition ${activeLangTab === lang
                               ? 'bg-ubi-800 text-white shadow-xs'
                               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                          }`}
+                            }`}
                         >
                           {lang === 'cpp' ? 'C++' : lang === 'javascript' ? 'JavaScript' : lang}
                         </button>
@@ -1430,11 +1457,11 @@ export const AdminCreateQuestionPage: React.FC = () => {
             sampleInput,
             sampleOutput,
             inputFormat,
-            functionName: functionName,
-            functionSignature: existingQuestion?.function_signature,
+            functionName: functionName.trim(),
+            functionSignature: clientSignature,
             parameters: parameters,
             returnType: returnType,
-            starterCode,
+            starterCode: activeStarterCode,
             testCases: activeTestCases,
           }}
           onChangeQuestionData={(updated) => {
@@ -1446,6 +1473,9 @@ export const AdminCreateQuestionPage: React.FC = () => {
             setSampleInput(updated.sampleInput);
             setSampleOutput(updated.sampleOutput);
             setInputFormat(updated.inputFormat || '');
+            if (updated.starterCode) {
+              setStarterCode(updated.starterCode);
+            }
             if (updated.testCases) {
               setLocalTestCases(updated.testCases);
             }

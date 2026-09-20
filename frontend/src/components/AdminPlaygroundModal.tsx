@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Modal } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
@@ -245,19 +245,27 @@ export const AdminPlaygroundModal: React.FC<AdminPlaygroundModalProps> = ({
     derivedSignature: string;
     derivedStarters: Record<string, string>;
   }>(() => {
-    if (formData.functionName && formData.functionName.trim()) {
+    const fnName = formData.functionName?.trim();
+    if (fnName) {
       const generated = generateClientStarterTemplates(
-        formData.functionName.trim(),
+        fnName,
         formData.parameters || [],
         formData.returnType || 'void'
       );
+
+      // Verify if starterCode actually matches current functionName
+      const starterMatches = (lang: string) => {
+        const code = formData.starterCode?.[lang];
+        return Boolean(code && code.includes(fnName));
+      };
+
       return {
-        derivedSignature: formData.functionSignature || generated.signature,
+        derivedSignature: generated.signature,
         derivedStarters: {
-          python: formData.starterCode?.python || generated.starters.python || '',
-          javascript: formData.starterCode?.javascript || generated.starters.javascript || '',
-          cpp: formData.starterCode?.cpp || generated.starters.cpp || '',
-          java: formData.starterCode?.java || generated.starters.java || '',
+          python: starterMatches('python') ? formData.starterCode!.python : generated.starters.python,
+          javascript: starterMatches('javascript') ? formData.starterCode!.javascript : generated.starters.javascript,
+          cpp: starterMatches('cpp') ? formData.starterCode!.cpp : generated.starters.cpp,
+          java: starterMatches('java') ? formData.starterCode!.java : generated.starters.java,
         },
       };
     }
@@ -279,33 +287,50 @@ export const AdminPlaygroundModal: React.FC<AdminPlaygroundModalProps> = ({
     formData.starterCode,
   ]);
 
+  // Unique signature key to detect when functionName, parameters, or returnType change
+  const signatureKey = useMemo(() => {
+    return `${questionData.id || 0}_${questionData.functionName || ''}_${JSON.stringify(questionData.parameters || [])}_${questionData.returnType || ''}`;
+  }, [questionData.id, questionData.functionName, questionData.parameters, questionData.returnType]);
+
+  const prevSignatureKeyRef = useRef<string>('');
+
   // Sync incoming question data & initialize code drafts
   useEffect(() => {
     setFormData(questionData);
 
-    const initialDrafts: Record<string, string> = {};
-    const languages = ['python', 'javascript', 'cpp', 'java'];
+    const isSignatureChanged = prevSignatureKeyRef.current !== '' && prevSignatureKeyRef.current !== signatureKey;
+    prevSignatureKeyRef.current = signatureKey;
 
-    languages.forEach((lang) => {
-      if (questionData.starterCode?.[lang]) {
-        initialDrafts[lang] = questionData.starterCode[lang];
-      } else if (questionData.functionName) {
-        const gen = generateClientStarterTemplates(
-          questionData.functionName,
+    const languages = ['python', 'javascript', 'cpp', 'java'];
+    const fnName = questionData.functionName?.trim();
+    const gen = fnName
+      ? generateClientStarterTemplates(
+          fnName,
           questionData.parameters || [],
           questionData.returnType || 'void'
-        );
-        initialDrafts[lang] = gen.starters[lang] || STARTER_CODE[lang] || '';
-      } else {
-        initialDrafts[lang] = STARTER_CODE[lang] || '';
-      }
-    });
+        )
+      : null;
 
-    setCodeDrafts((prev) => ({
-      ...initialDrafts,
-      ...prev,
-    }));
-  }, [questionData]);
+    setCodeDrafts((prev) => {
+      const nextDrafts: Record<string, string> = {};
+
+      languages.forEach((lang) => {
+        const starter = questionData.starterCode?.[lang];
+        const starterMatches = Boolean(starter && fnName && starter.includes(fnName));
+        const prevCode = prev[lang];
+        const prevMatches = Boolean(prevCode && fnName && prevCode.includes(fnName));
+
+        // If signature changed, or previous code does not match current function name:
+        if (isSignatureChanged || !prevMatches) {
+          nextDrafts[lang] = (starterMatches ? starter : gen?.starters[lang]) || STARTER_CODE[lang] || '';
+        } else {
+          nextDrafts[lang] = prevCode || (starterMatches ? starter : gen?.starters[lang]) || STARTER_CODE[lang] || '';
+        }
+      });
+
+      return nextDrafts;
+    });
+  }, [questionData, signatureKey]);
 
   // Async server-side template generation for exact canonical sync if needed
   useEffect(() => {
@@ -569,44 +594,7 @@ export const AdminPlaygroundModal: React.FC<AdminPlaygroundModalProps> = ({
                 </div>
               )}
 
-              {/* LeetCode Style Function Completion Callout (User View Feature) */}
-              <div className="bg-ubi-50/70 dark:bg-ubi-950/40 border border-ubi-200/80 dark:border-ubi-800/60 rounded-xl p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-bold text-ubi-900 dark:text-ubi-200">
-                    <Code2 size={15} className="text-ubi-700 dark:text-ubi-400" />
-                    <span>LeetCode Style Function Completion</span>
-                  </div>
-                  {formData.functionName && (
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-ubi-100 dark:bg-ubi-900/80 text-ubi-800 dark:text-ubi-300 font-semibold border border-ubi-200 dark:border-ubi-800">
-                      fn: {formData.functionName}()
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-300 leading-normal">
-                  Complete the solution function/method. Input ingestion and test assertions are handled automatically behind the scenes.
-                </p>
-                {derivedSignature && (
-                  <div className="pt-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] uppercase tracking-wider font-bold text-slate-500 dark:text-slate-400 block">
-                        Method Signature
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(derivedSignature, 'sig')}
-                        className="text-[10px] text-ubi-700 dark:text-ubi-400 hover:text-ubi-900 dark:hover:text-ubi-200 flex items-center gap-1 font-semibold"
-                        title="Copy signature"
-                      >
-                        {copiedKey === 'sig' ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
-                        <span>{copiedKey === 'sig' ? 'Copied' : 'Copy'}</span>
-                      </button>
-                    </div>
-                    <div className="font-mono text-xs text-ubi-950 dark:text-ubi-200 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-ubi-200/60 dark:border-ubi-800/50 overflow-x-auto">
-                      {derivedSignature}
-                    </div>
-                  </div>
-                )}
-              </div>
+
 
               {/* Sample Test Case Section */}
               {(formData.sampleInput || formData.sampleOutput) && (

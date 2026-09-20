@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     # Rate Limiter
     RUN_RATE_LIMIT: str = "10/minute"
 
+    # AWS S3 Storage
+    AWS_REGION: str = "ap-south-1"
+    S3_BUCKET_NAME: str = "ubi-code"
+    S3_PHOTO_PREFIX: str = "proctoring"
+
     # CORS
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",

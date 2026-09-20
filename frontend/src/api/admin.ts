@@ -6,6 +6,9 @@ import {
   MonitoringStudentView,
   CandidateDossierResponse,
   CandidateImportResponse,
+  StudentCreatePayload,
+  StudentUpdatePayload,
+  FreshRestartResponse,
 } from '../types';
 
 export const adminApi = {
@@ -20,16 +23,13 @@ export const adminApi = {
     return res.data;
   },
 
-  createExam: async (examData: Partial<Exam> & { question_ids?: number[] }): Promise<Exam> => {
-    const res = await api.post<Exam>('/admin/exams', examData);
+  getExam: async (id: number): Promise<Exam> => {
+    const res = await api.get<Exam>(`/admin/exams/${id}`);
     return res.data;
   },
 
-  updateExam: async (
-    id: number,
-    examData: Partial<Exam> & { question_ids?: number[] }
-  ): Promise<Exam> => {
-    const res = await api.put<Exam>(`/admin/exams/${id}`, examData);
+  createExam: async (examData: Partial<Exam> & { question_ids?: number[] }): Promise<Exam> => {
+    const res = await api.post<Exam>('/admin/exams', examData);
     return res.data;
   },
 
@@ -141,6 +141,21 @@ export const adminApi = {
     return adminApi.importStudents({ file });
   },
 
+  createStudent: async (payload: StudentCreatePayload): Promise<User> => {
+    const res = await api.post<User>('/admin/students', payload);
+    return res.data;
+  },
+
+  updateStudent: async (studentId: number, payload: StudentUpdatePayload): Promise<User> => {
+    const res = await api.put<User>(`/admin/students/${studentId}`, payload);
+    return res.data;
+  },
+
+  deleteStudent: async (studentId: number): Promise<{ message: string }> => {
+    const res = await api.delete<{ message: string }>(`/admin/students/${studentId}`);
+    return res.data;
+  },
+
   // Monitoring & Candidate Dossier
   getMonitoring: async (examId: number): Promise<MonitoringStudentView[]> => {
     const res = await api.get<MonitoringStudentView[]>(`/admin/exams/${examId}/monitoring`);
@@ -149,6 +164,11 @@ export const adminApi = {
 
   getCandidateDossier: async (examId: number, assignmentId: number): Promise<CandidateDossierResponse> => {
     const res = await api.get<CandidateDossierResponse>(`/admin/exams/${examId}/candidates/${assignmentId}/dossier`);
+    return res.data;
+  },
+
+  freshRestartCandidateExam: async (examId: number, assignmentId: number, reason?: string): Promise<FreshRestartResponse> => {
+    const res = await api.post<FreshRestartResponse>(`/admin/exams/${examId}/candidates/${assignmentId}/restart`, { reason });
     return res.data;
   },
 

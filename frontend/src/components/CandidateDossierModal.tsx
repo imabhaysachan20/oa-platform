@@ -20,6 +20,11 @@ import {
   User as UserIcon,
   Wifi,
   WifiOff,
+  MapPin,
+  ExternalLink,
+  Laptop,
+  Globe,
+  Camera,
 } from 'lucide-react';
 
 interface CandidateDossierModalProps {
@@ -35,13 +40,18 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
   examId,
   assignmentId,
 }) => {
-  const [activeTab, setActiveTab] = useState<'code' | 'proctoring' | 'scoring' | 'network'>('code');
+  const [activeTab, setActiveTab] = useState<'code' | 'proctoring' | 'devices' | 'scoring' | 'network'>('code');
   const [selectedQuestionIndex, setSelectedQuestionIndex] = useState(0);
+  const [viewingAssignmentId, setViewingAssignmentId] = useState<number>(assignmentId);
+
+  React.useEffect(() => {
+    setViewingAssignmentId(assignmentId);
+  }, [assignmentId]);
 
   const { data: dossier, isLoading } = useQuery({
-    queryKey: ['candidateDossier', examId, assignmentId],
-    queryFn: () => adminApi.getCandidateDossier(examId, assignmentId),
-    enabled: isOpen && !!examId && !!assignmentId,
+    queryKey: ['candidateDossier', examId, viewingAssignmentId],
+    queryFn: () => adminApi.getCandidateDossier(examId, viewingAssignmentId),
+    enabled: isOpen && !!examId && !!viewingAssignmentId,
   });
 
   const formatDuration = (seconds?: number | null) => {
@@ -50,6 +60,29 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
     const s = Math.floor(seconds % 60);
     return `${m}m ${s}s`;
   };
+
+  const parseLogMetadata = (raw?: string | null) => {
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+
+  const deviceLogs = (dossier?.proctoring_logs || []).filter((l) =>
+    ['EXAM_START_DEVICE', 'EXAM_RESUME_DEVICE', 'DEVICE_SWITCH_DETECTED', 'VERIFICATION_SNAPSHOT'].includes(l.event_type)
+  );
+
+  const deviceSwitchesCount = (dossier?.proctoring_logs || []).filter(
+    (l) => l.event_type === 'DEVICE_SWITCH_DETECTED'
+  ).length;
+
+  const startDeviceLog = (dossier?.proctoring_logs || []).find(
+    (l) => l.event_type === 'EXAM_START_DEVICE'
+  );
+
+  const startDeviceMeta = startDeviceLog ? parseLogMetadata(startDeviceLog.meta_data) : null;
 
   const currentQuestion = dossier?.questions?.[selectedQuestionIndex];
 
@@ -78,11 +111,30 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
           {/* Header Summary Banner */}
           <div className="bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-full bg-ubi-100 dark:bg-ubi-900/60 border border-ubi-200 dark:border-ubi-800 flex items-center justify-center font-bold text-ubi-900 dark:text-ubi-200 shrink-0">
-                <UserIcon size={18} />
-              </div>
+              {dossier.verification_photo_url ? (
+                <a
+                  href={dossier.verification_photo_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group relative w-11 h-11 rounded-lg overflow-hidden border-2 border-emerald-500 shadow-sm shrink-0 cursor-pointer block"
+                  title="Click to view full candidate verification photo from S3"
+                >
+                  <img
+                    src={dossier.verification_photo_url}
+                    alt={dossier.student_name}
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                  />
+                  <div className="absolute bottom-0 inset-x-0 bg-black/60 text-[7px] text-emerald-300 text-center font-mono py-0.2">
+                    PHOTO
+                  </div>
+                </a>
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-ubi-100 dark:bg-ubi-900/60 border border-ubi-200 dark:border-ubi-800 flex items-center justify-center font-bold text-ubi-900 dark:text-ubi-200 shrink-0">
+                  <UserIcon size={18} />
+                </div>
+              )}
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
                     {dossier.student_name}
                   </h3>
@@ -91,10 +143,56 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                       {dossier.roll_no}
                     </span>
                   )}
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      dossier.is_active
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:border-emerald-800'
+                        : 'bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                    }`}
+                  >
+                    Attempt #{dossier.attempt_number || 1} {dossier.is_active ? '(Active)' : '(Archived)'}
+                  </span>
+                  {dossier.reset_by_admin && (
+                    <span
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/60 dark:text-purple-400 dark:border-purple-800"
+                      title={dossier.reset_reason || 'Restarted by admin'}
+                    >
+                      Restarted
+                    </span>
+                  )}
                 </div>
-                <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
                   {dossier.email} • Exam: {dossier.exam_title}
                 </div>
+                {dossier.reset_reason && (
+                  <div className="mt-1 text-[11px] text-purple-700 dark:text-purple-300 bg-purple-50/70 dark:bg-purple-950/40 px-2 py-0.5 rounded border border-purple-200 dark:border-purple-800/40">
+                    <span className="font-semibold">Reason:</span> {dossier.reset_reason}
+                  </div>
+                )}
+                {dossier.available_attempts && dossier.available_attempts.length > 1 && (
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <span className="text-[10px] uppercase font-bold text-slate-400">Switch Attempt:</span>
+                    {dossier.available_attempts.map((att) => (
+                      <button
+                        key={att.assignment_id}
+                        onClick={() => {
+                          setViewingAssignmentId(att.assignment_id);
+                          setSelectedQuestionIndex(0);
+                        }}
+                        className={`px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1 border ${
+                          att.assignment_id === viewingAssignmentId
+                            ? 'bg-ubi-800 text-white border-ubi-800 dark:bg-ubi-600 dark:border-ubi-600 shadow-sm'
+                            : 'bg-white dark:bg-slate-900 text-slate-600 hover:text-slate-900 border-slate-200 dark:border-slate-800 dark:text-slate-400 dark:hover:text-white'
+                        }`}
+                      >
+                        <span>Attempt #{att.attempt_number}</span>
+                        <span className="text-[9px] opacity-75 font-normal">
+                          ({att.is_active ? 'Active' : 'Archived'})
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -203,6 +301,23 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
               >
                 <Activity size={14} />
                 <span>Anti-Cheat Timeline ({dossier.total_flags} Events)</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('devices')}
+                className={`flex items-center gap-1.5 py-2 px-3 text-xs font-bold border-b-2 transition ${
+                  activeTab === 'devices'
+                    ? 'border-ubi-800 text-ubi-900 dark:border-ubi-400 dark:text-white'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+                }`}
+              >
+                <MapPin size={14} />
+                <span>Device & Location Audit ({deviceLogs.length})</span>
+                {deviceSwitchesCount > 0 && (
+                  <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-rose-500 text-white animate-pulse">
+                    {deviceSwitchesCount} Alert{deviceSwitchesCount > 1 ? 's' : ''}
+                  </span>
+                )}
               </button>
 
               <button
@@ -436,29 +551,105 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
             <div className="flex-1 overflow-y-auto pr-2 space-y-3 min-h-0">
               {dossier.proctoring_logs.length > 0 ? (
                 <div className="relative pl-6 border-l-2 border-slate-200 dark:border-slate-800 space-y-4 my-2">
-                  {dossier.proctoring_logs.map((log) => (
-                    <div key={log.id} className="relative group">
-                      {/* Timeline dot */}
-                      <div className="absolute -left-[31px] top-1 w-3.5 h-3.5 rounded-full bg-rose-500 border-2 border-white dark:border-slate-900"></div>
+                  {dossier.proctoring_logs.map((log) => {
+                    const meta = parseLogMetadata(log.meta_data);
+                    const isStart = log.event_type === 'EXAM_START_DEVICE';
+                    const isResume = log.event_type === 'EXAM_RESUME_DEVICE';
+                    const isSwitch = log.event_type === 'DEVICE_SWITCH_DETECTED';
 
-                      <div className="p-3 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200 dark:border-rose-800 font-bold">
-                              {log.event_type}
+                    const dotColor = isStart
+                      ? 'bg-emerald-500 ring-2 ring-emerald-200 dark:ring-emerald-900/60'
+                      : isResume
+                      ? 'bg-sky-500 ring-2 ring-sky-200 dark:ring-sky-900/60'
+                      : isSwitch
+                      ? 'bg-rose-600 ring-4 ring-rose-300 dark:ring-rose-900 animate-pulse'
+                      : 'bg-rose-500';
+
+                    const badgeStyle = isStart
+                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+                      : isResume
+                      ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-400 border-sky-200 dark:border-sky-800'
+                      : isSwitch
+                      ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200 border-rose-300 dark:border-rose-700 font-bold'
+                      : 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border-rose-200 dark:border-rose-800';
+
+                    return (
+                      <div key={log.id} className="relative group">
+                        {/* Timeline dot */}
+                        <div className={`absolute -left-[31px] top-1 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-slate-900 ${dotColor}`}></div>
+
+                        <div className="p-3.5 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5 transition hover:border-slate-300 dark:hover:border-slate-700">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-mono border font-bold ${badgeStyle}`}>
+                                {log.event_type}
+                              </span>
+                              <span>{log.title}</span>
                             </span>
-                            <span>{log.title}</span>
-                          </span>
-                          <span className="text-[11px] font-mono text-slate-500">
-                            {new Date(log.occurred_at).toLocaleTimeString()}
-                          </span>
+                            <span className="text-[11px] font-mono text-slate-500">
+                              {new Date(log.occurred_at).toLocaleTimeString()}
+                            </span>
+                          </div>
+
+                          <p className="text-xs text-slate-600 dark:text-slate-400">
+                            {log.description}
+                          </p>
+
+                          {/* Geolocation & Device Metadata Card Footer */}
+                          {meta && (
+                            <div className="pt-2 mt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex flex-wrap items-center justify-between gap-2">
+                              {meta.latitude && meta.longitude ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                    <MapPin size={11} className="text-emerald-600 dark:text-emerald-400" />
+                                    {meta.latitude.toFixed(4)}, {meta.longitude.toFixed(4)}
+                                    {meta.accuracy ? ` (±${meta.accuracy}m)` : ''}
+                                  </span>
+                                  <a
+                                    href={`https://www.google.com/maps?q=${meta.latitude},${meta.longitude}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-ubi-700 hover:text-ubi-900 dark:text-ubi-400 dark:hover:text-ubi-200 hover:underline"
+                                  >
+                                    <span>Map</span>
+                                    <ExternalLink size={10} />
+                                  </a>
+                                </div>
+                              ) : meta.location_status ? (
+                                <span className="text-[10px] font-mono text-slate-400">
+                                  Location: {meta.location_status}
+                                </span>
+                              ) : null}
+
+                              {/* Specs Tags */}
+                              <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                                {meta.ip_address && (
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                    IP: {meta.ip_address}
+                                  </span>
+                                )}
+                                {meta.browser && (
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                    {meta.browser}
+                                  </span>
+                                )}
+                                {meta.os && (
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                    {meta.os}
+                                  </span>
+                                )}
+                                {meta.screen_resolution && (
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                    {meta.screen_resolution}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <p className="text-xs text-slate-600 dark:text-slate-400">
-                          {log.description}
-                        </p>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-3 py-16">
@@ -467,6 +658,239 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                     <h4 className="text-sm font-bold text-slate-900 dark:text-white">Clean Assessment Session</h4>
                     <p className="text-xs text-slate-500 mt-0.5">
                       No security or proctoring infractions were triggered by this candidate.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab 2.5: Dedicated Device & Location Audit */}
+          {activeTab === 'devices' && (
+            <div className="flex-1 overflow-y-auto pr-2 space-y-4 min-h-0">
+              {/* Summary Cards Row */}
+              <div className="grid grid-cols-4 gap-3">
+                <div className="p-3 bg-slate-50 dark:bg-slate-950/80 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Initial Device</span>
+                  <div className="mt-1 flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-white truncate">
+                    <Laptop size={14} className="text-ubi-700 dark:text-ubi-400 shrink-0" />
+                    <span className="truncate">{startDeviceMeta?.browser || 'Recorded'} on {startDeviceMeta?.os || 'System'}</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-50 dark:bg-slate-950/80 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Starting Coordinates</span>
+                  <div className="mt-1 flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-white truncate">
+                    <MapPin size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    {startDeviceMeta?.latitude && startDeviceMeta?.longitude ? (
+                      <a
+                        href={`https://www.google.com/maps?q=${startDeviceMeta.latitude},${startDeviceMeta.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="truncate text-ubi-700 dark:text-ubi-400 hover:underline inline-flex items-center gap-1"
+                      >
+                        <span>{startDeviceMeta.latitude.toFixed(4)}, {startDeviceMeta.longitude.toFixed(4)}</span>
+                        <ExternalLink size={10} />
+                      </a>
+                    ) : (
+                      <span className="text-slate-500 capitalize">{startDeviceMeta?.location_status || 'Unavailable'}</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-50 dark:bg-slate-950/80 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Audit Check-Ins</span>
+                  <span className="mt-1 text-sm font-extrabold font-mono text-slate-900 dark:text-white block">
+                    {deviceLogs.length} logged
+                  </span>
+                </div>
+
+                <div className="p-3 bg-slate-50 dark:bg-slate-950/80 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Device Switches</span>
+                  <span className={`mt-1 text-sm font-extrabold font-mono block ${
+                    deviceSwitchesCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'
+                  }`}>
+                    {deviceSwitchesCount} alert{deviceSwitchesCount === 1 ? '' : 's'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Warning Alert if Device Switch Detected */}
+              {deviceSwitchesCount > 0 && (
+                <div className="p-3.5 bg-rose-50 border border-rose-300 dark:bg-rose-950/40 dark:border-rose-800/80 rounded-xl flex items-start gap-2.5">
+                  <ShieldAlert size={18} className="text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                  <div className="text-xs text-rose-900 dark:text-rose-200 leading-relaxed">
+                    <strong className="font-bold block text-rose-950 dark:text-rose-100">
+                      High-Risk Device Switch Detected ({deviceSwitchesCount} incident{deviceSwitchesCount > 1 ? 's' : ''})
+                    </strong>
+                    The candidate resumed or reconnected to this assessment from a different browser fingerprint, IP address, or machine than the initial starting device. Review the detailed log entries below.
+                  </div>
+                </div>
+              )}
+
+              {/* Detailed Device & Location Events */}
+              {deviceLogs.length > 0 ? (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                    Full Chronological Hardware & Location Audit Log
+                  </h4>
+                  <div className="space-y-2.5">
+                    {deviceLogs.map((log) => {
+                      const meta = parseLogMetadata(log.meta_data);
+                      const isStart = log.event_type === 'EXAM_START_DEVICE';
+                      const isSwitch = log.event_type === 'DEVICE_SWITCH_DETECTED';
+                      const isSnapshot = log.event_type === 'VERIFICATION_SNAPSHOT';
+                      const photoUrl = meta?.photo_url || (isSnapshot ? dossier.verification_photo_url : null);
+
+                      return (
+                        <div
+                          key={log.id}
+                          className={`p-3.5 rounded-xl border transition ${
+                            isSwitch
+                              ? 'bg-rose-50/60 dark:bg-rose-950/30 border-rose-300 dark:border-rose-800/80 ring-1 ring-rose-400/30'
+                              : isSnapshot
+                              ? 'bg-purple-50/40 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800/60'
+                              : isStart
+                              ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60'
+                              : 'bg-slate-50 dark:bg-slate-950/80 border-slate-200 dark:border-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono border font-bold ${
+                                  isSwitch
+                                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200 border-rose-300'
+                                    : isSnapshot
+                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border-purple-300'
+                                    : isStart
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300'
+                                    : 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 border-sky-300'
+                                }`}
+                              >
+                                {log.event_type}
+                              </span>
+                              <span className="font-bold text-xs text-slate-900 dark:text-white">
+                                {log.title}
+                              </span>
+                            </div>
+                            <span className="text-[11px] font-mono text-slate-500">
+                              {new Date(log.occurred_at).toLocaleTimeString()}
+                            </span>
+                          </div>
+
+                          <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                            {log.description}
+                          </p>
+
+                          {photoUrl && (
+                            <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex items-center gap-3">
+                              <a
+                                href={photoUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="group relative w-20 h-16 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700 shrink-0 shadow-sm"
+                              >
+                                <img
+                                  src={photoUrl}
+                                  alt="Verification snapshot"
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                />
+                                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white">
+                                  <ExternalLink size={14} />
+                                </div>
+                              </a>
+                              <div className="text-xs">
+                                <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                                  <Camera size={13} className="text-purple-500" />
+                                  Identity Verification Photo
+                                </span>
+                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                  Captured at assessment check-in & uploaded to S3.
+                                </p>
+                                <a
+                                  href={photoUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[11px] font-semibold text-ubi-700 dark:text-ubi-400 hover:underline flex items-center gap-1 mt-1"
+                                >
+                                  <span>Open full image</span>
+                                  <ExternalLink size={11} />
+                                </a>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Location & Specs breakdown */}
+                          {meta && (
+                            <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex flex-wrap items-center justify-between gap-2">
+                              {meta.latitude && meta.longitude ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-medium">
+                                    <MapPin size={12} className="text-emerald-600 dark:text-emerald-400" />
+                                    Coordinates: {meta.latitude.toFixed(6)}, {meta.longitude.toFixed(6)}
+                                    {meta.accuracy ? ` (±${meta.accuracy}m accuracy)` : ''}
+                                  </span>
+                                  <a
+                                    href={`https://www.google.com/maps?q=${meta.latitude},${meta.longitude}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-ubi-700 hover:text-ubi-900 dark:text-ubi-400 dark:hover:text-ubi-200 hover:underline"
+                                  >
+                                    <span>Google Maps</span>
+                                    <ExternalLink size={11} />
+                                  </a>
+                                </div>
+                              ) : (
+                                <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
+                                  <MapPin size={11} /> Location: {meta.location_status || 'Unavailable'}
+                                </span>
+                              )}
+
+                              <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-slate-600 dark:text-slate-300">
+                                {meta.ip_address && (
+                                  <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                    IP: <strong>{meta.ip_address}</strong>
+                                  </span>
+                                )}
+                                {meta.browser && (
+                                  <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                    {meta.browser}
+                                  </span>
+                                )}
+                                {meta.os && (
+                                  <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                    {meta.os}
+                                  </span>
+                                )}
+                                {meta.screen_resolution && (
+                                  <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                    Res: {meta.screen_resolution}
+                                  </span>
+                                )}
+                                {meta.device_fingerprint && (
+                                  <span
+                                    className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono"
+                                    title={meta.device_fingerprint}
+                                  >
+                                    Fingerprint: {meta.device_fingerprint.substring(0, 8)}...
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center text-slate-400 gap-3 py-16">
+                  <Laptop size={44} className="text-slate-400" />
+                  <div className="text-center">
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">No Device Logs Yet</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Hardware and location audit records will appear once the candidate starts or resumes the assessment.
                     </p>
                   </div>
                 </div>

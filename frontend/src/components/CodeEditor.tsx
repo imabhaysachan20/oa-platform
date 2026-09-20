@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { EditorView } from '@codemirror/view';
 import { python } from '@codemirror/lang-python';
@@ -6,9 +6,11 @@ import { cpp } from '@codemirror/lang-cpp';
 import { java } from '@codemirror/lang-java';
 import { javascript } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, AlertTriangle } from 'lucide-react';
 import { STARTER_CODE } from '../store/examStore';
 import { useThemeStore } from '../store/themeStore';
+import { Modal } from './ui/Modal';
+import { Button } from './ui/Button';
 
 interface CodeEditorProps {
   value: string;
@@ -112,20 +114,21 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     return [...langExt, securityExt];
   }, [language, onPasteAttempt, allowPaste]);
 
-  const handleResetToDefault = () => {
-    if (window.confirm('Reset code editor to starter template? Your current changes will be lost.')) {
-      if (onReset) {
-        onReset();
-      } else {
-        onChange(starterCode || STARTER_CODE[language] || '');
-      }
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+
+  const handleConfirmReset = () => {
+    setIsResetModalOpen(false);
+    if (onReset) {
+      onReset();
+    } else {
+      onChange(starterCode || STARTER_CODE[language] || '');
     }
   };
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm dark:shadow-xl">
+    <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 overflow-hidden">
       {/* Editor Top Bar */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-slate-950/90 border-b border-slate-200 dark:border-slate-800 text-sm">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-slate-950/90 border-b border-slate-200 dark:border-slate-800 text-sm shrink-0">
         <div className="flex items-center gap-3">
           <label htmlFor="language-select" className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
             Language:
@@ -144,17 +147,18 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           </select>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           {!readOnly && (
             <button
-              onClick={handleResetToDefault}
+              onClick={() => setIsResetModalOpen(true)}
               title="Reset Code Template"
-              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 px-2.5 py-1 rounded-md transition font-medium"
+              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 px-2.5 py-1 rounded-md transition font-medium cursor-pointer"
             >
               <RotateCcw size={13} />
               <span>Reset</span>
             </button>
           )}
+
           <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
             {value.split('\n').length} lines
           </span>
@@ -199,6 +203,42 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           className="h-full text-sm font-mono"
         />
       </div>
+
+      {/* In-App Confirmation Modal for Resetting Code */}
+      <Modal
+        isOpen={isResetModalOpen}
+        onClose={() => setIsResetModalOpen(false)}
+        title="Reset Code Template"
+        maxWidth="sm"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl text-amber-900 dark:text-amber-200">
+            <AlertTriangle className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" size={18} />
+            <p className="text-xs leading-relaxed font-sans">
+              Are you sure you want to reset the code editor to the default starter template? All your current code modifications will be lost.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-end gap-2.5 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsResetModalOpen(false)}
+              className="text-xs font-semibold"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              className="bg-amber-600 hover:bg-amber-700 text-white border-amber-700 text-xs font-semibold shadow-sm"
+              onClick={handleConfirmReset}
+            >
+              Reset Code
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

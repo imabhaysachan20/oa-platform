@@ -100,6 +100,7 @@ async def _process_expired_assignments():
                 select(ExamAssignment)
                 .where(
                     ExamAssignment.status == AssignmentStatus.IN_PROGRESS,
+                    ExamAssignment.is_active == True,
                     ExamAssignment.deadline_at != None,
                     ExamAssignment.deadline_at <= now
                 )

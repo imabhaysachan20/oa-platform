@@ -47,6 +47,12 @@ app.include_router(mcq_router, prefix=settings.API_V1_PREFIX)
 app.include_router(admin_router, prefix=settings.API_V1_PREFIX)
 
 
+@app.on_event("startup")
+async def on_startup():
+    from backend.app.core.judge0 import ensure_judge0_language_config
+    await ensure_judge0_language_config()
+
+
 @app.get("/api/health")
 async def health_check():
     return {
@@ -54,3 +60,4 @@ async def health_check():
         "service": "UBIcode API",
         "version": settings.PROJECT_VERSION
     }
+

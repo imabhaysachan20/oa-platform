@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'r
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuthStore } from './store/authStore';
 import { Navbar } from './components/Navbar';
+import { Footer } from './components/Footer';
 
 // Pages
 import { LoginPage } from './pages/LoginPage';
@@ -117,6 +118,14 @@ const AppContent: React.FC = () => {
             }
           />
           <Route
+            path="/admin/exams/:examId"
+            element={
+              <ProtectedRoute adminOnly>
+                <AdminExamsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/admin/exams/create"
             element={
               <ProtectedRoute adminOnly>
@@ -169,6 +178,7 @@ const AppContent: React.FC = () => {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+      {!isWorkspace && !isLogin && <Footer />}
     </div>
   );
 };

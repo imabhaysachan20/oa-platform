@@ -66,7 +66,8 @@ async def submit_code(
         exam_id=body.exam_id,
         question_id=body.question_id,
         code=body.code,
-        language=body.language
+        language=body.language,
+        assignment_id=body.assignment_id,
     )
 
 
@@ -133,10 +134,10 @@ async def _handle_submit_mcq_response(
 
     assigned_q, question = row
 
-    # Reject if question deadline passed (with a 7-second network grace period for auto-submit & transit latency)
+    # Reject if question is locked or deadline passed (with a 7-second network grace period for auto-submit & transit latency)
     MCQ_NETWORK_GRACE_PERIOD = timedelta(seconds=7)
-    if assigned_q.question_deadline_at and now > (assigned_q.question_deadline_at + MCQ_NETWORK_GRACE_PERIOD):
-        raise HTTPException(status_code=400, detail="Time limit for this question has expired")
+    if assigned_q.is_locked or (assigned_q.question_deadline_at and now > (assigned_q.question_deadline_at + MCQ_NETWORK_GRACE_PERIOD)):
+        raise HTTPException(status_code=400, detail="This question is locked or time limit has expired and cannot be modified")
 
     # 3. Check if response is already locked
     resp_stmt = select(MCQResponse).where(

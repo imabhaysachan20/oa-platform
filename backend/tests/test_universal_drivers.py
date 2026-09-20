@@ -125,7 +125,7 @@ def test_python_universal_driver_linked_list():
         text=True
     )
     assert res.returncode == 0, f"Error: {res.stderr}"
-    assert res.stdout.strip() == "[5,4,3,2,1]"
+    assert res.stdout.strip() == "[5, 4, 3, 2, 1]"
 
 
 def test_python_universal_driver_in_place_void():
@@ -150,4 +150,4 @@ def test_python_universal_driver_in_place_void():
         text=True
     )
     assert res.returncode == 0, f"Error: {res.stderr}"
-    assert res.stdout.strip() == '["o","l","l","e","h"]'
+    assert res.stdout.strip() == '["o", "l", "l", "e", "h"]'

@@ -173,6 +173,7 @@ export interface Exam {
   hard_count?: number;
   is_published: boolean;
   late_entry_window_minutes?: number;
+  target_colleges?: string[];
   target_groups?: string[];
   pool_count?: number;
   created_at?: string;
@@ -184,6 +185,12 @@ export interface Exam {
   entry_deadline?: string;
   attempt_number?: number;
   server_time?: string;
+}
+
+export interface StudentGroupsResponse {
+  groups: string[];
+  colleges: string[];
+  college_groups?: Record<string, string[]>;
 }
 
 export interface ExamStartResponse {

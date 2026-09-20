@@ -242,3 +242,27 @@ class CandidateDossierResponse(BaseModel):
     total_offline_seconds: int = 0
     network_incidents: List[NetworkIncidentItem] = []
 
+
+class DeviceTelemetryPayload(BaseModel):
+    browser: Optional[str] = None
+    os: Optional[str] = None
+    device_type: Optional[str] = None
+    screen_resolution: Optional[str] = None
+    device_fingerprint: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    accuracy: Optional[float] = None
+    location_status: Optional[str] = None
+
+
+class ResumeExamRequest(BaseModel):
+    assignment_id: int
+    telemetry: Optional[DeviceTelemetryPayload] = None
+
+
+class ResumeExamResponse(BaseModel):
+    status: str = "ok"
+    device_switch_detected: bool = False
+    message: str = "Assessment telemetry recorded."
+
+

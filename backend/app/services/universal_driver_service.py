@@ -523,7 +523,7 @@ if __name__ == "__main__":
     if isinstance(res, bool):
         print("true" if res else "false")
     elif isinstance(res, (list, tuple, dict)):
-        print(json.dumps(res, separators=(',', ':')))
+        print(json.dumps(res))
     elif res is None:
         print("null")
     else:
@@ -578,6 +578,47 @@ function _serializeListNode(head) {{
     return res;
 }}
 
+function _buildTreeNode(arr) {{
+    if (!arr || arr.length === 0 || arr[0] === null) return null;
+    let root = new TreeNode(arr[0]);
+    let q = [root];
+    let i = 1;
+    while (q.length > 0 && i < arr.length) {{
+        let node = q.shift();
+        if (i < arr.length && arr[i] !== null && arr[i] !== undefined) {{
+            node.left = new TreeNode(arr[i]);
+            q.push(node.left);
+        }}
+        i++;
+        if (i < arr.length && arr[i] !== null && arr[i] !== undefined) {{
+            node.right = new TreeNode(arr[i]);
+            q.push(node.right);
+        }}
+        i++;
+    }}
+    return root;
+}}
+
+function _serializeTreeNode(root) {{
+    if (!root) return [];
+    const res = [];
+    const q = [root];
+    while (q.length > 0) {{
+        const node = q.shift();
+        if (node) {{
+            res.push(node.val);
+            q.push(node.left);
+            q.push(node.right);
+        }} else {{
+            res.push(null);
+        }}
+    }}
+    while (res.length > 0 && res[res.length - 1] === null) {{
+        res.pop();
+    }}
+    return res;
+}}
+
 (function() {{
     const fs = require('fs');
     const input = fs.readFileSync(0, 'utf-8');
@@ -606,6 +647,8 @@ function _serializeListNode(head) {{
 
         if (pType === "ListNode" && Array.isArray(val)) {{
             val = _buildListNode(val);
+        }} else if (pType === "TreeNode" && Array.isArray(val)) {{
+            val = _buildTreeNode(val);
         }}
         parsedArgs.push(val);
     }}
@@ -637,6 +680,8 @@ function _serializeListNode(head) {{
 
     if (res && typeof res === 'object' && 'next' in res && 'val' in res) {{
         res = _serializeListNode(res);
+    }} else if (res && typeof res === 'object' && ('left' in res || 'right' in res)) {{
+        res = _serializeTreeNode(res);
     }}
 
     if (typeof res === 'boolean') {{
@@ -671,7 +716,11 @@ def generate_universal_cpp_driver(
         elif p_type == "float":
             read_stmts.append(f"    double {p_name}; if (!(cin >> {p_name})) {p_name} = 0.0;")
         elif p_type == "string":
-            read_stmts.append(f"    string {p_name}; getline(cin >> ws, {p_name});")
+            read_stmts.append(f'''    string {p_name};
+    getline(cin >> ws, {p_name});
+    if ({p_name}.size() >= 2 && {p_name}.front() == '"' && {p_name}.back() == '"') {{
+        {p_name} = {p_name}.substr(1, {p_name}.size() - 2);
+    }}''')
         elif p_type == "bool":
             read_stmts.append(f'''    string s_{idx}; cin >> s_{idx};
     bool {p_name} = (s_{idx} == "true" || s_{idx} == "1");''')
@@ -836,7 +885,15 @@ static void _print_result(bool val) {{
 static void _print_result(const vector<int>& vec) {{
     cout << "[";
     for (size_t i = 0; i < vec.size(); ++i) {{
-        cout << vec[i] << (i + 1 < vec.size() ? "," : "");
+        cout << vec[i] << (i + 1 < vec.size() ? ", " : "");
+    }}
+    cout << "]" << endl;
+}}
+
+static void _print_result(const vector<double>& vec) {{
+    cout << "[";
+    for (size_t i = 0; i < vec.size(); ++i) {{
+        cout << vec[i] << (i + 1 < vec.size() ? ", " : "");
     }}
     cout << "]" << endl;
 }}
@@ -844,7 +901,7 @@ static void _print_result(const vector<int>& vec) {{
 static void _print_result(const vector<string>& vec) {{
     cout << "[";
     for (size_t i = 0; i < vec.size(); ++i) {{
-        cout << "\\"" << vec[i] << "\\"" << (i + 1 < vec.size() ? "," : "");
+        cout << "\\"" << vec[i] << "\\"" << (i + 1 < vec.size() ? ", " : "");
     }}
     cout << "]" << endl;
 }}
@@ -854,9 +911,21 @@ static void _print_result(const vector<vector<int>>& mat) {{
     for (size_t i = 0; i < mat.size(); ++i) {{
         cout << "[";
         for (size_t j = 0; j < mat[i].size(); ++j) {{
-            cout << mat[i][j] << (j + 1 < mat[i].size() ? "," : "");
+            cout << mat[i][j] << (j + 1 < mat[i].size() ? ", " : "");
         }}
-        cout << "]" << (i + 1 < mat.size() ? "," : "");
+        cout << "]" << (i + 1 < mat.size() ? ", " : "");
+    }}
+    cout << "]" << endl;
+}}
+
+static void _print_result(const vector<vector<string>>& mat) {{
+    cout << "[";
+    for (size_t i = 0; i < mat.size(); ++i) {{
+        cout << "[";
+        for (size_t j = 0; j < mat[i].size(); ++j) {{
+            cout << "\\"" << mat[i][j] << "\\"" << (j + 1 < mat[i].size() ? ", " : "");
+        }}
+        cout << "]" << (i + 1 < mat.size() ? ", " : "");
     }}
     cout << "]" << endl;
 }}
@@ -869,6 +938,35 @@ static void _print_result(ListNode* head) {{
         curr = curr->next;
     }}
     _print_result(res);
+}}
+
+static void _print_result(TreeNode* root) {{
+    if (!root) {{
+        cout << "[]" << endl;
+        return;
+    }}
+    vector<string> res;
+    queue<TreeNode*> q;
+    q.push(root);
+    while (!q.empty()) {{
+        TreeNode* curr = q.front();
+        q.pop();
+        if (curr) {{
+            res.push_back(to_string(curr->val));
+            q.push(curr->left);
+            q.push(curr->right);
+        }} else {{
+            res.push_back("null");
+        }}
+    }}
+    while (!res.empty() && res.back() == "null") {{
+        res.pop_back();
+    }}
+    cout << "[";
+    for (size_t i = 0; i < res.size(); ++i) {{
+        cout << res[i] << (i + 1 < res.size() ? ", " : "");
+    }}
+    cout << "]" << endl;
 }}
 
 int main() {{
@@ -906,7 +1004,10 @@ def generate_universal_java_driver(
         elif p_type == "float":
             read_stmts.append(f"        double {p_name} = sc.hasNextDouble() ? sc.nextDouble() : 0.0;")
         elif p_type == "string":
-            read_stmts.append(f"        String {p_name} = sc.hasNext() ? sc.next() : \"\";")
+            read_stmts.append(f'''        String {p_name} = sc.hasNextLine() ? sc.nextLine().trim() : "";
+        if ({p_name}.startsWith("\\"") && {p_name}.endsWith("\\"") && {p_name}.length() >= 2) {{
+            {p_name} = {p_name}.substring(1, {p_name}.length() - 1);
+        }}''')
         elif p_type == "bool":
             read_stmts.append(f"        boolean {p_name} = sc.hasNextBoolean() ? sc.nextBoolean() : false;")
         elif p_type in ["int[]", "float[]"]:
@@ -957,7 +1058,7 @@ class TreeNode {{
 
 public class Main {{
     private static int[] _parseIntArray(String s) {{
-        String clean = s.replaceAll("[\\[\\],]", " ").trim();
+        String clean = s.replace('[', ' ').replace(']', ' ').replace(',', ' ').trim();
         if (clean.isEmpty()) return new int[0];
         String[] tokens = clean.split("\\\\s+");
         int[] arr = new int[tokens.length];
@@ -970,10 +1071,45 @@ public class Main {{
     private static void _printResult(Object res) {{
         if (res == null) {{
             System.out.println("null");
+        }} else if (res instanceof ListNode) {{
+            java.util.List<Integer> list = new java.util.ArrayList<>();
+            ListNode curr = (ListNode) res;
+            int count = 0;
+            while (curr != null && count < 10000) {{
+                list.add(curr.val);
+                curr = curr.next;
+                count++;
+            }}
+            System.out.println(list.toString());
+        }} else if (res instanceof TreeNode) {{
+            TreeNode root = (TreeNode) res;
+            java.util.List<String> list = new java.util.ArrayList<>();
+            java.util.Queue<TreeNode> q = new java.util.LinkedList<>();
+            q.offer(root);
+            while (!q.isEmpty()) {{
+                TreeNode curr = q.poll();
+                if (curr != null) {{
+                    list.add(String.valueOf(curr.val));
+                    q.offer(curr.left);
+                    q.offer(curr.right);
+                }} else {{
+                    list.add("null");
+                }}
+            }}
+            while (!list.isEmpty() && list.get(list.size() - 1).equals("null")) {{
+                list.remove(list.size() - 1);
+            }}
+            System.out.println("[" + String.join(", ", list) + "]");
         }} else if (res instanceof int[]) {{
-            System.out.println(Arrays.toString((int[]) res).replaceAll(" ", ""));
+            System.out.println(java.util.Arrays.toString((int[]) res));
+        }} else if (res instanceof double[]) {{
+            System.out.println(java.util.Arrays.toString((double[]) res));
+        }} else if (res instanceof boolean[]) {{
+            System.out.println(java.util.Arrays.toString((boolean[]) res));
         }} else if (res instanceof Object[]) {{
-            System.out.println(Arrays.deepToString((Object[]) res).replaceAll(" ", ""));
+            System.out.println(java.util.Arrays.deepToString((Object[]) res));
+        }} else if (res instanceof java.util.Collection<?>) {{
+            System.out.println(res.toString());
         }} else {{
             System.out.println(res);
         }}

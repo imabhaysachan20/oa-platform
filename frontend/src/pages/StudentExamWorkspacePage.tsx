@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { examsApi } from '../api/exams';
 import { submissionsApi } from '../api/submissions';
+import { StudentQuestionView } from '../types';
 import { useExamStore, STARTER_CODE } from '../store/examStore';
 import { useThemeStore } from '../store/themeStore';
 import { QuestionPanel } from '../components/QuestionPanel';
@@ -20,6 +21,7 @@ import { useAuthStore } from '../store/authStore';
 import { useExamSecurity } from '../hooks/useExamSecurity';
 import { useCandidateHeartbeat } from '../hooks/useCandidateHeartbeat';
 import { useQuestionTimer } from '../hooks/useQuestionTimer';
+import { collectDeviceTelemetry } from '../utils/deviceInfo';
 
 export const StudentExamWorkspacePage: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
@@ -114,6 +116,30 @@ export const StudentExamWorkspacePage: React.FC = () => {
     setIsSubmittingCode,
     resetExamState,
   } = useExamStore();
+
+  // Mandatory Location & Device Verification Guard
+  // Candidate must pass through /instructions to verify geolocation before entering or resuming workspace
+  useEffect(() => {
+    if (!id) return;
+    const verifiedKey = `ubicode_verified_entry_${id}`;
+    const isVerified = sessionStorage.getItem(verifiedKey);
+    if (!isVerified) {
+      navigate(`/exam/${id}/instructions`, { replace: true });
+      return;
+    }
+  }, [id, navigate]);
+
+  // When refreshing the browser page or closing the tab, clear the verification token so reload forces re-verifying
+  useEffect(() => {
+    if (!id) return;
+    const handleBeforeUnload = () => {
+      sessionStorage.removeItem(`ubicode_verified_entry_${id}`);
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [id]);
 
   // Load exam questions & state (supports resume on reload)
   const { data: examData, isLoading, error, refetch } = useQuery({
@@ -295,6 +321,34 @@ export const StudentExamWorkspacePage: React.FC = () => {
     });
   }, [questions, userId, id]);
 
+  // Timed MCQ Sequential Flow Phase Detection
+  const isTimedQuestion = useCallback((q?: StudentQuestionView | null) => {
+    if (!q) return false;
+    return q.question_type === 'mcq' && Boolean(q.mcq_time_limit_seconds && q.mcq_time_limit_seconds > 0);
+  }, []);
+
+  const timedMCQs = useMemo(
+    () => questions.filter((q: StudentQuestionView) => isTimedQuestion(q)),
+    [questions, isTimedQuestion]
+  );
+
+  const pendingTimedMCQs = useMemo(
+    () => timedMCQs.filter((q: StudentQuestionView) => !lockedQuestionIds.has(q.id) && !q.is_mcq_locked),
+    [timedMCQs, lockedQuestionIds]
+  );
+
+  const isSequentialTimedPhase = pendingTimedMCQs.length > 0;
+  const activeTimedQuestion = isSequentialTimedPhase ? pendingTimedMCQs[0] : null;
+
+  // Enforce candidate stays on active timed question until it is completed/locked
+  useEffect(() => {
+    if (!isSequentialTimedPhase || !activeTimedQuestion) return;
+    const targetIdx = questions.findIndex((q) => q.id === activeTimedQuestion.id);
+    if (targetIdx !== -1 && activeQuestionIndex !== targetIdx) {
+      setActiveQuestionIndex(targetIdx);
+    }
+  }, [isSequentialTimedPhase, activeTimedQuestion?.id, questions, activeQuestionIndex, setActiveQuestionIndex]);
+
   // Multi-tab real-time synchronization via StorageEvent
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
@@ -447,37 +501,88 @@ export const StudentExamWorkspacePage: React.FC = () => {
     return () => window.removeEventListener('online', flushOfflineQueue);
   }, []);
 
+  // Advance timed MCQ: flushes response, seals/locks on backend & locally, and moves to next
+  const [isAdvancingTimedMCQ, setIsAdvancingTimedMCQ] = useState(false);
+
+  const handleAdvanceTimedMCQ = useCallback(async () => {
+    if (!currentQ || isAdvancingTimedMCQ) return;
+    const qId = currentQ.id;
+    setIsAdvancingTimedMCQ(true);
+
+    try {
+      // 1. Immediately flush any pending MCQ answer to backend
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+      pendingMCQSaveRef.current = null;
+
+      const currentSelection = mcqSelections[qId] || currentQ.selected_option_ids || [];
+      if (examData?.assignment_id && currentSelection.length > 0) {
+        try {
+          await submissionsApi.submitMCQ(examData.assignment_id, qId, currentSelection);
+        } catch (err) {
+          console.warn('Failed to flush expired question answer:', err);
+        }
+      }
+
+      // 2. Explicitly lock question on backend
+      try {
+        await examsApi.lockQuestion(id, qId);
+      } catch (err) {
+        console.warn('Backend lock question failed:', err);
+      }
+
+      // 3. Mark this question as locked locally
+      markQuestionLocked(qId);
+
+      // 4. Determine next question
+      const remainingPending = timedMCQs.filter(
+        (q: StudentQuestionView) => q.id !== qId && !lockedQuestionIds.has(q.id) && !q.is_mcq_locked
+      );
+
+      if (remainingPending.length > 0) {
+        const nextTimedQ = remainingPending[0];
+        const nextIdx = questions.findIndex((q) => q.id === nextTimedQ.id);
+        if (nextIdx !== -1) {
+          setActiveQuestionIndex(nextIdx);
+          setSubmissionFeedback(`Question ${currentQ.title} locked. Proceeding to next timed question.`);
+        }
+      } else {
+        // Transition to free navigation across all untimed MCQs and coding questions
+        const firstUntimedIdx = questions.findIndex((q) => !isTimedQuestion(q));
+        if (firstUntimedIdx !== -1) {
+          setActiveQuestionIndex(firstUntimedIdx);
+        } else if (activeQuestionIndex < questions.length - 1) {
+          setActiveQuestionIndex(activeQuestionIndex + 1);
+        }
+        setSubmissionFeedback(`Timed section completed! You can now freely navigate all remaining untimed MCQs and coding questions.`);
+      }
+    } finally {
+      setIsAdvancingTimedMCQ(false);
+    }
+  }, [
+    currentQ,
+    isAdvancingTimedMCQ,
+    mcqSelections,
+    examData?.assignment_id,
+    id,
+    markQuestionLocked,
+    timedMCQs,
+    lockedQuestionIds,
+    questions,
+    setActiveQuestionIndex,
+    isTimedQuestion,
+    activeQuestionIndex,
+  ]);
+
   // Auto-advance & lock when individual question timer reaches zero
   const handleCurrentQuestionExpire = async () => {
     if (!currentQ) return;
-    const qId = currentQ.id;
-
-    // 1. Immediately flush any pending MCQ answer to backend
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = null;
-    }
-    pendingMCQSaveRef.current = null;
-
-    const currentSelection = mcqSelections[qId] || currentQ.selected_option_ids || [];
-    if (examData?.assignment_id && currentSelection.length > 0) {
-      try {
-        await submissionsApi.submitMCQ(examData.assignment_id, qId, currentSelection);
-      } catch (err) {
-        console.warn('Failed to flush expired question answer:', err);
-      }
-    }
-
-    // 2. Mark this question as locked
-    markQuestionLocked(qId);
-
-    // 3. Auto-advance to next question if available
-    if (activeQuestionIndex < questions.length - 1) {
-      const nextIdx = activeQuestionIndex + 1;
-      setActiveQuestionIndex(nextIdx);
-      setSubmissionFeedback(`Time limit reached for ${currentQ.title}. Auto-advanced to next question.`);
+    if (isTimedQuestion(currentQ)) {
+      await handleAdvanceTimedMCQ();
     } else {
-      setSubmissionFeedback(`Time limit reached for ${currentQ.title}. Assessment questions completed.`);
+      markQuestionLocked(currentQ.id);
     }
   };
 
@@ -733,11 +838,21 @@ export const StudentExamWorkspacePage: React.FC = () => {
             questions={questions}
             activeIndex={activeQuestionIndex}
             onSelectIndex={(idx) => {
+              if (isSequentialTimedPhase) {
+                if (questions[idx]?.id !== activeTimedQuestion?.id) {
+                  setSubmissionFeedback(
+                    `Timed Section in progress: Please complete Question ${
+                      questions.findIndex((q) => q.id === activeTimedQuestion?.id) + 1
+                    } first.`
+                  );
+                  return;
+                }
+              }
               const targetQ = questions[idx];
               if (
                 targetQ &&
                 targetQ.question_type === 'mcq' &&
-                lockedQuestionIds.has(targetQ.id) &&
+                (lockedQuestionIds.has(targetQ.id) || targetQ.is_mcq_locked) &&
                 idx !== activeQuestionIndex
               ) {
                 setSubmissionFeedback(`Question ${idx + 1} is locked and cannot be reopened.`);
@@ -748,7 +863,8 @@ export const StudentExamWorkspacePage: React.FC = () => {
               setSubmissionFeedback(null);
             }}
             lockedQuestionIds={lockedQuestionIds}
-          />          {/* Seamless Resizable Workspace Content */}
+          />
+          {/* Seamless Resizable Workspace Content */}
           <div
             ref={horizontalContainerRef}
             className={`flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0 relative ${
@@ -876,6 +992,10 @@ export const StudentExamWorkspacePage: React.FC = () => {
                   saveError={mcqSaveError}
                   onQuestionExpire={handleCurrentQuestionExpire}
                   serverTime={examData?.server_time}
+                  isTimedMCQ={isTimedQuestion ? isTimedQuestion(currentQ) : false}
+                  hasMoreTimedMCQs={pendingTimedMCQs ? pendingTimedMCQs.filter((q: StudentQuestionView) => q.id !== currentQ.id).length > 0 : false}
+                  onAdvanceTimedQuestion={handleAdvanceTimedMCQ}
+                  isAdvancing={isAdvancingTimedMCQ}
                 />
               ) : (
                 <div ref={verticalContainerRef} className="h-full flex flex-col overflow-hidden min-h-0 bg-white dark:bg-slate-900 relative">

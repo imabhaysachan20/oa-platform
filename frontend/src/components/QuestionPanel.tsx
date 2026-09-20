@@ -16,6 +16,8 @@ interface QuestionPanelProps {
   onSelectIndex: (idx: number) => void;
   lockedQuestionIds?: Set<number>;
   serverTime?: string | null;
+  isSequentialTimedPhase?: boolean;
+  activeTimedQuestionId?: number;
 }
 
 export const QuestionPanel: React.FC<QuestionPanelProps> = ({
@@ -26,6 +28,8 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({
   onSelectIndex,
   lockedQuestionIds,
   serverTime,
+  isSequentialTimedPhase,
+  activeTimedQuestionId,
 }) => {
   const currentQ = questions[activeIndex];
   const timer = useQuestionTimer(userId, examId, currentQ, undefined, serverTime);

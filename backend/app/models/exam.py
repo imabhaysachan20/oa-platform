@@ -113,6 +113,7 @@ class AssignedQuestion(Base, TimestampMixin):
     order_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     question_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     question_deadline_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     __table_args__ = (
         UniqueConstraint("assignment_id", "question_id", name="uq_assignment_question"),

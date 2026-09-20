@@ -22,6 +22,9 @@ import {
   AlertTriangle,
   Filter,
   ArrowUpDown,
+  GraduationCap,
+  Building2,
+  Users,
 } from 'lucide-react';
 
 export const AdminCreateExamPage: React.FC = () => {
@@ -44,15 +47,24 @@ export const AdminCreateExamPage: React.FC = () => {
   const [questionSort, setQuestionSort] = useState<'selected_first' | 'title_asc' | 'title_desc' | 'difficulty'>('selected_first');
   const [poolPage, setPoolPage] = useState(1);
   const [poolPageSize, setPoolPageSize] = useState(20);
+
+  // Candidate Access Control State (College & Group Clustering)
+  const [selectedColleges, setSelectedColleges] = useState<string[]>([]);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
+  const [customColleges, setCustomColleges] = useState<string[]>([]);
+  const [customCollegeGroups, setCustomCollegeGroups] = useState<Record<string, string[]>>({});
+  const [activeCollege, setActiveCollege] = useState<string | null>(null);
+  const [collegeSearchQuery, setCollegeSearchQuery] = useState('');
+  const [customCollegeInput, setCustomCollegeInput] = useState('');
   const [customGroupInput, setCustomGroupInput] = useState('');
+
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<number[]>([]);
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [lateEntryWindowMinutes, setLateEntryWindowMinutes] = useState(15);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Fetch available student groups
+  // Fetch available student groups & colleges
   const { data: groupsData } = useQuery({
     queryKey: ['adminStudentGroups'],
     queryFn: () => adminApi.listStudentGroups(),
@@ -64,18 +76,110 @@ export const AdminCreateExamPage: React.FC = () => {
     queryFn: () => adminApi.listQuestions(),
   });
 
-  const handleToggleGroup = (groupName: string) => {
+  // Unified available colleges pool (API + custom created)
+  const allColleges = useMemo(() => {
+    const fromApi = groupsData?.colleges || [];
+    const merged = Array.from(new Set([...fromApi, ...customColleges])).filter(Boolean);
+    return merged.sort((a, b) => a.localeCompare(b));
+  }, [groupsData?.colleges, customColleges]);
+
+  // Filtered colleges by search query
+  const filteredColleges = useMemo(() => {
+    if (!collegeSearchQuery.trim()) return allColleges;
+    const q = collegeSearchQuery.toLowerCase();
+    return allColleges.filter((c) => c.toLowerCase().includes(q));
+  }, [allColleges, collegeSearchQuery]);
+
+  // Unified college -> groups map
+  const allCollegeGroups = useMemo(() => {
+    const baseMap: Record<string, string[]> = { ...(groupsData?.college_groups || {}) };
+    Object.entries(customCollegeGroups).forEach(([col, grps]) => {
+      const existing = baseMap[col] || [];
+      baseMap[col] = Array.from(new Set([...existing, ...grps]));
+    });
+    return baseMap;
+  }, [groupsData?.college_groups, customCollegeGroups]);
+
+  // Set initial activeCollege when colleges load if not yet active
+  React.useEffect(() => {
+    if (!activeCollege && allColleges.length > 0) {
+      setActiveCollege(allColleges[0]);
+    }
+  }, [allColleges, activeCollege]);
+
+  // Handler: Add new custom college to pool
+  const handleAddCustomCollege = () => {
+    const trimmed = customCollegeInput.trim();
+    if (!trimmed) return;
+    if (!allColleges.includes(trimmed)) {
+      setCustomColleges((prev) => [...prev, trimmed]);
+    }
+    if (!selectedColleges.includes(trimmed)) {
+      setSelectedColleges((prev) => [...prev, trimmed]);
+    }
+    setActiveCollege(trimmed);
+    setCustomCollegeInput('');
+  };
+
+  // Handler: Toggle college selection
+  const handleToggleCollege = (collegeName: string) => {
+    setSelectedColleges((prev) => {
+      const exists = prev.includes(collegeName);
+      if (exists) {
+        const colGroups = allCollegeGroups[collegeName] || [];
+        setSelectedGroups((gPrev) => gPrev.filter((g) => !colGroups.includes(g)));
+        return prev.filter((c) => c !== collegeName);
+      } else {
+        return [...prev, collegeName];
+      }
+    });
+    setActiveCollege(collegeName);
+  };
+
+  // Handler: Toggle group selection
+  const handleToggleGroup = (groupName: string, collegeName?: string) => {
     setSelectedGroups((prev) =>
       prev.includes(groupName) ? prev.filter((g) => g !== groupName) : [...prev, groupName]
     );
+    if (collegeName && !selectedColleges.includes(collegeName)) {
+      setSelectedColleges((prev) => [...prev, collegeName]);
+    }
   };
 
-  const handleAddCustomGroup = () => {
-    const trimmed = customGroupInput.trim();
-    if (trimmed && !selectedGroups.includes(trimmed)) {
-      setSelectedGroups((prev) => [...prev, trimmed]);
-      setCustomGroupInput('');
+  // Handler: Select all groups under a college
+  const handleSelectAllInCollege = (collegeName: string) => {
+    const colGroups = allCollegeGroups[collegeName] || [];
+    if (colGroups.length === 0) return;
+    if (!selectedColleges.includes(collegeName)) {
+      setSelectedColleges((prev) => [...prev, collegeName]);
     }
+    setSelectedGroups((prev) => Array.from(new Set([...prev, ...colGroups])));
+  };
+
+  // Handler: Deselect all groups under a college
+  const handleDeselectAllInCollege = (collegeName: string) => {
+    const colGroups = allCollegeGroups[collegeName] || [];
+    setSelectedGroups((prev) => prev.filter((g) => !colGroups.includes(g)));
+  };
+
+  // Handler: Add custom group under active college
+  const handleAddCustomGroupToCollege = (collegeName: string) => {
+    const trimmed = customGroupInput.trim();
+    if (!trimmed) return;
+    setCustomCollegeGroups((prev) => {
+      const existing = prev[collegeName] || [];
+      return {
+        ...prev,
+        [collegeName]: Array.from(new Set([...existing, trimmed])),
+      };
+    });
+    if (!selectedColleges.includes(collegeName)) {
+      setSelectedColleges((prev) => [...prev, collegeName]);
+    }
+    if (!selectedGroups.includes(trimmed)) {
+      setSelectedGroups((prev) => [...prev, trimmed]);
+    }
+    setCustomGroupInput('');
   };
 
   // Helper: Convert local datetime-local string to ISO UTC
@@ -161,6 +265,7 @@ export const AdminCreateExamPage: React.FC = () => {
       medium_count: mediumCount,
       hard_count: hardCount,
       is_published: true,
+      target_colleges: selectedColleges,
       target_groups: selectedGroups,
       question_ids: selectedQuestionIds,
       start_time: toISO(startTime),
@@ -770,113 +875,329 @@ export const AdminCreateExamPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* Candidate Group Access Card */}
+        {/* Candidate Access Control Card (College & Group Selection) */}
         <Card className="space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2 gap-1">
             <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
-              <Layers size={16} className="text-ubi-800 dark:text-ubi-400" />
-              <span>4. Candidate Group Access (Multi-Group Selection)</span>
+              <GraduationCap size={16} className="text-ubi-800 dark:text-ubi-400" />
+              <span>4. Candidate Access Control (College & Group Selection)</span>
             </h2>
-            <span className="text-[11px] text-slate-500 font-medium">
-              {selectedGroups.length > 0 ? `${selectedGroups.length} group(s) selected` : 'Open to All Candidates'}
+            <span className="text-[11px] font-semibold text-slate-500">
+              {selectedColleges.length > 0 || selectedGroups.length > 0
+                ? `${selectedColleges.length} College(s), ${selectedGroups.length} Group(s) selected`
+                : '🌍 Open to All Candidates'}
             </span>
           </div>
 
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Select one or more candidate groups/batches eligible to attempt this online assessment. Leaving this empty makes the assessment available to all registered students.
+            First, select or create a <strong>College</strong>. Then, select specific <strong>Candidate Batches / Groups</strong> clustered within that college, or add new ones. Leaving this empty makes the assessment available to all registered students.
           </p>
 
-          {/* Quick toggle chips from enrolled batches */}
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 text-xs mb-1.5">
-              Available Candidate Batches / Groups:
-            </label>
-            {groupsData?.groups && groupsData.groups.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {groupsData.groups.map((grp) => {
-                  const isSelected = selectedGroups.includes(grp);
+          {/* STEP 1: CHOOSE OR CREATE COLLEGE */}
+          <div className="space-y-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Building2 size={14} className="text-ubi-700 dark:text-ubi-400" />
+                <span>Step 1: Choose or Add College ({allColleges.length} in pool)</span>
+              </label>
+
+              {/* College Search */}
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-2.5 top-2 text-slate-400" size={13} />
+                <input
+                  type="text"
+                  placeholder="Search colleges in pool..."
+                  value={collegeSearchQuery}
+                  onChange={(e) => setCollegeSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* College Cards Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto p-1 bg-slate-50/50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-xl">
+              {filteredColleges.length > 0 ? (
+                filteredColleges.map((college) => {
+                  const isSelected = selectedColleges.includes(college);
+                  const isActive = activeCollege === college;
+                  const collegeGroups = allCollegeGroups[college] || [];
+                  const selectedCountInCol = collegeGroups.filter((g) => selectedGroups.includes(g)).length;
+
                   return (
-                    <button
-                      key={grp}
-                      type="button"
-                      onClick={() => handleToggleGroup(grp)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border ${
-                        isSelected
-                          ? 'bg-ubi-800 text-white border-ubi-900 shadow-sm dark:bg-ubi-700 dark:border-ubi-600'
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-300 dark:border-slate-800'
+                    <div
+                      key={college}
+                      onClick={() => setActiveCollege(college)}
+                      className={`p-3 rounded-xl border transition cursor-pointer flex flex-col justify-between gap-2 ${
+                        isActive
+                          ? 'ring-2 ring-ubi-800 border-ubi-800 bg-ubi-50/70 dark:bg-ubi-950/60 dark:border-ubi-700'
+                          : isSelected
+                          ? 'border-ubi-300 bg-ubi-50/30 dark:border-ubi-800/80 dark:bg-ubi-950/20'
+                          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
                       }`}
                     >
-                      {isSelected ? <CheckSquare size={13} /> : <Square size={13} />}
-                      <span>{grp}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-400 dark:text-slate-500 italic">
-                No candidate batches uploaded yet. You can type and add a group tag below.
-              </p>
-            )}
-          </div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleCollege(college);
+                            }}
+                            className="text-ubi-800 dark:text-ubi-400 p-0.5 hover:scale-110 transition"
+                            title={isSelected ? 'Unselect College' : 'Select College'}
+                          >
+                            {isSelected ? <CheckSquare size={16} /> : <Square size={16} className="text-slate-400" />}
+                          </button>
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate" title={college}>
+                            {college}
+                          </span>
+                        </div>
+                        {isActive && (
+                          <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-ubi-800 text-white dark:bg-ubi-700 shrink-0">
+                            Active
+                          </span>
+                        )}
+                      </div>
 
-          {/* Custom group tag input */}
-          <div className="pt-1">
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 text-xs mb-1">
-              Add Custom or Upcoming Group Tag:
-            </label>
-            <div className="flex gap-2">
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200/60 dark:border-slate-800/60">
+                        <span>{collegeGroups.length} batch(es)</span>
+                        {isSelected && (
+                          <span className="font-semibold text-ubi-700 dark:text-ubi-300 text-[10px]">
+                            {selectedCountInCol > 0 ? `${selectedCountInCol}/${collegeGroups.length} groups` : 'All college candidates'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="col-span-full text-center py-5 text-xs text-slate-400 italic">
+                  {collegeSearchQuery ? `No colleges found matching "${collegeSearchQuery}". Add it below!` : 'No colleges available in pool yet. Create one below.'}
+                </div>
+              )}
+            </div>
+
+            {/* Add Custom College Input */}
+            <div className="flex gap-2 pt-1">
               <input
                 type="text"
-                value={customGroupInput}
-                onChange={(e) => setCustomGroupInput(e.target.value)}
+                value={customCollegeInput}
+                onChange={(e) => setCustomCollegeInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    handleAddCustomGroup();
+                    handleAddCustomCollege();
                   }
                 }}
-                placeholder="e.g. IIT Delhi 2026, Campus Drive 2"
+                placeholder="Type new college name (e.g. IIT Delhi, BITS Pilani, DTU)..."
                 className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
               />
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={handleAddCustomGroup}
-                className="gap-1 font-semibold text-xs"
+                onClick={handleAddCustomCollege}
+                className="gap-1 font-semibold text-xs shrink-0"
               >
                 <Plus size={14} />
-                <span>Add Group</span>
+                <span>Add College</span>
               </Button>
             </div>
           </div>
 
-          {/* Currently selected groups summary */}
-          <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg">
-            <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-              Assigned Groups for this Assessment:
-            </span>
-            {selectedGroups.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {selectedGroups.map((grp) => (
-                  <span
-                    key={grp}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-ubi-50 border border-ubi-200 text-ubi-800 dark:bg-ubi-950 dark:border-ubi-800 dark:text-ubi-300 rounded-md text-xs font-semibold"
-                  >
-                    <span>{grp}</span>
+          {/* STEP 2: CLUSTERED GROUPS FOR ACTIVE COLLEGE */}
+          {activeCollege && (
+            <div className="p-3.5 bg-slate-100/70 dark:bg-slate-900/80 border border-slate-300 dark:border-slate-700 rounded-xl space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+                <div className="flex items-center gap-2">
+                  <Layers size={15} className="text-ubi-800 dark:text-ubi-400" />
+                  <span className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
+                    Step 2: Batches & Groups in <span className="text-ubi-700 dark:text-ubi-300">{activeCollege}</span>
+                  </span>
+                </div>
+
+                {(allCollegeGroups[activeCollege] || []).length > 0 && (
+                  <div className="flex items-center gap-2 text-xs">
                     <button
                       type="button"
-                      onClick={() => handleToggleGroup(grp)}
-                      className="hover:text-rose-600 dark:hover:text-rose-400 p-0.5"
+                      onClick={() => handleSelectAllInCollege(activeCollege)}
+                      className="text-ubi-700 dark:text-ubi-400 hover:underline font-semibold text-[11px]"
                     >
-                      <X size={12} />
+                      + Select All in {activeCollege}
                     </button>
-                  </span>
-                ))}
+                    <span className="text-slate-300 dark:text-slate-700">|</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeselectAllInCollege(activeCollege)}
+                      className="text-rose-600 dark:text-rose-400 hover:underline font-semibold text-[11px]"
+                    >
+                      - Deselect All
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Group Chips */}
+              <div>
+                {(allCollegeGroups[activeCollege] || []).length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {(allCollegeGroups[activeCollege] || []).map((grp) => {
+                      const isSelected = selectedGroups.includes(grp);
+                      return (
+                        <button
+                          key={grp}
+                          type="button"
+                          onClick={() => handleToggleGroup(grp, activeCollege)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border ${
+                            isSelected
+                              ? 'bg-ubi-800 text-white border-ubi-900 shadow-sm dark:bg-ubi-700 dark:border-ubi-600'
+                              : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 dark:bg-slate-950 dark:hover:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                          }`}
+                        >
+                          {isSelected ? <CheckSquare size={13} /> : <Square size={13} />}
+                          <span>{grp}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 dark:text-slate-500 italic">
+                    No batches or groups recorded for {activeCollege} yet. Add a new group below to cluster it under this college!
+                  </p>
+                )}
+              </div>
+
+              {/* Add Custom Group under Active College */}
+              <div className="pt-1">
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 text-xs mb-1">
+                  Add New Batch / Group for <span className="text-ubi-700 dark:text-ubi-300 font-bold">{activeCollege}</span>:
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={customGroupInput}
+                    onChange={(e) => setCustomGroupInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddCustomGroupToCollege(activeCollege);
+                      }
+                    }}
+                    placeholder={`e.g. ${activeCollege} 2026 Batch A, Campus Hire Phase 1...`}
+                    className="flex-1 px-3 py-1.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-ubi-800 focus:outline-none transition"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleAddCustomGroupToCollege(activeCollege)}
+                    className="gap-1 font-semibold text-xs shrink-0"
+                  >
+                    <Plus size={14} />
+                    <span>Add to {activeCollege}</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: ASSIGNED ACCESS SUMMARY */}
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5 text-[11px]">
+                <Users size={13} className="text-ubi-800 dark:text-ubi-400" />
+                <span>Assigned Eligibility for this Assessment:</span>
+              </span>
+              {(selectedColleges.length > 0 || selectedGroups.length > 0) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedColleges([]);
+                    setSelectedGroups([]);
+                  }}
+                  className="text-[10px] text-rose-600 dark:text-rose-400 hover:underline font-semibold"
+                >
+                  Clear All (Open to All)
+                </button>
+              )}
+            </div>
+
+            {selectedColleges.length > 0 || selectedGroups.length > 0 ? (
+              <div className="space-y-2 pt-1">
+                {selectedColleges.map((college) => {
+                  const colGroups = (allCollegeGroups[college] || []).filter((g) => selectedGroups.includes(g));
+                  return (
+                    <div
+                      key={college}
+                      className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-ubi-900 dark:text-ubi-200">
+                          <Building2 size={13} className="text-ubi-700 dark:text-ubi-400" />
+                          <span>{college}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {colGroups.length > 0 ? (
+                            colGroups.map((grp) => (
+                              <span
+                                key={grp}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-ubi-50 dark:bg-ubi-950/60 border border-ubi-200 dark:border-ubi-800 text-ubi-800 dark:text-ubi-300 rounded text-[11px] font-medium"
+                              >
+                                <span>{grp}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleGroup(grp)}
+                                  className="hover:text-rose-600 dark:hover:text-rose-400 p-0.5"
+                                >
+                                  <X size={10} />
+                                </button>
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-[11px] text-slate-500 italic">
+                              All candidates in {college} eligible
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleCollege(college)}
+                        className="text-xs text-rose-600 dark:text-rose-400 hover:underline font-semibold shrink-0 self-end sm:self-center flex items-center gap-1 text-[11px]"
+                      >
+                        <X size={12} />
+                        <span>Remove College</span>
+                      </button>
+                    </div>
+                  );
+                })}
+
+                {/* Any standalone selected groups that don't belong to a selected college */}
+                {selectedGroups
+                  .filter((grp) => !selectedColleges.some((c) => (allCollegeGroups[c] || []).includes(grp)))
+                  .map((grp) => (
+                    <div
+                      key={grp}
+                      className="p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg flex items-center justify-between text-xs"
+                    >
+                      <span className="inline-flex items-center gap-1.5 font-medium text-slate-800 dark:text-slate-200">
+                        <Layers size={12} className="text-slate-400" />
+                        <span>Other Batch: <strong>{grp}</strong></span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleGroup(grp)}
+                        className="text-rose-600 dark:text-rose-400 hover:text-rose-700 p-0.5"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
               </div>
             ) : (
-              <span className="text-xs text-slate-500 dark:text-slate-400 italic">
-                None selected — this assessment will be accessible by all registered candidates.
+              <span className="block text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800/60 font-medium">
+                Open to All Candidates — No restrictions applied. All registered students can attempt.
               </span>
             )}
           </div>

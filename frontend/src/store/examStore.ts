@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { StudentQuestionView, AssignmentStatus, RunCodeResponse } from '../types';
+import { StudentQuestionView, AssignmentStatus, RunCodeResponse, SubmitCodeResponse } from '../types';
 
 export const STARTER_CODE: Record<string, string> = {
   python: `# Write your Python solution here\nimport sys\n\ndef solve():\n    lines = sys.stdin.read().splitlines()\n    if not lines:\n        return\n    # Process input...\n\nif __name__ == "__main__":\n    solve()\n`,
@@ -23,6 +23,8 @@ interface ExamState {
   selectedLanguage: Record<number, string>;
   // questionId -> last run output
   runOutputs: Record<number, RunCodeResponse | null>;
+  // questionId -> last submission output
+  submissionOutputs: Record<number, SubmitCodeResponse | null>;
   // questionId -> array of selected MCQ option IDs
   mcqSelections: Record<number, string[]>;
   isRunningCode: boolean;
@@ -41,6 +43,7 @@ interface ExamState {
   setCodeDraft: (questionId: number, language: string, code: string) => void;
   setSelectedLanguage: (questionId: number, language: string) => void;
   setRunOutput: (questionId: number, output: RunCodeResponse | null) => void;
+  setSubmissionOutput: (questionId: number, output: SubmitCodeResponse | null) => void;
   setMCQSelection: (questionId: number, selectedOptionIds: string[]) => void;
   updateQuestionDeadline: (questionId: number, deadline: string) => void;
   setIsRunningCode: (val: boolean) => void;
@@ -60,6 +63,7 @@ export const useExamStore = create<ExamState>((set) => ({
   codeDrafts: {},
   selectedLanguage: {},
   runOutputs: {},
+  submissionOutputs: {},
   mcqSelections: {},
   isRunningCode: false,
   isSubmittingCode: false,
@@ -70,6 +74,7 @@ export const useExamStore = create<ExamState>((set) => ({
       const drafts = isSameSession ? { ...state.codeDrafts } : {};
       const langs = isSameSession ? { ...state.selectedLanguage } : {};
       const runOutputs = isSameSession ? { ...state.runOutputs } : {};
+      const submissionOutputs = isSameSession ? { ...state.submissionOutputs } : {};
       const mcqSelections = isSameSession ? { ...state.mcqSelections } : {};
 
       questions.forEach((q) => {
@@ -108,6 +113,7 @@ export const useExamStore = create<ExamState>((set) => ({
         codeDrafts: drafts,
         selectedLanguage: langs,
         runOutputs,
+        submissionOutputs,
         mcqSelections,
       };
     });
@@ -148,6 +154,14 @@ export const useExamStore = create<ExamState>((set) => ({
     set((state) => ({
       runOutputs: {
         ...state.runOutputs,
+        [questionId]: output,
+      },
+    })),
+
+  setSubmissionOutput: (questionId, output) =>
+    set((state) => ({
+      submissionOutputs: {
+        ...state.submissionOutputs,
         [questionId]: output,
       },
     })),

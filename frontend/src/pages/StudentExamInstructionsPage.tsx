@@ -15,6 +15,7 @@ import {
   MapPinOff,
   CheckCircle2,
   RefreshCw,
+  Check,
 } from 'lucide-react';
 
 export const StudentExamInstructionsPage: React.FC = () => {
@@ -31,6 +32,8 @@ export const StudentExamInstructionsPage: React.FC = () => {
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('prompt');
   const [locationCoords, setLocationCoords] = useState<{ latitude: number; longitude: number; accuracy?: number } | null>(null);
   const [locationErrorMsg, setLocationErrorMsg] = useState<string | null>(null);
+
+  const isLocationVerified = locationStatus === 'granted' && !!locationCoords;
 
   // Request high-accuracy geolocation from browser
   const requestLocation = useCallback(() => {
@@ -173,7 +176,13 @@ export const StudentExamInstructionsPage: React.FC = () => {
     return () => clearInterval(interval);
   }, [exam]);
 
-  const isLocationVerified = locationStatus === 'granted' && !!locationCoords;
+  // Auto-reset acknowledgment if location is not verified
+  useEffect(() => {
+    if (!isLocationVerified) {
+      setAgreedToTerms(false);
+    }
+  }, [isLocationVerified]);
+
   const isResuming = exam?.assignment_status === 'in_progress' || myQuestionsData?.status === 'in_progress';
 
   const handleProceed = async () => {
@@ -198,6 +207,17 @@ export const StudentExamInstructionsPage: React.FC = () => {
       telemetry.location_status = 'granted';
 
       const res = await examsApi.start(id, telemetry);
+      // Sort questions: Timed MCQs first, then Untimed MCQs, then Coding Questions
+      const rawQuestions = res.questions || [];
+      const timedMCQs = rawQuestions.filter(
+        (q: any) => q.question_type === 'mcq' && Boolean(q.mcq_time_limit_seconds && q.mcq_time_limit_seconds > 0)
+      );
+      const untimedMCQs = rawQuestions.filter(
+        (q: any) => q.question_type === 'mcq' && (!q.mcq_time_limit_seconds || q.mcq_time_limit_seconds <= 0)
+      );
+      const codingQuestions = rawQuestions.filter((q: any) => q.question_type !== 'mcq');
+      const sortedQuestions = [...timedMCQs, ...untimedMCQs, ...codingQuestions];
+
       setExamSession(
         res.exam_id,
         res.assignment_id,
@@ -205,7 +225,7 @@ export const StudentExamInstructionsPage: React.FC = () => {
         res.status,
         res.started_at,
         res.deadline_at,
-        res.questions
+        sortedQuestions
       );
 
       // Single-use authorization for workspace entry
@@ -261,6 +281,9 @@ export const StudentExamInstructionsPage: React.FC = () => {
   const questionsList = myQuestionsData?.questions || (exam as any).questions || [];
   const codingQuestions = questionsList.filter((q: any) => (q.question_type || 'coding') === 'coding');
   const mcqQuestions = questionsList.filter((q: any) => q.question_type === 'mcq');
+  
+  const timedMcqCount = mcqQuestions.filter((q: any) => Boolean(q.mcq_time_limit_seconds && q.mcq_time_limit_seconds > 0)).length;
+  const untimedMcqCount = mcqQuestions.filter((q: any) => !q.mcq_time_limit_seconds || q.mcq_time_limit_seconds <= 0).length;
   
   const patternEasy = exam.easy_count ?? 1;
   const patternMed = exam.medium_count ?? 2;
@@ -495,11 +518,11 @@ export const StudentExamInstructionsPage: React.FC = () => {
               </div>
             </li>
 
-            {/* 2. Server-Synchronized Timer & Auto-Submit */}
+            {/* 2. Assessment Timer & Auto-Submit */}
             <li>
-              <span className="font-semibold text-slate-900 dark:text-white">Server-Synchronized Timer & Auto-Submit:</span>
+              <span className="font-semibold text-slate-900 dark:text-white">Assessment Timer & Auto-Submit:</span>
               <p className="mt-1.5 text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-                The test timer is set to <strong>{duration} minutes</strong> and is synchronized with server time. The clock starts immediately upon clicking <strong>Proceed to Assessment</strong>. Refreshing or closing the tab will not pause the timer. When the timer hits 00:00:00, all current code and answers will auto-submit.
+                The test timer is set to <strong>{duration} minutes</strong>. The clock starts immediately upon clicking <strong>Proceed to Assessment</strong>. Refreshing or closing the tab will not pause the timer. When the timer hits 00:00:00, all current code and answers will auto-submit.
               </p>
             </li>
 
@@ -514,13 +537,24 @@ export const StudentExamInstructionsPage: React.FC = () => {
               </li>
             )}
 
-
             {/* 5. Multiple Choice Questions (If MCQ Questions exist) */}
             {mcqCount > 0 && (
               <li>
                 <span className="font-semibold text-slate-900 dark:text-white">Multiple Choice Questions (MCQs):</span>
                 <p className="mt-1.5 text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-                  For MCQ problems, read the prompt carefully and select your choice(s). Questions may be single-select or multi-select as specified. Your choices are saved automatically.
+                  {timedMcqCount > 0 && untimedMcqCount > 0 ? (
+                    <>
+                      MCQs are presented in two sections: <strong>Timed MCQs</strong> followed by <strong>Untimed MCQs</strong>. Timed MCQs have individual question time limits and lock automatically once answered or when time expires. Untimed MCQs are completed under the overall assessment timer.
+                    </>
+                  ) : timedMcqCount > 0 ? (
+                    <>
+                      MCQs in this assessment are <strong>Timed Questions</strong>. Each question has an individual time limit and locks automatically once answered or when its time limit expires.
+                    </>
+                  ) : (
+                    <>
+                      MCQs are managed under the overall assessment timer. You may navigate between questions to review or update your choices before submitting.
+                    </>
+                  )}
                 </p>
               </li>
             )}
@@ -537,7 +571,7 @@ export const StudentExamInstructionsPage: React.FC = () => {
             <li>
               <span className="font-semibold text-slate-900 dark:text-white">Single Session & Device/Location Verification:</span>
               <p className="mt-1.5 text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-                Only one active session is permitted per candidate. Logging in from another device will immediately terminate your active session. Client hardware specifications and location coordinates are captured in the proctoring audit log each time you start or resume this assessment.
+                Only one active session is permitted per candidate. Logging in from another device will immediately terminate your active session. Client hardware specifications and device location are captured in the proctoring audit log each time you start or resume this assessment.
               </p>
             </li>
 
@@ -551,11 +585,11 @@ export const StudentExamInstructionsPage: React.FC = () => {
               </li>
             )}
 
-            {/* 8. Question Navigation & Final Submission */}
+            {/* 9. Question Navigation & Final Submission */}
             <li>
               <span className="font-semibold text-slate-900 dark:text-white">Question Navigation & Submission:</span>
               <p className="mt-1.5 text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-                You can switch between assigned questions anytime using the question navigation panel. Click <strong>Submit Solution</strong> on each coding problem before finishing your assessment.
+                You can switch between untimed MCQs and coding questions using the top navigation panel. Click <strong>Submit Solution</strong> on each coding problem before finishing your assessment.
               </p>
             </li>
           </ol>
@@ -563,112 +597,140 @@ export const StudentExamInstructionsPage: React.FC = () => {
 
         {/* SECTION 3: BOTTOM CONFIRMATION & PROCEED BUTTON */}
         <div className="max-w-3xl pt-8 mt-10 border-t border-slate-200/80 dark:border-slate-800 space-y-6 shrink-0">
-          {/* Device Location Verification Card */}
-          <div className={`p-4 rounded-xl border transition-all ${
-            locationStatus === 'granted'
-              ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
-              : locationStatus === 'denied'
-              ? 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800'
-              : locationStatus === 'requesting'
-              ? 'bg-blue-50/70 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800'
-              : 'bg-amber-50/70 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800'
-          }`}>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <div className={`p-2 rounded-lg shrink-0 mt-0.5 ${
-                  locationStatus === 'granted'
-                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300'
-                    : locationStatus === 'denied'
-                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300'
-                    : locationStatus === 'requesting'
-                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
-                    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
-                }`}>
+          {/* Device Location Verification Card - UsefulBI Brand Design */}
+          <div
+            className={`p-3 sm:px-4 sm:py-2.5 rounded-xl border transition-all duration-150 shadow-2xs relative overflow-hidden ${
+              locationStatus === 'granted'
+                ? 'bg-ubi-50/70 dark:bg-ubi-950/30 border-ubi-200 dark:border-ubi-800/80 border-l-4 border-l-ubi-800 dark:border-l-ubi-400'
+                : locationStatus === 'denied'
+                ? 'bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/60 border-l-4 border-l-rose-600'
+                : locationStatus === 'requesting'
+                ? 'bg-sky-50/60 dark:bg-sky-950/20 border-sky-200 dark:border-sky-800/60 border-l-4 border-l-sky-600'
+                : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 border-l-4 border-l-ubi-700 dark:border-l-ubi-500'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                {/* Icon Badge */}
+                <div
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-2xs transition-colors ${
+                    locationStatus === 'granted'
+                      ? 'bg-ubi-100 text-ubi-800 dark:bg-ubi-900/60 dark:text-ubi-300'
+                      : locationStatus === 'denied'
+                      ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300'
+                      : locationStatus === 'requesting'
+                      ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/60 dark:text-sky-300'
+                      : 'bg-ubi-100 text-ubi-800 dark:bg-ubi-900/60 dark:text-ubi-300'
+                  }`}
+                >
                   {locationStatus === 'granted' ? (
-                    <CheckCircle2 size={20} />
+                    <CheckCircle2 size={15} className="text-ubi-800 dark:text-ubi-400" />
                   ) : locationStatus === 'denied' ? (
-                    <MapPinOff size={20} />
+                    <MapPinOff size={15} className="text-rose-600 dark:text-rose-400" />
                   ) : locationStatus === 'requesting' ? (
-                    <RefreshCw size={20} className="animate-spin" />
+                    <RefreshCw size={15} className="animate-spin text-sky-600 dark:text-sky-400" />
                   ) : (
-                    <MapPin size={20} />
+                    <MapPin size={15} className="text-ubi-700 dark:text-ubi-400" />
                   )}
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+
+                <div className="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-center sm:gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
                       Device Location Verification
                     </h4>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                      locationStatus === 'granted'
-                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300'
-                        : locationStatus === 'denied'
-                        ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-300'
-                        : locationStatus === 'requesting'
-                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300'
-                        : 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300'
-                    }`}>
+                    <span
+                      className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider border shadow-2xs ${
+                        locationStatus === 'granted'
+                          ? 'bg-ubi-100/90 text-ubi-900 border-ubi-300 dark:bg-ubi-950/80 dark:text-ubi-300 dark:border-ubi-800'
+                          : locationStatus === 'denied'
+                          ? 'bg-rose-100/90 text-rose-800 border-rose-300 dark:bg-rose-950/80 dark:text-rose-300 dark:border-rose-800'
+                          : locationStatus === 'requesting'
+                          ? 'bg-sky-100/90 text-sky-800 border-sky-300 dark:bg-sky-950/80 dark:text-sky-300 dark:border-sky-800 animate-pulse'
+                          : 'bg-amber-100/90 text-amber-900 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800'
+                      }`}
+                    >
                       {locationStatus === 'granted'
-                        ? 'Verified'
+                        ? '✓ Verified'
                         : locationStatus === 'denied'
-                        ? 'Access Denied'
+                        ? '✕ Denied'
                         : locationStatus === 'requesting'
                         ? 'Requesting...'
                         : 'Required'}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
-                    {locationStatus === 'granted' ? (
-                      <span>
-                        Device location verified: <strong className="font-mono text-emerald-700 dark:text-emerald-300">{locationCoords?.latitude}°, {locationCoords?.longitude}°</strong> {locationCoords?.accuracy ? `(±${locationCoords.accuracy}m)` : ''}. Coordinates will be logged in proctoring records.
-                      </span>
-                    ) : locationStatus === 'denied' ? (
-                      <span>
-                        {locationErrorMsg || 'Browser location access was blocked. Institutional proctoring requires physical device location before starting or resuming.'}
-                      </span>
-                    ) : locationStatus === 'requesting' ? (
-                      <span>
-                        Requesting browser location permission. Please click <strong>&quot;Allow&quot;</strong> on the browser prompt to proceed.
-                      </span>
-                    ) : (
-                      <span>
-                        Institutional proctoring rules require physical device coordinates to {isResuming ? 'resume' : 'start'} this assessment.
-                      </span>
-                    )}
+
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 truncate sm:mt-0 mt-0.5">
+                    {locationStatus === 'granted'
+                      ? 'Device location verified. Proctoring requirements met.'
+                      : locationStatus === 'denied'
+                      ? locationErrorMsg || 'Location access denied. Please allow location in browser.'
+                      : locationStatus === 'requesting'
+                      ? 'Prompting browser for device location permission...'
+                      : `Device location verification required to ${isResuming ? 'resume' : 'start'} assessment.`}
                   </p>
                 </div>
               </div>
 
+              {/* Action Button */}
               {locationStatus !== 'granted' && (
                 <button
                   type="button"
                   onClick={requestLocation}
                   disabled={locationStatus === 'requesting'}
-                  className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className={`shrink-0 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                    locationStatus === 'denied'
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                      : locationStatus === 'requesting'
+                      ? 'bg-sky-600 text-white cursor-not-allowed'
+                      : 'bg-ubi-800 hover:bg-ubi-900 text-white'
+                  }`}
                 >
-                  <RefreshCw size={12} className={locationStatus === 'requesting' ? 'animate-spin' : ''} />
-                  <span>{locationStatus === 'denied' ? 'Retry Permission' : 'Grant Location'}</span>
+                  <RefreshCw size={11} className={locationStatus === 'requesting' ? 'animate-spin' : ''} />
+                  <span>{locationStatus === 'denied' ? 'Retry' : locationStatus === 'requesting' ? 'Requesting...' : 'Grant Location'}</span>
                 </button>
               )}
             </div>
           </div>
 
-          {/* Acknowledgment Checkbox */}
-          <div className="flex items-start gap-3">
-            <input
-              id="ack-instructions-page"
-              type="checkbox"
-              checked={agreedToTerms}
-              onChange={(e) => setAgreedToTerms(e.target.checked)}
-              disabled={!isLive || isExpired}
-              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-ubi-800 focus:ring-ubi-600 cursor-pointer disabled:opacity-50"
-            />
-            <label
-              htmlFor="ack-instructions-page"
-              className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 cursor-pointer font-medium select-none leading-relaxed"
-            >
-              I have carefully read all assessment instructions & proctoring guidelines.
-            </label>
+          {/* Custom UsefulBI Acknowledgment Checkbox (Locked until location is verified) */}
+          <div
+            onClick={() => {
+              if (isLive && !isExpired && isLocationVerified) {
+                setAgreedToTerms(!agreedToTerms);
+              }
+            }}
+            title={!isLocationVerified ? 'Please verify your device location above first' : ''}
+            className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-all select-none ${
+              !isLocationVerified
+                ? 'opacity-40 bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800 cursor-not-allowed'
+                : agreedToTerms
+                ? 'bg-ubi-50/60 dark:bg-ubi-950/30 border-ubi-300 dark:border-ubi-800 shadow-2xs cursor-pointer'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer'
+            }`}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div
+                className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-all border ${
+                  !isLocationVerified
+                    ? 'bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-700'
+                    : agreedToTerms
+                    ? 'bg-ubi-800 border-ubi-800 text-white dark:bg-ubi-600 dark:border-ubi-600 shadow-2xs'
+                    : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600'
+                }`}
+              >
+                {agreedToTerms && <Check size={14} className="text-white stroke-[3]" />}
+              </div>
+              <span className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 font-medium leading-relaxed truncate">
+                I have carefully read all assessment instructions & proctoring guidelines.
+              </span>
+            </div>
+
+            {!isLocationVerified && (
+              <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400 shrink-0 uppercase tracking-wider">
+                Verify Location First
+              </span>
+            )}
           </div>
 
           {/* Action Buttons */}
@@ -676,10 +738,10 @@ export const StudentExamInstructionsPage: React.FC = () => {
             <button
               onClick={handleProceed}
               disabled={!agreedToTerms || isStarting || !isLive || isExpired || !isLocationVerified}
-              className={`px-8 py-3 font-bold text-sm rounded shadow-sm transition-all flex items-center gap-2 cursor-pointer ${
+              className={`px-8 py-3 font-bold text-sm rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer ${
                 isResuming
-                  ? 'bg-amber-600 hover:bg-amber-700 text-white disabled:bg-amber-600/50 disabled:cursor-not-allowed'
-                  : 'bg-[#007a3d] hover:bg-[#006331] text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white disabled:bg-amber-600/50 disabled:cursor-not-allowed shadow-amber-900/20'
+                  : 'bg-ubi-800 hover:bg-ubi-900 text-white shadow-ubi-900/20 disabled:opacity-50 disabled:cursor-not-allowed'
               }`}
             >
               {isStarting ? (
@@ -694,8 +756,10 @@ export const StudentExamInstructionsPage: React.FC = () => {
               ) : !isLocationVerified ? (
                 <span className="flex items-center gap-1.5">
                   <MapPin size={15} />
-                  <span>Location Required to {isResuming ? 'Resume' : 'Start'}</span>
+                  <span>Grant Location First</span>
                 </span>
+              ) : !agreedToTerms ? (
+                <span>Check Acknowledgment to Proceed</span>
               ) : isResuming ? (
                 <span>Resume Assessment</span>
               ) : (
@@ -706,7 +770,7 @@ export const StudentExamInstructionsPage: React.FC = () => {
             <button
               onClick={() => navigate('/')}
               disabled={isStarting}
-              className="px-6 py-3 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-sm rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+              className="px-6 py-3 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-sm rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
             >
               Cancel
             </button>

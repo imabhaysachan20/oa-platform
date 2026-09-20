@@ -20,6 +20,7 @@ from backend.app.models.submission import Submission
 from backend.app.models.result import QuestionScore
 from backend.app.schemas.exam import (
     ExamCreate,
+    ExamUpdate,
     ExamResponse,
     MonitoringStudentView,
     CandidateDossierResponse

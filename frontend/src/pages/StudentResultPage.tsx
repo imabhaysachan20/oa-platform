@@ -6,7 +6,7 @@ import { useAuthStore } from '../store/authStore';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
-import { CheckCircle, LogOut, Trophy, ArrowRight, Home } from 'lucide-react';
+import { CheckCircle, CheckCircle2, LogOut, Trophy, ArrowRight, Home, Star, Send, Sparkles, ThumbsUp } from 'lucide-react';
 
 export const StudentResultPage: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
@@ -14,6 +14,11 @@ export const StudentResultPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const isAdmin = user?.role === 'admin';
+
+  // Interactive Feedback State for Students (Called unconditionally at top level)
+  const [rating, setRating] = React.useState<number>(0);
+  const [hoverRating, setHoverRating] = React.useState<number>(0);
+  const [feedbackSubmitted, setFeedbackSubmitted] = React.useState<boolean>(false);
 
   const { data: result, isLoading, error } = useQuery({
     queryKey: ['myExamResult', id],
@@ -24,6 +29,11 @@ export const StudentResultPage: React.FC = () => {
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const handleRate = (selectedStar: number) => {
+    setRating(selectedStar);
+    setFeedbackSubmitted(true);
   };
 
   if (isLoading) {
@@ -48,50 +58,83 @@ export const StudentResultPage: React.FC = () => {
     );
   }
 
-  // Student View: Just "Thank you for attending" and Logout screen
+  // Student View: Native Page Layout (Clean circular check icon, single Log Out button)
   if (!isAdmin) {
+    const activeRating = hoverRating || rating;
+
     return (
-      <div className="min-h-[80vh] flex items-center justify-center px-4 py-12 animate-fadeIn">
-        <div className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 sm:p-10 shadow-xl dark:shadow-2xl text-center space-y-6">
-          {/* UsefulBI Logo */}
-          <div className="inline-flex items-center justify-center">
-            <img
-              src="/UsefulBI_Logo_Main.webp"
-              alt="UsefulBI"
-              className="h-10 w-auto object-contain"
-            />
-          </div>
-
-          {/* Success Check Icon */}
-          <div className="flex justify-center">
-            <div className="w-20 h-20 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-sm animate-scaleIn">
-              <CheckCircle size={44} />
-            </div>
-          </div>
-
-          {/* Thank you message */}
-          <div className="space-y-2">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              Thank you for attending!
-            </h1>
-            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-              Your test has been successfully submitted. You may now safely log out of the testing platform.
-            </p>
-          </div>
-
-          {/* Logout Action */}
-          <div className="pt-4">
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={handleLogout}
-              className="w-full justify-center gap-2 font-bold text-base py-3 shadow-md"
-            >
-              <LogOut size={18} />
-              <span>Log Out</span>
-            </Button>
+      <div className="max-w-2xl mx-auto px-4 py-12 sm:py-16 space-y-6 animate-fadeIn text-center">
+        
+        {/* Clean Circular Check Icon */}
+        <div className="flex justify-center">
+          <div className="w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto shadow-sm">
+            <CheckCircle2 size={36} className="stroke-[2]" />
           </div>
         </div>
+
+        {/* Headline & Subtext */}
+        <div className="space-y-2">
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+            Thank You for Attending!
+          </h1>
+          <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+            Your test has been successfully submitted and recorded. You may now safely log out of the platform.
+          </p>
+        </div>
+
+
+
+        {/* Minimalist Candidate Feedback Section */}
+        <div className="max-w-xs mx-auto pt-2">
+          {feedbackSubmitted ? (
+            <div className="bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 rounded-xl p-3 text-center animate-fadeIn">
+              <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                Thank you for your feedback!
+              </p>
+            </div>
+          ) : (
+            <div className="bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 rounded-xl p-3 text-center space-y-1.5">
+              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+                Rate your test experience (Optional)
+              </span>
+              <div className="flex items-center justify-center gap-1">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => handleRate(star)}
+                    onMouseEnter={() => setHoverRating(star)}
+                    onMouseLeave={() => setHoverRating(0)}
+                    className="p-1 rounded-md hover:scale-110 transition-transform focus:outline-none"
+                  >
+                    <Star
+                      size={18}
+                      className={`transition-colors ${
+                        star <= activeRating
+                          ? 'fill-amber-400 text-amber-400'
+                          : 'text-slate-300 dark:text-slate-700'
+                      }`}
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Single Log Out Action */}
+        <div className="pt-2 flex justify-center">
+          <Button
+            variant="primary"
+            size="md"
+            onClick={handleLogout}
+            className="w-full sm:w-auto px-10 justify-center gap-2 font-bold text-sm py-2.5 rounded-xl shadow-sm"
+          >
+            <LogOut size={16} />
+            <span>Log Out</span>
+          </Button>
+        </div>
+
       </div>
     );
   }

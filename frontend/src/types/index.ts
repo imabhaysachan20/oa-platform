@@ -131,6 +131,16 @@ export interface StudentQuestionView {
   is_mcq_locked?: boolean;
 }
 
+export const getQuestionMarks = (q?: StudentQuestionView | null): number => {
+  if (!q) return 10;
+  if (q.marks != null && q.marks > 0) return q.marks;
+  const diff = (q.difficulty || '').toString().toLowerCase();
+  if (diff === 'easy') return 10;
+  if (diff === 'medium') return 20;
+  if (diff === 'hard') return 30;
+  return 10;
+};
+
 export interface SubmitMCQResponsePayload {
   assignment_id: number;
   question_id: number;

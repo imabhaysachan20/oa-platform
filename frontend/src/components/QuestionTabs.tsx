@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { StudentQuestionView } from '../types';
-import { Lock, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface QuestionTabsProps {
   questions: StudentQuestionView[];
@@ -78,7 +78,10 @@ export const QuestionTabs: React.FC<QuestionTabsProps> = ({
         {questions.map((q, idx) => {
           const isSelected = activeIndex === idx;
           const isMCQ = q.question_type === 'mcq';
-          const isLocked = isMCQ && (Boolean(lockedQuestionIds?.has(q.id)) || Boolean(q.is_mcq_locked));
+          const isCodingAccepted = !isMCQ && (q.status?.toLowerCase() === 'accepted' || Boolean(lockedQuestionIds?.has(q.id)));
+          const isLocked = isMCQ
+            ? (Boolean(lockedQuestionIds?.has(q.id)) || Boolean(q.is_mcq_locked))
+            : isCodingAccepted;
           const isSubmitted = isMCQ
             ? Boolean(q.selected_option_ids && q.selected_option_ids.length > 0)
             : Boolean(q.status && q.status !== 'unattempted');
@@ -116,7 +119,11 @@ export const QuestionTabs: React.FC<QuestionTabsProps> = ({
 
               {/* Status Indicator */}
               {isLocked ? (
-                <Lock size={12} className={isSelected ? 'text-white' : 'text-slate-400'} />
+                <Check
+                  size={13}
+                  strokeWidth={3}
+                  className="text-emerald-600 dark:text-emerald-400"
+                />
               ) : isSubmitted ? (
                 <Check
                   size={13}

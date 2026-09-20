@@ -5,9 +5,11 @@ import { X } from 'lucide-react';
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
-  title: string;
+  title?: React.ReactNode;
   children: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl' | 'full';
+  headerExtra?: React.ReactNode;
+  hideHeader?: boolean;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -16,6 +18,8 @@ export const Modal: React.FC<ModalProps> = ({
   title,
   children,
   maxWidth = 'md',
+  headerExtra,
+  hideHeader = false,
 }) => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -58,15 +62,24 @@ export const Modal: React.FC<ModalProps> = ({
         className={`w-full ${maxWidthStyles[maxWidth]} max-h-[86vh] flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-5 sm:p-6 relative overflow-hidden`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between pb-3.5 border-b border-slate-200 dark:border-slate-800 shrink-0">
-          <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 truncate pr-4">{title}</h3>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition shrink-0"
-          >
-            <X size={18} />
-          </button>
-        </div>
+        {!hideHeader && (
+          <div className="flex items-center justify-between pb-3.5 border-b border-slate-200 dark:border-slate-800 shrink-0 gap-3">
+            {typeof title === 'string' ? (
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 truncate pr-2">{title}</h3>
+            ) : (
+              <div className="flex-1 min-w-0">{title}</div>
+            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {headerExtra}
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition shrink-0"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+        )}
         <div className="pt-4 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-0 text-slate-800 dark:text-slate-200 font-sans">{children}</div>
       </div>
     </div>,

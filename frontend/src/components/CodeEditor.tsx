@@ -140,10 +140,10 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             disabled={readOnly}
             className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-ubi-800 font-semibold shadow-sm"
           >
-            <option value="python">Python 3 (Judge0)</option>
+            <option value="python">Python 3</option>
             <option value="javascript">JavaScript (Node.js)</option>
-            <option value="cpp">C++ (GCC 9.2)</option>
-            <option value="java">Java (OpenJDK 13)</option>
+            <option value="cpp">C++</option>
+            <option value="java">Java</option>
           </select>
         </div>
 
@@ -211,28 +211,25 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
         title="Reset Code Template"
         maxWidth="sm"
       >
-        <div className="space-y-4">
-          <div className="flex items-start gap-3 p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl text-amber-900 dark:text-amber-200">
-            <AlertTriangle className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" size={18} />
-            <p className="text-xs leading-relaxed font-sans">
-              Are you sure you want to reset the code editor to the default starter template? All your current code modifications will be lost.
-            </p>
-          </div>
+        <div className="space-y-4 pt-1 font-sans">
+          <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+            Are you sure you want to reset the code editor to the default starter template? All your current code modifications will be lost.
+          </p>
 
-          <div className="flex items-center justify-end gap-2.5 pt-2">
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setIsResetModalOpen(false)}
-              className="text-xs font-semibold"
+              className="text-xs font-semibold px-4"
             >
               Cancel
             </Button>
             <Button
-              variant="primary"
+              variant="danger"
               size="sm"
-              className="bg-amber-600 hover:bg-amber-700 text-white border-amber-700 text-xs font-semibold shadow-sm"
               onClick={handleConfirmReset}
+              className="text-xs font-semibold px-4"
             >
               Reset Code
             </Button>

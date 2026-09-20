@@ -1,6 +1,6 @@
 import React from 'react';
 import { Badge } from './ui/Badge';
-import { StudentQuestionView } from '../types';
+import { StudentQuestionView, getQuestionMarks } from '../types';
 import { Clock, HardDrive, CheckCircle2, Code2, AlignLeft, Lock } from 'lucide-react';
 import { MarkdownRenderer } from './ui/RichTextEditor';
 
@@ -73,23 +73,21 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({
                 )}
                 {timer.hasTimer && (
                   <span
-                    className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-mono font-bold text-xs shadow-xs transition-colors ${
                       timer.hasExpired
-                        ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-400 dark:border-rose-800'
-                        : timer.isExpiringSoon
-                        ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-400 dark:border-amber-800 animate-pulse'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                        ? 'text-slate-500 bg-slate-200 border-slate-300 dark:text-slate-400 dark:bg-slate-800 dark:border-slate-700'
+                        : 'text-slate-800 bg-slate-100 border-slate-200 dark:text-slate-100 dark:bg-slate-800 dark:border-slate-700'
                     }`}
                   >
-                    <Clock size={12} />
-                    {timer.hasExpired ? 'Time Expired' : `${timer.formattedTime} left`}
+                    <Clock size={14} className="text-slate-500 dark:text-slate-400" />
+                    <span>{timer.hasExpired ? 'Time Expired' : timer.formattedTime}</span>
                   </span>
                 )}
               </div>
             ) : (
               <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 font-medium">
                 <span className="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold">
-                  +{currentQ.marks ?? 10} {(currentQ.marks ?? 10) === 1 ? 'Mark' : 'Marks'}
+                  +{getQuestionMarks(currentQ)} {getQuestionMarks(currentQ) === 1 ? 'Mark' : 'Marks'}
                 </span>
                 <span className="flex items-center gap-1">
                   <Clock size={13} className="text-slate-400" />

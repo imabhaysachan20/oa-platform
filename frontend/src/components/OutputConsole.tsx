@@ -7,9 +7,12 @@ import {
   Copy, 
   Check, 
   Maximize2, 
-  Minimize2 
+  Minimize2,
+  Play,
+  Send
 } from 'lucide-react';
 import { RunCodeResponse } from '../types';
+import { Button } from './ui/Button';
 
 interface OutputConsoleProps {
   output: RunCodeResponse | null;
@@ -18,6 +21,9 @@ interface OutputConsoleProps {
   sampleOutput?: string;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
+  onRunCode?: () => void;
+  onSubmitCode?: () => void;
+  isSubmitting?: boolean;
 }
 
 export const OutputConsole: React.FC<OutputConsoleProps> = ({
@@ -27,6 +33,9 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
   sampleOutput,
   isExpanded = false,
   onToggleExpand,
+  onRunCode,
+  onSubmitCode,
+  isSubmitting = false,
 }) => {
   const [mainTab, setMainTab] = useState<'testcase' | 'testresult'>('testcase');
   const [activeCaseTab, setActiveCaseTab] = useState<number>(0);
@@ -51,15 +60,15 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
   const selectedResult = output?.results[activeCaseTab];
 
   return (
-    <div className="h-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl flex flex-col overflow-hidden shadow-sm dark:shadow-xl transition-all duration-200">
+    <div className="h-full bg-white dark:bg-slate-900 flex flex-col overflow-hidden transition-all duration-200">
       {/* Console Header Bar */}
-      <div className="flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-xs select-none">
+      <div className="flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-xs select-none gap-2 shrink-0 min-h-[44px]">
         {/* Left Tabs: Testcase & Test Result */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => setMainTab('testcase')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap shrink-0 ${
               mainTab === 'testcase'
                 ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm border border-slate-200 dark:border-slate-700/60'
                 : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/60'
@@ -72,7 +81,7 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
           <button
             type="button"
             onClick={() => setMainTab('testresult')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap shrink-0 ${
               mainTab === 'testresult'
                 ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm border border-slate-200 dark:border-slate-700/60'
                 : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/60'
@@ -90,17 +99,36 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
           </button>
         </div>
 
-        {/* Right Header Action Icons */}
-        {onToggleExpand && (
-          <button
-            type="button"
-            onClick={onToggleExpand}
-            className="p-1.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 rounded-md transition"
-            title={isExpanded ? 'Collapse Console' : 'Expand Console'}
-          >
-            {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-          </button>
-        )}
+        {/* Right Header Action Buttons */}
+        <div className="flex items-center gap-2 shrink-0">
+          {onRunCode && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onRunCode}
+              isLoading={isRunning}
+              disabled={isSubmitting}
+              className="gap-1.5 font-semibold text-xs py-1 px-2.5 h-7 whitespace-nowrap shrink-0"
+            >
+              <Play size={13} className="text-ubi-800 dark:text-ubi-400" />
+              <span>Run Code</span>
+            </Button>
+          )}
+
+          {onSubmitCode && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onSubmitCode}
+              isLoading={isSubmitting}
+              disabled={isRunning}
+              className="gap-1.5 font-semibold text-xs py-1 px-2.5 h-7 whitespace-nowrap shrink-0"
+            >
+              <Send size={13} />
+              <span>Submit Solution</span>
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Main Console Content Body */}

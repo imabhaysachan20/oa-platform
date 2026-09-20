@@ -223,13 +223,13 @@ export function useQuestionTimer(
   }, [secondsRemaining]);
 
   const colorClass = useMemo(() => {
-    if (percentage > 50) {
-      return 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]';
+    if (percentage > 30) {
+      return 'bg-ubi-600 dark:bg-ubi-500';
     }
-    if (percentage > 20) {
-      return 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]';
+    if (percentage > 10) {
+      return 'bg-amber-500 dark:bg-amber-400';
     }
-    return 'bg-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.6)] animate-pulse';
+    return 'bg-rose-600 dark:bg-rose-500 animate-pulse';
   }, [percentage]);
 
   return {

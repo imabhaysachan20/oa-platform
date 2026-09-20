@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigate, Link, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../api/admin';
 import { Exam } from '../types';
@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Badge } from '../components/ui/Badge';
 import { Pagination } from '../components/ui/Pagination';
+import { AdminExamDetailsModal } from '../components/admin/AdminExamDetailsModal';
 import {
   Plus,
   Activity,
@@ -23,6 +24,10 @@ import {
 export const AdminExamsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { examId } = useParams<{ examId?: string }>();
+
+  // Detail Modal state
+  const [selectedDetailExam, setSelectedDetailExam] = useState<Exam | null>(null);
 
   // Delete Modal state
   const [deletingExam, setDeletingExam] = useState<Exam | null>(null);
@@ -39,6 +44,18 @@ export const AdminExamsPage: React.FC = () => {
     queryKey: ['adminExams'],
     queryFn: () => adminApi.listExams(),
   });
+
+  // Sync route param with detail modal
+  useEffect(() => {
+    if (examId && exams) {
+      const found = exams.find((e) => e.id === Number(examId));
+      if (found) {
+        setSelectedDetailExam(found);
+      }
+    } else if (!examId) {
+      setSelectedDetailExam(null);
+    }
+  }, [examId, exams]);
 
   // Helper: Format IST
   const formatIST = (dateStr?: string) => {
@@ -241,11 +258,15 @@ export const AdminExamsPage: React.FC = () => {
               return (
                 <Card
                   key={exam.id}
-                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-ubi-300 dark:hover:border-ubi-700 transition"
+                  onClick={() => {
+                    setSelectedDetailExam(exam);
+                    navigate(`/admin/exams/${exam.id}`);
+                  }}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-ubi-300 dark:hover:border-ubi-700 transition cursor-pointer group"
                 >
                   <div className="space-y-1.5 flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2.5">
-                      <h3 className="text-base font-bold text-slate-900 dark:text-white truncate">
+                      <h3 className="text-base font-bold text-slate-900 dark:text-white truncate group-hover:text-ubi-800 dark:group-hover:text-ubi-400 transition">
                         {exam.title}
                       </h3>
                       <span className="text-xs px-2.5 py-0.5 bg-ubi-50 border border-ubi-200 text-ubi-800 dark:bg-ubi-950 dark:border-ubi-800 dark:text-ubi-300 rounded-md font-mono font-semibold">
@@ -317,7 +338,7 @@ export const AdminExamsPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                     <Button
                       variant="outline"
                       size="sm"
@@ -366,6 +387,20 @@ export const AdminExamsPage: React.FC = () => {
               : 'Click "Create New Assessment" to build one.'}
           </p>
         </Card>
+      )}
+
+      {/* Detail View Modal */}
+      {selectedDetailExam && (
+        <AdminExamDetailsModal
+          exam={selectedDetailExam}
+          isOpen={!!selectedDetailExam}
+          onClose={() => {
+            setSelectedDetailExam(null);
+            if (examId) {
+              navigate('/admin/exams');
+            }
+          }}
+        />
       )}
 
       {/* Delete Confirmation Modal */}

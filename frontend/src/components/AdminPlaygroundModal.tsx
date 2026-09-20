@@ -594,44 +594,7 @@ export const AdminPlaygroundModal: React.FC<AdminPlaygroundModalProps> = ({
                 </div>
               )}
 
-              {/* LeetCode Style Function Completion Callout (User View Feature) */}
-              <div className="bg-ubi-50/70 dark:bg-ubi-950/40 border border-ubi-200/80 dark:border-ubi-800/60 rounded-xl p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-bold text-ubi-900 dark:text-ubi-200">
-                    <Code2 size={15} className="text-ubi-700 dark:text-ubi-400" />
-                    <span>LeetCode Style Function Completion</span>
-                  </div>
-                  {formData.functionName && (
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-ubi-100 dark:bg-ubi-900/80 text-ubi-800 dark:text-ubi-300 font-semibold border border-ubi-200 dark:border-ubi-800">
-                      fn: {formData.functionName}()
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-300 leading-normal">
-                  Complete the solution function/method. Input ingestion and test assertions are handled automatically behind the scenes.
-                </p>
-                {derivedSignature && (
-                  <div className="pt-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] uppercase tracking-wider font-bold text-slate-500 dark:text-slate-400 block">
-                        Method Signature
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(derivedSignature, 'sig')}
-                        className="text-[10px] text-ubi-700 dark:text-ubi-400 hover:text-ubi-900 dark:hover:text-ubi-200 flex items-center gap-1 font-semibold"
-                        title="Copy signature"
-                      >
-                        {copiedKey === 'sig' ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
-                        <span>{copiedKey === 'sig' ? 'Copied' : 'Copy'}</span>
-                      </button>
-                    </div>
-                    <div className="font-mono text-xs text-ubi-950 dark:text-ubi-200 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-ubi-200/60 dark:border-ubi-800/50 overflow-x-auto">
-                      {derivedSignature}
-                    </div>
-                  </div>
-                )}
-              </div>
+
 
               {/* Sample Test Case Section */}
               {(formData.sampleInput || formData.sampleOutput) && (

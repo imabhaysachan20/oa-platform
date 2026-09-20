@@ -35,14 +35,12 @@ interface AdminExamDetailsModalProps {
   exam: Exam | null;
   isOpen: boolean;
   onClose: () => void;
-  onEdit: (exam: Exam) => void;
 }
 
 export const AdminExamDetailsModal: React.FC<AdminExamDetailsModalProps> = ({
   exam,
   isOpen,
   onClose,
-  onEdit,
 }) => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'pool' | 'schedule' | 'scoring'>('pool');
@@ -191,18 +189,6 @@ export const AdminExamDetailsModal: React.FC<AdminExamDetailsModalProps> = ({
 
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                onClose();
-                onEdit(exam);
-              }}
-              className="gap-1.5 font-semibold text-slate-700 dark:text-slate-200"
-            >
-              <Pencil size={14} />
-              <span>Edit Exam</span>
-            </Button>
             <Button
               variant="outline"
               size="sm"

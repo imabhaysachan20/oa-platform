@@ -126,9 +126,9 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm dark:shadow-xl">
+    <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 overflow-hidden">
       {/* Editor Top Bar */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-slate-950/90 border-b border-slate-200 dark:border-slate-800 text-sm">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-slate-950/90 border-b border-slate-200 dark:border-slate-800 text-sm shrink-0">
         <div className="flex items-center gap-3">
           <label htmlFor="language-select" className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
             Language:
@@ -147,7 +147,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           </select>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           {!readOnly && (
             <button
               onClick={() => setIsResetModalOpen(true)}
@@ -158,6 +158,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
               <span>Reset</span>
             </button>
           )}
+
           <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
             {value.split('\n').length} lines
           </span>

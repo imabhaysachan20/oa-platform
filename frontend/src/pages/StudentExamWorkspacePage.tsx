@@ -7,12 +7,15 @@ import { useExamStore, STARTER_CODE } from '../store/examStore';
 import { useThemeStore } from '../store/themeStore';
 import { QuestionPanel } from '../components/QuestionPanel';
 import { MCQPanel } from '../components/MCQPanel';
+import { QuestionTabs } from '../components/QuestionTabs';
+import { MarkdownRenderer } from '../components/ui/RichTextEditor';
 import { CodeEditor } from '../components/CodeEditor';
 import { OutputConsole } from '../components/OutputConsole';
 import { Timer } from '../components/ui/Timer';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { Play, Send, CheckCircle, AlertTriangle, Sun, Moon, ShieldAlert, ShieldCheck, Maximize2, Minimize2, Wifi, WifiOff } from 'lucide-react';
+import { Badge } from '../components/ui/Badge';
+import { Play, Send, CheckCircle, AlertTriangle, Sun, Moon, ShieldAlert, Maximize2, WifiOff, Clock, HardDrive, Code2, AlignLeft } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useExamSecurity } from '../hooks/useExamSecurity';
 import { useCandidateHeartbeat } from '../hooks/useCandidateHeartbeat';
@@ -27,6 +30,64 @@ export const StudentExamWorkspacePage: React.FC = () => {
   const [isSubmittingExam, setIsSubmittingExam] = useState(false);
   const [submissionFeedback, setSubmissionFeedback] = useState<string | null>(null);
   const [isConsoleExpanded, setIsConsoleExpanded] = useState(false);
+  const [isEditorExpanded, setIsEditorExpanded] = useState(false);
+
+  // Interactive Panel Resizing (Splitter handles like Antigravity IDE)
+  const [leftWidthPercent, setLeftWidthPercent] = useState<number>(40); // 40% problem statement default (double-click target)
+  const [editorHeightPercent, setEditorHeightPercent] = useState<number>(60); // 60% code editor, 40% output console
+  const [isDraggingHorizontal, setIsDraggingHorizontal] = useState(false);
+  const [isDraggingVertical, setIsDraggingVertical] = useState(false);
+
+  const horizontalContainerRef = useRef<HTMLDivElement | null>(null);
+  const verticalContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const handleHorizontalMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDraggingHorizontal(true);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!horizontalContainerRef.current) return;
+      const rect = horizontalContainerRef.current.getBoundingClientRect();
+      const relativeX = moveEvent.clientX - rect.left;
+      let newPercent = (relativeX / rect.width) * 100;
+      if (newPercent < 33) newPercent = 33;
+      if (newPercent > 67) newPercent = 67;
+      setLeftWidthPercent(newPercent);
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingHorizontal(false);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleVerticalMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDraggingVertical(true);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!verticalContainerRef.current) return;
+      const rect = verticalContainerRef.current.getBoundingClientRect();
+      const relativeY = moveEvent.clientY - rect.top;
+      let newPercent = (relativeY / rect.height) * 100;
+      if (newPercent < 20) newPercent = 20;
+      if (newPercent > 80) newPercent = 80;
+      setEditorHeightPercent(newPercent);
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingVertical(false);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
 
 
   const { theme, toggleTheme } = useThemeStore();
@@ -612,50 +673,14 @@ export const StudentExamWorkspacePage: React.FC = () => {
           </div>
 
           <div className="border-l border-slate-200 dark:border-slate-800 pl-3">
-            <h1 className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-xs sm:max-w-md">
+            <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate max-w-xs sm:max-w-md">
               {examTitle || 'Coding Assessment'}
             </h1>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5">
-              <span>Autosave Active</span>
-              <span>•</span>
-              <span className={`inline-flex items-center gap-1 font-semibold ${isOnline ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                {isOnline ? <Wifi size={12} /> : <WifiOff size={12} />}
-                <span>{isOnline ? 'Connected' : 'Offline'}</span>
-              </span>
-            </span>
           </div>
         </div>
 
-        {/* Proctoring Status Badge, Server-Driven Countdown Timer, Theme Toggle & Finish Button */}
+        {/* Server-Driven Countdown Timer, Theme Toggle & Finish Button */}
         <div className="flex items-center gap-2.5 sm:gap-3">
-          {/* Anti-Cheat Proctoring Status & Fullscreen Trigger */}
-          <div className="hidden md:flex items-center gap-2">
-            <button
-              onClick={enterFullscreen}
-              title={isFullscreen ? 'Full Screen Active' : 'Enter Full Screen'}
-              className={`px-2.5 py-1 rounded-full transition border text-xs font-semibold flex items-center gap-1.5 ${
-                isFullscreen
-                  ? 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-950/60 dark:border-emerald-800'
-                  : 'text-amber-800 bg-amber-50 border-amber-300 dark:text-amber-300 dark:bg-amber-950/60 dark:border-amber-800 animate-pulse'
-              }`}
-            >
-              {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-              <span>{isFullscreen ? 'Fullscreen Active' : 'Enable Fullscreen'}</span>
-            </button>
-
-            {strikeCount === 0 ? (
-              <span className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                <ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400" />
-                <span>Proctored (0/{maxStrikes} Strikes)</span>
-              </span>
-            ) : (
-              <span className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200 dark:border-rose-800 animate-pulse">
-                <AlertTriangle size={14} className="text-rose-600 dark:text-rose-400" />
-                <span>{strikeCount}/{maxStrikes} Infractions</span>
-              </span>
-            )}
-          </div>
-
           {deadlineAt && (
             <Timer deadlineAt={deadlineAt} onExpire={handleTimeoutExpire} />
           )}
@@ -673,7 +698,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
           </button>
 
           <Button
-            variant="success"
+            variant="primary"
             size="sm"
             onClick={() => setIsFinishModalOpen(true)}
             className="gap-1.5 font-semibold"
@@ -700,13 +725,11 @@ export const StudentExamWorkspacePage: React.FC = () => {
         </div>
       )}
 
-      {/* Main 2-Column Workspace Grid */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 overflow-hidden min-h-0">
-        {/* Left Column: Question Panel (5 cols on large) */}
-        <div className="lg:col-span-5 h-full overflow-hidden">
-          <QuestionPanel
-            userId={userId}
-            examId={id}
+      {/* Main Workspace Container */}
+      <div className="flex-1 p-3 overflow-hidden min-h-0">
+        <div className="h-full flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
+          {/* Top Question Tabs Bar (Shared across MCQ and Coding questions) */}
+          <QuestionTabs
             questions={questions}
             activeIndex={activeQuestionIndex}
             onSelectIndex={(idx) => {
@@ -720,91 +743,188 @@ export const StudentExamWorkspacePage: React.FC = () => {
                 setSubmissionFeedback(`Question ${idx + 1} is locked and cannot be reopened.`);
                 return;
               }
+              setIsEditorExpanded(false);
               setActiveQuestionIndex(idx);
               setSubmissionFeedback(null);
             }}
             lockedQuestionIds={lockedQuestionIds}
-            serverTime={examData?.server_time}
-          />
+          />          {/* Seamless Resizable Workspace Content */}
+          <div
+            ref={horizontalContainerRef}
+            className={`flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0 relative ${
+              isDraggingHorizontal || isDraggingVertical ? 'select-none' : ''
+            }`}
+          >
+            {/* Left Column: Problem Statement */}
+            <div
+              style={{ flexBasis: `${leftWidthPercent}%`, width: `${leftWidthPercent}%` }}
+              className="h-full bg-slate-50/70 dark:bg-slate-950/60 overflow-y-auto p-5 sm:p-6 space-y-4 select-none shrink-0"
+            >
+              {currentQ.question_type === 'mcq' ? (
+                <>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="px-2.5 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300/60 dark:border-slate-700 text-[11px] font-semibold tracking-wide">
+                      {currentQ.is_multi_select ? 'Multi-Select' : 'Single-Select'}
+                    </span>
+                    {currentQ.marks != null && (
+                      <span className="px-2.5 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300/60 dark:border-slate-700 text-[11px] font-semibold">
+                        +{currentQ.marks} {currentQ.marks === 1 ? 'Mark' : 'Marks'}
+                      </span>
+                    )}
+                  </div>
+
+                  <h2 className="text-xl font-extrabold text-slate-900 dark:text-white leading-tight">
+                    {currentQ.title}
+                  </h2>
+
+                  <div className="border-t border-slate-200/70 dark:border-slate-800 pt-4 text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                    <MarkdownRenderer content={currentQ.description} />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    <span className="px-2.5 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300/60 dark:border-slate-700 text-[11px] font-semibold">
+                      +{currentQ.marks ?? 10} {(currentQ.marks ?? 10) === 1 ? 'Mark' : 'Marks'}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Clock size={13} className="text-slate-400" />
+                      {currentQ.time_limit_ms}ms limit
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <HardDrive size={13} className="text-slate-400" />
+                      {Math.round(currentQ.memory_limit_kb / 1024)}MB memory
+                    </span>
+                  </div>
+
+                  <h2 className="text-xl font-extrabold text-slate-900 dark:text-white leading-tight">
+                    {currentQ.title}
+                  </h2>
+
+                  <div className="border-t border-slate-200/70 dark:border-slate-800 pt-4 text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                    <MarkdownRenderer content={currentQ.description} />
+                  </div>
+
+                  {/* Input Format */}
+                  {currentQ.input_format && (
+                    <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 rounded-xl p-3.5 space-y-1.5 shadow-xs">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                        <AlignLeft size={13} className="text-ubi-700 dark:text-ubi-400" />
+                        <span>Input Format</span>
+                      </div>
+                      <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        <MarkdownRenderer content={currentQ.input_format} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sample Test Case */}
+                  {(currentQ.sample_input || currentQ.sample_output) && (
+                    <div className="space-y-3 pt-3 border-t border-slate-200/70 dark:border-slate-800">
+                      <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                        Sample Test Case
+                      </h3>
+                      {currentQ.sample_input && (
+                        <div>
+                          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1 block">
+                            Input
+                          </span>
+                          <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 font-mono text-xs text-slate-900 dark:text-slate-200 whitespace-pre-wrap">
+                            {currentQ.sample_input}
+                          </div>
+                        </div>
+                      )}
+                      {currentQ.sample_output && (
+                        <div>
+                          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1 block">
+                            Output
+                          </span>
+                          <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 font-mono text-xs text-slate-900 dark:text-slate-200 whitespace-pre-wrap">
+                            {currentQ.sample_output}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Horizontal Splitter Handle (Between Left Problem Statement & Right Interactive Panel) */}
+            <div
+              onMouseDown={handleHorizontalMouseDown}
+              onDoubleClick={() => setLeftWidthPercent(40)}
+              title="Drag to resize left & right panels (Double-click to reset)"
+              className="hidden lg:flex w-1.5 bg-slate-200/50 hover:bg-slate-300 dark:bg-slate-800/50 dark:hover:bg-slate-700 cursor-col-resize items-center justify-center transition-colors shrink-0 group z-10"
+            >
+              <div className="w-0.5 h-6 rounded-full bg-slate-400/50 group-hover:bg-slate-600 dark:bg-slate-600 dark:group-hover:bg-slate-300 transition-colors" />
+            </div>
+
+            {/* Right Column: Interactive Panel (MCQ Options OR Code Editor & Console) */}
+            <div
+              style={{ flexBasis: `${100 - leftWidthPercent}%`, width: `${100 - leftWidthPercent}%` }}
+              className="h-full overflow-hidden flex flex-col min-h-0 bg-white dark:bg-slate-900 shrink-0"
+            >
+              {currentQ.question_type === 'mcq' ? (
+                <MCQPanel
+                  userId={userId}
+                  examId={id}
+                  question={currentQ}
+                  selectedOptionIds={mcqSelections[currentQ.id] || currentQ.selected_option_ids || []}
+                  onChangeSelection={handleMCQSelectionChange}
+                  isSaving={isSavingMCQ}
+                  saveError={mcqSaveError}
+                  onQuestionExpire={handleCurrentQuestionExpire}
+                  serverTime={examData?.server_time}
+                />
+              ) : (
+                <div ref={verticalContainerRef} className="h-full flex flex-col overflow-hidden min-h-0 bg-white dark:bg-slate-900 relative">
+                  {/* Editor Container */}
+                  <div
+                    style={{ height: `${editorHeightPercent}%` }}
+                    className="min-h-0 overflow-hidden shrink-0"
+                  >
+                    <CodeEditor
+                      value={currentCode}
+                      onChange={(val) => setCodeDraft(currentQ.id, currentLang, val)}
+                      language={currentLang}
+                      onLanguageChange={(lang) => setSelectedLanguage(currentQ.id, lang)}
+                      starterCode={currentStarter}
+                      onReset={() => currentQ && setCodeDraft(currentQ.id, currentLang, currentStarter)}
+                      onPasteAttempt={() => logInfraction('PASTE_ATTEMPT')}
+                    />
+                  </div>
+
+                  {/* Vertical Splitter Handle (Between Top Code Editor & Lower Output Console) */}
+                  <div
+                    onMouseDown={handleVerticalMouseDown}
+                    onDoubleClick={() => setEditorHeightPercent(60)}
+                    title="Drag to resize editor & console heights (Double-click to reset)"
+                    className="h-1.5 bg-slate-200/50 hover:bg-slate-300 dark:bg-slate-800/50 dark:hover:bg-slate-700 cursor-row-resize flex items-center justify-center transition-colors shrink-0 group z-10"
+                  >
+                    <div className="h-0.5 w-6 rounded-full bg-slate-400/50 group-hover:bg-slate-600 dark:bg-slate-600 dark:group-hover:bg-slate-300 transition-colors" />
+                  </div>
+
+                  {/* Output & Test Cases Console */}
+                  <div
+                    style={{ height: `${100 - editorHeightPercent}%` }}
+                    className="min-h-0 overflow-hidden shrink-0"
+                  >
+                    <OutputConsole
+                      output={currentOutput}
+                      isRunning={isRunningCode}
+                      sampleInput={currentQ?.sample_input}
+                      sampleOutput={currentQ?.sample_output}
+                      onRunCode={handleRunCode}
+                      onSubmitCode={handleSubmitCode}
+                      isSubmitting={isSubmittingCode}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-
-        {/* Right Column: Code Editor & Console OR MCQ Panel */}
-        {currentQ.question_type === 'mcq' ? (
-          <div className="lg:col-span-7 h-full overflow-hidden">
-            <MCQPanel
-              userId={userId}
-              examId={id}
-              question={currentQ}
-              selectedOptionIds={mcqSelections[currentQ.id] || currentQ.selected_option_ids || []}
-              onChangeSelection={handleMCQSelectionChange}
-              isSaving={isSavingMCQ}
-              saveError={mcqSaveError}
-              onQuestionExpire={handleCurrentQuestionExpire}
-              serverTime={examData?.server_time}
-            />
-          </div>
-        ) : (
-          <div className="lg:col-span-7 h-full flex flex-col gap-2.5 overflow-hidden min-h-0">
-            {/* Editor Container */}
-            <div className={`transition-all duration-200 min-h-0 overflow-hidden ${isConsoleExpanded ? 'flex-1' : 'flex-[3]'}`}>
-              <CodeEditor
-                value={currentCode}
-                onChange={(val) => setCodeDraft(currentQ.id, currentLang, val)}
-                language={currentLang}
-                onLanguageChange={(lang) => setSelectedLanguage(currentQ.id, lang)}
-                starterCode={currentStarter}
-                onReset={() => currentQ && setCodeDraft(currentQ.id, currentLang, currentStarter)}
-                onPasteAttempt={() => logInfraction('PASTE_ATTEMPT')}
-              />
-            </div>
-
-            {/* Action Buttons Bar */}
-            <div className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-2 rounded-xl shrink-0 shadow-sm">
-              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
-                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
-                <span>Proctored Exam</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleRunCode}
-                  isLoading={isRunningCode}
-                  disabled={isSubmittingCode}
-                  className="gap-1.5 font-semibold"
-                >
-                  <Play size={14} className="text-ubi-800 dark:text-ubi-400" />
-                  <span>Run Code</span>
-                </Button>
-
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleSubmitCode}
-                  isLoading={isSubmittingCode}
-                  disabled={isRunningCode}
-                  className="gap-1.5 font-semibold"
-                >
-                  <Send size={14} />
-                  <span>Submit Solution</span>
-                </Button>
-              </div>
-            </div>
-
-            {/* Output & Test Cases Console */}
-            <div className={`transition-all duration-200 min-h-0 overflow-hidden ${isConsoleExpanded ? 'flex-[3]' : 'flex-[2]'}`}>
-              <OutputConsole
-                output={currentOutput}
-                isRunning={isRunningCode}
-                sampleInput={currentQ?.sample_input}
-                sampleOutput={currentQ?.sample_output}
-                isExpanded={isConsoleExpanded}
-                onToggleExpand={() => setIsConsoleExpanded(!isConsoleExpanded)}
-              />
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Confirmation Finish Modal */}
@@ -831,7 +951,7 @@ export const StudentExamWorkspacePage: React.FC = () => {
               return (
                 <div key={q.id} className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-slate-800/60 last:border-0">
                   <span className="font-medium text-slate-700 dark:text-slate-300">
-                    Question {idx + 1} ({isMCQ ? 'MCQ' : q.difficulty}):
+                    Question {idx + 1} ({isMCQ ? 'MCQ' : `+${q.marks ?? 10} ${(q.marks ?? 10) === 1 ? 'Mark' : 'Marks'}`}):
                   </span>
                   <span
                     className={

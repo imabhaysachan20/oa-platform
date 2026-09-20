@@ -49,16 +49,16 @@ export const Timer: React.FC<TimerProps> = ({ deadlineAt, onExpire, className = 
   const isWarning = timeLeftSec < 600 && !isUrgent; // < 10 minutes
 
   const colorClass = isUrgent
-    ? 'text-rose-600 bg-rose-50 border-rose-200 dark:text-rose-400 dark:bg-rose-500/10 dark:border-rose-500/30 animate-pulse'
+    ? 'text-rose-700 bg-rose-50 border-rose-300 dark:text-rose-300 dark:bg-rose-950/80 dark:border-rose-800 animate-pulse'
     : isWarning
-    ? 'text-amber-600 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-500/10 dark:border-amber-500/30'
-    : 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-500/10 dark:border-emerald-500/30';
+    ? 'text-amber-800 bg-amber-50 border-amber-300 dark:text-amber-200 dark:bg-amber-950/80 dark:border-amber-800'
+    : 'text-slate-800 bg-slate-100 border-slate-200 dark:text-slate-100 dark:bg-slate-800 dark:border-slate-700';
 
   return (
     <div
-      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border font-mono font-bold text-sm shadow-sm transition-colors ${colorClass} ${className}`}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-mono font-bold text-xs shadow-xs transition-colors ${colorClass} ${className}`}
     >
-      <Clock size={16} className={isUrgent ? 'animate-spin' : ''} />
+      <Clock size={14} className={isUrgent ? 'animate-spin text-rose-600' : 'text-slate-500 dark:text-slate-400'} />
       <span>{formattedTime}</span>
     </div>
   );

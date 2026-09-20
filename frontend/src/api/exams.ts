@@ -57,13 +57,17 @@ export const examsApi = {
 
   sendHeartbeat: async (
     examId: number,
-    assignmentId: number
+    assignmentId: number,
+    options?: { timeout?: number }
   ): Promise<{ status: string; server_time: string; network_status: string; incident_logged: boolean }> => {
     const res = await api.post<{ status: string; server_time: string; network_status: string; incident_logged: boolean }>(
       `/exams/${examId}/heartbeat`,
       {
         assignment_id: assignmentId,
         client_timestamp: new Date().toISOString(),
+      },
+      {
+        timeout: options?.timeout ?? 3000,
       }
     );
     return res.data;

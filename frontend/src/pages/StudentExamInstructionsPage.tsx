@@ -15,7 +15,9 @@ import {
   MapPinOff,
   CheckCircle2,
   RefreshCw,
+  Camera,
 } from 'lucide-react';
+import { WebcamVerificationCard } from '../components/WebcamVerificationCard';
 
 export const StudentExamInstructionsPage: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
@@ -25,6 +27,7 @@ export const StudentExamInstructionsPage: React.FC = () => {
 
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [verificationPhoto, setVerificationPhoto] = useState<string | null>(null);
 
   // Device Location Verification State
   type LocationStatus = 'prompt' | 'requesting' | 'granted' | 'denied' | 'error' | 'unsupported';
@@ -177,7 +180,17 @@ export const StudentExamInstructionsPage: React.FC = () => {
   const isResuming = exam?.assignment_status === 'in_progress' || myQuestionsData?.status === 'in_progress';
 
   const handleProceed = async () => {
-    if (!exam || !agreedToTerms || isStarting || !isLive || isExpired || !isLocationVerified || !locationCoords) return;
+    if (
+      !exam ||
+      !agreedToTerms ||
+      isStarting ||
+      !isLive ||
+      isExpired ||
+      !isLocationVerified ||
+      !locationCoords ||
+      !verificationPhoto
+    )
+      return;
 
     // Request fullscreen immediately on candidate click gesture
     try {
@@ -197,7 +210,7 @@ export const StudentExamInstructionsPage: React.FC = () => {
       telemetry.accuracy = locationCoords.accuracy;
       telemetry.location_status = 'granted';
 
-      const res = await examsApi.start(id, telemetry);
+      const res = await examsApi.start(id, telemetry, verificationPhoto);
       setExamSession(
         res.exam_id,
         res.assignment_id,
@@ -653,6 +666,12 @@ export const StudentExamInstructionsPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Facial Identity & Webcam Verification Card */}
+          <WebcamVerificationCard
+            onPhotoCaptured={setVerificationPhoto}
+            isResuming={isResuming}
+          />
+
           {/* Acknowledgment Checkbox */}
           <div className="flex items-start gap-3">
             <input
@@ -675,7 +694,7 @@ export const StudentExamInstructionsPage: React.FC = () => {
           <div className="flex items-center gap-4">
             <button
               onClick={handleProceed}
-              disabled={!agreedToTerms || isStarting || !isLive || isExpired || !isLocationVerified}
+              disabled={!agreedToTerms || isStarting || !isLive || isExpired || !isLocationVerified || !verificationPhoto}
               className={`px-8 py-3 font-bold text-sm rounded shadow-sm transition-all flex items-center gap-2 cursor-pointer ${
                 isResuming
                   ? 'bg-amber-600 hover:bg-amber-700 text-white disabled:bg-amber-600/50 disabled:cursor-not-allowed'
@@ -695,6 +714,11 @@ export const StudentExamInstructionsPage: React.FC = () => {
                 <span className="flex items-center gap-1.5">
                   <MapPin size={15} />
                   <span>Location Required to {isResuming ? 'Resume' : 'Start'}</span>
+                </span>
+              ) : !verificationPhoto ? (
+                <span className="flex items-center gap-1.5">
+                  <Camera size={15} />
+                  <span>Photo Required to {isResuming ? 'Resume' : 'Start'}</span>
                 </span>
               ) : isResuming ? (
                 <span>Resume Assessment</span>

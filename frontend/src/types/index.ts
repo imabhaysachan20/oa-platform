@@ -184,6 +184,7 @@ export interface ExamStartResponse {
   deadline_at: string;
   duration_minutes: number;
   attempt_number?: number;
+  verification_photo_url?: string | null;
   questions: StudentQuestionView[];
 }
 
@@ -292,6 +293,7 @@ export interface MonitoringStudentView {
   seconds_since_last_ping?: number | null;
   disconnect_incidents_count?: number;
   total_offline_seconds?: number;
+  verification_photo_url?: string | null;
 }
 
 export interface NetworkIncidentItem {
@@ -380,6 +382,7 @@ export interface CandidateDossierResponse {
   disconnect_incidents_count?: number;
   total_offline_seconds?: number;
   network_incidents?: NetworkIncidentItem[];
+  verification_photo_url?: string | null;
 }
 
 export interface FreshRestartResponse {
@@ -404,15 +407,22 @@ export interface DeviceTelemetryPayload {
   location_status?: string;
 }
 
+export interface StartExamPayload {
+  telemetry?: DeviceTelemetryPayload;
+  verification_photo?: string;
+}
+
 export interface ResumeExamRequest {
   assignment_id: number;
   telemetry?: DeviceTelemetryPayload;
+  verification_photo?: string;
 }
 
 export interface ResumeExamResponse {
   status: string;
   device_switch_detected: boolean;
   message: string;
+  verification_photo_url?: string | null;
 }
 
 

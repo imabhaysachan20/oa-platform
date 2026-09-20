@@ -280,20 +280,39 @@ export const AdminMonitoringPage: React.FC = () => {
                     }`}
                   >
                     <td className="py-3.5 px-4 font-sans">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-slate-900 dark:text-slate-100">{row.name}</span>
-                        {row.attempt_number && row.attempt_number > 1 && (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-400 dark:border-indigo-800">
-                            Attempt #{row.attempt_number}
-                          </span>
-                        )}
-                        {row.reset_by_admin && (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/60 dark:text-purple-400 dark:border-purple-800">
-                            Restarted
-                          </span>
-                        )}
+                      <div className="flex items-center gap-2.5">
+                        {row.verification_photo_url ? (
+                          <a
+                            href={row.verification_photo_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="group relative w-8 h-8 rounded-md overflow-hidden border border-emerald-500 shadow-sm shrink-0 block"
+                            title="Candidate face verified - click to view S3 photo"
+                          >
+                            <img
+                              src={row.verification_photo_url}
+                              alt={row.name}
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                            />
+                          </a>
+                        ) : null}
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-slate-900 dark:text-slate-100">{row.name}</span>
+                            {row.attempt_number && row.attempt_number > 1 && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-400 dark:border-indigo-800">
+                                Attempt #{row.attempt_number}
+                              </span>
+                            )}
+                            {row.reset_by_admin && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/60 dark:text-purple-400 dark:border-purple-800">
+                                Restarted
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400">{row.email}</div>
+                        </div>
                       </div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400">{row.email}</div>
                     </td>
                     <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400">{row.roll_no || '—'}</td>
                     

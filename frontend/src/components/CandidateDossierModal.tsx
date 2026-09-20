@@ -24,6 +24,7 @@ import {
   ExternalLink,
   Laptop,
   Globe,
+  Camera,
 } from 'lucide-react';
 
 interface CandidateDossierModalProps {
@@ -70,7 +71,7 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
   };
 
   const deviceLogs = (dossier?.proctoring_logs || []).filter((l) =>
-    ['EXAM_START_DEVICE', 'EXAM_RESUME_DEVICE', 'DEVICE_SWITCH_DETECTED'].includes(l.event_type)
+    ['EXAM_START_DEVICE', 'EXAM_RESUME_DEVICE', 'DEVICE_SWITCH_DETECTED', 'VERIFICATION_SNAPSHOT'].includes(l.event_type)
   );
 
   const deviceSwitchesCount = (dossier?.proctoring_logs || []).filter(
@@ -110,9 +111,28 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
           {/* Header Summary Banner */}
           <div className="bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-full bg-ubi-100 dark:bg-ubi-900/60 border border-ubi-200 dark:border-ubi-800 flex items-center justify-center font-bold text-ubi-900 dark:text-ubi-200 shrink-0">
-                <UserIcon size={18} />
-              </div>
+              {dossier.verification_photo_url ? (
+                <a
+                  href={dossier.verification_photo_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group relative w-11 h-11 rounded-lg overflow-hidden border-2 border-emerald-500 shadow-sm shrink-0 cursor-pointer block"
+                  title="Click to view full candidate verification photo from S3"
+                >
+                  <img
+                    src={dossier.verification_photo_url}
+                    alt={dossier.student_name}
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                  />
+                  <div className="absolute bottom-0 inset-x-0 bg-black/60 text-[7px] text-emerald-300 text-center font-mono py-0.2">
+                    PHOTO
+                  </div>
+                </a>
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-ubi-100 dark:bg-ubi-900/60 border border-ubi-200 dark:border-ubi-800 flex items-center justify-center font-bold text-ubi-900 dark:text-ubi-200 shrink-0">
+                  <UserIcon size={18} />
+                </div>
+              )}
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
@@ -719,6 +739,8 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                       const meta = parseLogMetadata(log.meta_data);
                       const isStart = log.event_type === 'EXAM_START_DEVICE';
                       const isSwitch = log.event_type === 'DEVICE_SWITCH_DETECTED';
+                      const isSnapshot = log.event_type === 'VERIFICATION_SNAPSHOT';
+                      const photoUrl = meta?.photo_url || (isSnapshot ? dossier.verification_photo_url : null);
 
                       return (
                         <div
@@ -726,6 +748,8 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                           className={`p-3.5 rounded-xl border transition ${
                             isSwitch
                               ? 'bg-rose-50/60 dark:bg-rose-950/30 border-rose-300 dark:border-rose-800/80 ring-1 ring-rose-400/30'
+                              : isSnapshot
+                              ? 'bg-purple-50/40 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800/60'
                               : isStart
                               ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60'
                               : 'bg-slate-50 dark:bg-slate-950/80 border-slate-200 dark:border-slate-800'
@@ -737,6 +761,8 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                                 className={`px-2 py-0.5 rounded text-[10px] font-mono border font-bold ${
                                   isSwitch
                                     ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200 border-rose-300'
+                                    : isSnapshot
+                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border-purple-300'
                                     : isStart
                                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300'
                                     : 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 border-sky-300'
@@ -756,6 +782,44 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                           <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
                             {log.description}
                           </p>
+
+                          {photoUrl && (
+                            <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex items-center gap-3">
+                              <a
+                                href={photoUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="group relative w-20 h-16 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700 shrink-0 shadow-sm"
+                              >
+                                <img
+                                  src={photoUrl}
+                                  alt="Verification snapshot"
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                />
+                                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white">
+                                  <ExternalLink size={14} />
+                                </div>
+                              </a>
+                              <div className="text-xs">
+                                <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                                  <Camera size={13} className="text-purple-500" />
+                                  Identity Verification Photo
+                                </span>
+                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                  Captured at assessment check-in & uploaded to S3.
+                                </p>
+                                <a
+                                  href={photoUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[11px] font-semibold text-ubi-700 dark:text-ubi-400 hover:underline flex items-center gap-1 mt-1"
+                                >
+                                  <span>Open full image</span>
+                                  <ExternalLink size={11} />
+                                </a>
+                              </div>
+                            </div>
+                          )}
 
                           {/* Location & Specs breakdown */}
                           {meta && (

@@ -77,6 +77,7 @@ class ExamAssignment(Base, TimestampMixin):
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     deadline_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    verification_photo_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[AssignmentStatus] = mapped_column(
         Enum(AssignmentStatus, values_callable=lambda x: [e.value for e in x]),
         default=AssignmentStatus.NOT_STARTED,

@@ -20,19 +20,43 @@ export const examsApi = {
     return res.data;
   },
 
-  start: async (id: number, telemetry?: DeviceTelemetryPayload): Promise<ExamStartResponse> => {
-    const res = await api.post<ExamStartResponse>(`/exams/${id}/start`, telemetry);
+  start: async (
+    id: number,
+    telemetryOrPayload?: DeviceTelemetryPayload | { telemetry?: DeviceTelemetryPayload; verification_photo?: string },
+    verificationPhoto?: string
+  ): Promise<ExamStartResponse> => {
+    let payload: Record<string, any> = {};
+    if (telemetryOrPayload) {
+      if ('verification_photo' in telemetryOrPayload || 'telemetry' in telemetryOrPayload) {
+        const obj = telemetryOrPayload as { telemetry?: DeviceTelemetryPayload; verification_photo?: string };
+        payload = { ...obj };
+        if (obj.telemetry) {
+          payload = { ...obj.telemetry, ...payload };
+        }
+      } else {
+        payload = {
+          ...telemetryOrPayload,
+          telemetry: telemetryOrPayload,
+        };
+      }
+    }
+    if (verificationPhoto) {
+      payload.verification_photo = verificationPhoto;
+    }
+    const res = await api.post<ExamStartResponse>(`/exams/${id}/start`, payload);
     return res.data;
   },
 
   resume: async (
     id: number,
     assignmentId: number,
-    telemetry?: DeviceTelemetryPayload
+    telemetry?: DeviceTelemetryPayload,
+    verificationPhoto?: string
   ): Promise<ResumeExamResponse> => {
     const res = await api.post<ResumeExamResponse>(`/exams/${id}/resume`, {
       assignment_id: assignmentId,
       telemetry,
+      verification_photo: verificationPhoto,
     });
     return res.data;
   },

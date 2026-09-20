@@ -1,8 +1,11 @@
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger("uvicorn.error")
 
 import redis.asyncio as aioredis
 from backend.app.core.database import get_db
@@ -14,6 +17,7 @@ from backend.app.models.proctoring import ExamProctoringLog
 from backend.app.models.network_incident import ExamNetworkIncident
 from backend.app.schemas.exam import (
     ExamResponse,
+    ExamStartRequest,
     ExamStartResponse,
     MyQuestionsResponse,
     LeaderboardEntry,
@@ -197,7 +201,7 @@ async def get_exam_details(
 async def start_exam(
     exam_id: int,
     request: Request,
-    body: Optional[DeviceTelemetryPayload] = None,
+    body: Optional[ExamStartRequest] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     redis: aioredis.Redis = Depends(get_redis)
@@ -206,7 +210,53 @@ async def start_exam(
     Idempotently assigns questions based on exam configuration and starts the timer.
     Enforces location provision before allowing exam start or resume.
     """
-    if body is None or body.latitude is None or body.longitude is None:
+    telemetry = None
+    verification_photo = None
+
+    if body:
+        verification_photo = body.verification_photo
+        if body.telemetry and body.telemetry.latitude is not None and body.telemetry.longitude is not None:
+            telemetry = body.telemetry
+        elif body.latitude is not None and body.longitude is not None:
+            telemetry = DeviceTelemetryPayload(
+                browser=body.browser,
+                os=body.os,
+                device_type=body.device_type,
+                screen_resolution=body.screen_resolution,
+                device_fingerprint=body.device_fingerprint,
+                latitude=body.latitude,
+                longitude=body.longitude,
+                accuracy=body.accuracy,
+                location_status=body.location_status,
+            )
+
+    # Fallback to direct request.json() parsing if telemetry was not bound
+    if telemetry is None or telemetry.latitude is None or telemetry.longitude is None:
+        try:
+            raw_data = await request.json()
+            if isinstance(raw_data, dict):
+                if not verification_photo and raw_data.get("verification_photo"):
+                    verification_photo = raw_data.get("verification_photo")
+
+                t_dict = raw_data.get("telemetry") if isinstance(raw_data.get("telemetry"), dict) else raw_data
+                lat = t_dict.get("latitude")
+                lng = t_dict.get("longitude")
+                if lat is not None and lng is not None:
+                    telemetry = DeviceTelemetryPayload(
+                        browser=t_dict.get("browser"),
+                        os=t_dict.get("os"),
+                        device_type=t_dict.get("device_type"),
+                        screen_resolution=t_dict.get("screen_resolution"),
+                        device_fingerprint=t_dict.get("device_fingerprint"),
+                        latitude=float(lat),
+                        longitude=float(lng),
+                        accuracy=float(t_dict.get("accuracy")) if t_dict.get("accuracy") is not None else None,
+                        location_status=t_dict.get("location_status") or "granted",
+                    )
+        except Exception as e:
+            logger.warning(f"Could not parse raw request body for telemetry: {e}")
+
+    if telemetry is None or telemetry.latitude is None or telemetry.longitude is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Device location is strictly required to start or resume this assessment. Please grant location access in your browser."
@@ -217,9 +267,10 @@ async def start_exam(
         db=db,
         exam_id=exam_id,
         user_id=current_user.id,
-        telemetry=body,
+        telemetry=telemetry,
         client_ip=client_ip,
-        redis=redis
+        redis=redis,
+        verification_photo=verification_photo
     )
 
 
@@ -254,7 +305,8 @@ async def resume_exam(
         assignment_id=body.assignment_id,
         telemetry=body.telemetry,
         client_ip=client_ip,
-        redis=redis
+        redis=redis,
+        verification_photo=body.verification_photo
     )
 
 

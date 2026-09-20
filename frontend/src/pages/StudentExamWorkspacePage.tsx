@@ -22,6 +22,7 @@ import { useExamSecurity } from '../hooks/useExamSecurity';
 import { useCandidateHeartbeat } from '../hooks/useCandidateHeartbeat';
 import { useQuestionTimer } from '../hooks/useQuestionTimer';
 import { collectDeviceTelemetry } from '../utils/deviceInfo';
+import { LiveWebcamHUD } from '../components/LiveWebcamHUD';
 
 export const StudentExamWorkspacePage: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
@@ -1222,6 +1223,13 @@ export const StudentExamWorkspacePage: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      {/* Live Proctoring Webcam HUD - Remains Active Throughout Assessment */}
+      {examData && examData.status === 'in_progress' && (
+        <LiveWebcamHUD
+          onCameraInterrupted={() => logInfraction('CAMERA_INTERRUPTED')}
+        />
+      )}
     </div>
   );
 };

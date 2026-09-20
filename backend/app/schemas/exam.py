@@ -63,6 +63,32 @@ class ExamResponse(ExamBase):
         from_attributes = True
 
 
+class DeviceTelemetryPayload(BaseModel):
+    browser: Optional[str] = None
+    os: Optional[str] = None
+    device_type: Optional[str] = None
+    screen_resolution: Optional[str] = None
+    device_fingerprint: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    accuracy: Optional[float] = None
+    location_status: Optional[str] = None
+
+
+class ExamStartRequest(BaseModel):
+    telemetry: Optional[DeviceTelemetryPayload] = None
+    verification_photo: Optional[str] = None
+    browser: Optional[str] = None
+    os: Optional[str] = None
+    device_type: Optional[str] = None
+    screen_resolution: Optional[str] = None
+    device_fingerprint: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    accuracy: Optional[float] = None
+    location_status: Optional[str] = None
+
+
 class ExamStartResponse(BaseModel):
     assignment_id: int
     exam_id: int
@@ -71,6 +97,7 @@ class ExamStartResponse(BaseModel):
     deadline_at: datetime
     duration_minutes: int
     attempt_number: int = 1
+    verification_photo_url: Optional[str] = None
     questions: List[StudentQuestionView]
 
 
@@ -138,6 +165,7 @@ class MonitoringStudentView(BaseModel):
     started_at: Optional[datetime] = None
     deadline_at: Optional[datetime] = None
     submitted_at: Optional[datetime] = None
+    verification_photo_url: Optional[str] = None
     time_remaining_sec: Optional[float] = None
     submissions_count: int = 0
     current_score: Optional[float] = None
@@ -248,6 +276,7 @@ class CandidateDossierResponse(BaseModel):
     reset_by_admin: bool = False
     reset_reason: Optional[str] = None
     available_attempts: List[CandidateAttemptItem] = []
+    verification_photo_url: Optional[str] = None
     started_at: Optional[datetime] = None
     submitted_at: Optional[datetime] = None
     total_time_sec: Optional[float] = None
@@ -280,26 +309,16 @@ class FreshRestartResponse(BaseModel):
     message: str
 
 
-class DeviceTelemetryPayload(BaseModel):
-    browser: Optional[str] = None
-    os: Optional[str] = None
-    device_type: Optional[str] = None
-    screen_resolution: Optional[str] = None
-    device_fingerprint: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    accuracy: Optional[float] = None
-    location_status: Optional[str] = None
-
-
 class ResumeExamRequest(BaseModel):
     assignment_id: int
     telemetry: Optional[DeviceTelemetryPayload] = None
+    verification_photo: Optional[str] = None
 
 
 class ResumeExamResponse(BaseModel):
     status: str = "ok"
     device_switch_detected: bool = False
+    verification_photo_url: Optional[str] = None
     message: str = "Assessment telemetry recorded."
 
 

@@ -237,17 +237,30 @@ async def seed_exams(
         print(f"Created Exam #{exam.id}: '{exam.title}' with {len(pool_questions)} pooled questions.")
 
 
+import sys
+from sqlalchemy import func
+
 async def seed_database():
-    """Main database seeding routine."""
+    """Main database seeding routine with idempotency protection."""
     print("=" * 70)
     print("STARTING DATABASE SEED PROCESS")
     print("=" * 70)
+
+    force_clean = "--clean" in sys.argv or "--force" in sys.argv
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
     async with AsyncSessionLocal() as db:
-        # Step 1: Clean database
+        # Check if database already has seeded content
+        q_count = (await db.execute(select(func.count(Question.id)))).scalar() or 0
+        if q_count > 0 and not force_clean:
+            print(f"Database already contains {q_count} questions. Preserving existing records and skipping seed.")
+            print("(Pass --clean to force re-seeding and purge)")
+            print("=" * 70)
+            return
+
+        # Step 1: Clean database (only if fresh or force_clean)
         await clean_database(db)
 
         # Step 2: Seed users

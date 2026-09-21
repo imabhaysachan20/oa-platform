@@ -6,6 +6,7 @@ services:
     image: postgres:16-alpine
     container_name: ubicode-postgres
     restart: unless-stopped
+    command: postgres -c max_connections=400 -c shared_buffers=8GB -c work_mem=32MB -c wal_buffers=64MB -c checkpoint_completion_target=0.9
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgrespassword
@@ -24,6 +25,7 @@ services:
     image: redis:7-alpine
     container_name: ubicode-redis
     restart: unless-stopped
+    command: redis-server --maxmemory 4gb --maxmemory-policy allkeys-lru --save ""
     ports:
       - "6379:6379"
     volumes:
@@ -145,20 +147,19 @@ services:
       - JUDGE0_URL=http://judge0-server:2358
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - SECRET_KEY=ubicode-production-master-secret-key-2024
-      - RUN_RATE_LIMIT=10/minute
-      - AWS_DEFAULT_REGION=ap-south-1
-      - AWS_REGION=ap-south-1
-      - S3_BUCKET_NAME=ubi-code
+      - SECRET_KEY=${SECRET_KEY:-ubicode-production-master-secret-key-2024}
+      - RUN_RATE_LIMIT=30/minute
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-ap-south-1}
+      - AWS_REGION=${AWS_REGION:-ap-south-1}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-ubicode-prod-s3-proctoring}
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app/backend
-      - ~/.aws:/root/.aws:ro
     command: >
       sh -c "alembic -c backend/alembic.ini upgrade head &&
              python backend/seed.py &&
-             uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"
+             uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 8"
     depends_on:
       postgres:
         condition: service_healthy
@@ -187,7 +188,7 @@ services:
       - JUDGE0_URL=http://judge0-server:2358
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-    command: celery -A backend.app.tasks.celery_app.celery_app worker --loglevel=info
+    command: celery -A backend.app.tasks.celery_app.celery_app worker --concurrency=8 --loglevel=info
     depends_on:
       backend:
         condition: service_started

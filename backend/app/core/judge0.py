@@ -249,7 +249,7 @@ class Judge0Client:
             payload["expected_output"] = _b64_encode(expected_output)
 
         try:
-            async with httpx.AsyncClient(timeout=25.0) as client:
+            async with httpx.AsyncClient(timeout=90.0) as client:
                 response = await client.post(url, json=payload, headers=self.headers)
                 response.raise_for_status()
                 data = response.json()
@@ -292,7 +292,7 @@ class Judge0Client:
 
         payload = {"submissions": encoded_submissions}
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=90.0) as client:
             try:
                 res = await client.post(url, json=payload, headers=self.headers)
                 res.raise_for_status()

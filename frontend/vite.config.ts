@@ -12,6 +12,7 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    allowedHosts: ['personality-somerset-stronger-tiles.trycloudflare.com'],
     watch: {
       usePolling: true,
     },

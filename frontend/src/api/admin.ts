@@ -10,6 +10,7 @@ import {
   StudentUpdatePayload,
   FreshRestartResponse,
   StudentGroupsResponse,
+  LeaderboardResponse,
 } from '../types';
 
 export const adminApi = {

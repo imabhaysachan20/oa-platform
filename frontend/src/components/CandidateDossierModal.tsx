@@ -156,11 +156,10 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                     </span>
                   )}
                   <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                      dossier.is_active
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${dossier.is_active
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:border-emerald-800'
                         : 'bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-                    }`}
+                      }`}
                   >
                     Attempt #{dossier.attempt_number || 1} {dossier.is_active ? '(Active)' : '(Archived)'}
                   </span>
@@ -191,11 +190,10 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                           setViewingAssignmentId(att.assignment_id);
                           setSelectedQuestionIndex(0);
                         }}
-                        className={`px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1 border ${
-                          att.assignment_id === viewingAssignmentId
+                        className={`px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1 border ${att.assignment_id === viewingAssignmentId
                             ? 'bg-ubi-800 text-white border-ubi-800 dark:bg-ubi-600 dark:border-ubi-600 shadow-sm'
                             : 'bg-white dark:bg-slate-900 text-slate-600 hover:text-slate-900 border-slate-200 dark:border-slate-800 dark:text-slate-400 dark:hover:text-white'
-                        }`}
+                          }`}
                       >
                         <span>Attempt #{att.attempt_number}</span>
                         <span className="text-[9px] opacity-75 font-normal">
@@ -312,11 +310,10 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setActiveTab('code')}
-                className={`flex items-center gap-1.5 py-2 px-3 text-xs font-bold border-b-2 transition ${
-                  activeTab === 'code'
+                className={`flex items-center gap-1.5 py-2 px-3 text-xs font-bold border-b-2 transition ${activeTab === 'code'
                     ? 'border-ubi-800 text-ubi-900 dark:border-ubi-400 dark:text-white'
                     : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
-                }`}
+                  }`}
               >
                 <FileCode size={14} />
                 <span>Code Submissions ({dossier.questions.filter((q) => q.has_submission).length}/{dossier.questions.length})</span>
@@ -324,11 +321,10 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
 
               <button
                 onClick={() => setActiveTab('proctoring')}
-                className={`flex items-center gap-1.5 py-2 px-3 text-xs font-bold border-b-2 transition ${
-                  activeTab === 'proctoring'
+                className={`flex items-center gap-1.5 py-2 px-3 text-xs font-bold border-b-2 transition ${activeTab === 'proctoring'
                     ? 'border-ubi-800 text-ubi-900 dark:border-ubi-400 dark:text-white'
                     : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
-                }`}
+                  }`}
               >
                 <Activity size={14} />
                 <span>Anti-Cheat Timeline ({dossier.total_flags} Events)</span>
@@ -336,11 +332,10 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
 
               <button
                 onClick={() => setActiveTab('devices')}
-                className={`flex items-center gap-1.5 py-2 px-3 text-xs font-bold border-b-2 transition ${
-                  activeTab === 'devices'
+                className={`flex items-center gap-1.5 py-2 px-3 text-xs font-bold border-b-2 transition ${activeTab === 'devices'
                     ? 'border-ubi-800 text-ubi-900 dark:border-ubi-400 dark:text-white'
                     : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
-                }`}
+                  }`}
               >
                 <MapPin size={14} />
                 <span>Device & Location Audit ({deviceLogs.length})</span>
@@ -353,11 +348,10 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
 
               <button
                 onClick={() => setActiveTab('scoring')}
-                className={`flex items-center gap-1.5 py-2 px-3 text-xs font-bold border-b-2 transition ${
-                  activeTab === 'scoring'
+                className={`flex items-center gap-1.5 py-2 px-3 text-xs font-bold border-b-2 transition ${activeTab === 'scoring'
                     ? 'border-ubi-800 text-ubi-900 dark:border-ubi-400 dark:text-white'
                     : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
-                }`}
+                  }`}
               >
                 <Award size={14} />
                 <span>Score Breakdown</span>
@@ -365,11 +359,10 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
 
               <button
                 onClick={() => setActiveTab('network')}
-                className={`flex items-center gap-1.5 py-2 px-3 text-xs font-bold border-b-2 transition ${
-                  activeTab === 'network'
+                className={`flex items-center gap-1.5 py-2 px-3 text-xs font-bold border-b-2 transition ${activeTab === 'network'
                     ? 'border-ubi-800 text-ubi-900 dark:border-ubi-400 dark:text-white'
                     : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
-                }`}
+                  }`}
               >
                 <Wifi size={14} />
                 <span>Network & Session Logs ({dossier.disconnect_incidents_count || 0})</span>
@@ -386,11 +379,10 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                   <button
                     key={q.question_id}
                     onClick={() => setSelectedQuestionIndex(idx)}
-                    className={`p-3 rounded-xl border text-left transition flex flex-col gap-1.5 ${
-                      selectedQuestionIndex === idx
+                    className={`p-3 rounded-xl border text-left transition flex flex-col gap-1.5 ${selectedQuestionIndex === idx
                         ? 'bg-ubi-50/80 dark:bg-ubi-950/40 border-ubi-400 dark:border-ubi-700 shadow-xs'
                         : 'bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
@@ -518,11 +510,10 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                                 className={`p-3.5 rounded-xl border flex items-start justify-between gap-3 text-xs transition ${cardStyle}`}
                               >
                                 <div className="flex items-start gap-3 min-w-0">
-                                  <span className={`w-5 h-5 rounded-md flex items-center justify-center font-bold text-xs shrink-0 font-mono ${
-                                    isSelected
+                                  <span className={`w-5 h-5 rounded-md flex items-center justify-center font-bold text-xs shrink-0 font-mono ${isSelected
                                       ? (isCorrect ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white')
                                       : (isCorrect ? 'bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-200' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300')
-                                  }`}>
+                                    }`}>
                                     {optLetter}
                                   </span>
                                   <span className="leading-relaxed font-medium pt-0.5 break-words">
@@ -558,9 +549,9 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                       <div className="flex-1 overflow-hidden">
                         <CodeEditor
                           value={currentQuestion.code}
-                          onChange={() => {}}
+                          onChange={() => { }}
                           language={currentQuestion.language || 'python'}
-                          onLanguageChange={() => {}}
+                          onLanguageChange={() => { }}
                           readOnly={true}
                           allowPaste={true}
                         />
@@ -585,11 +576,10 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setProctoringFilter('all')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${
-                    proctoringFilter === 'all'
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${proctoringFilter === 'all'
                       ? 'bg-ubi-800 text-white border-ubi-800 dark:bg-ubi-600 dark:border-ubi-600'
                       : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
+                    }`}
                 >
                   <Activity size={12} />
                   <span>All Events ({dossier.proctoring_logs.length})</span>
@@ -598,11 +588,10 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setProctoringFilter('camera')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${
-                    proctoringFilter === 'camera'
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${proctoringFilter === 'camera'
                       ? 'bg-amber-600 text-white border-amber-600 dark:bg-amber-600 dark:border-amber-600'
                       : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
+                    }`}
                 >
                   <Camera size={12} />
                   <span>Camera Snapshots ({cameraLogs.length})</span>
@@ -611,11 +600,10 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setProctoringFilter('device')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${
-                    proctoringFilter === 'device'
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${proctoringFilter === 'device'
                       ? 'bg-sky-600 text-white border-sky-600 dark:bg-sky-600 dark:border-sky-600'
                       : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
+                    }`}
                 >
                   <Laptop size={12} />
                   <span>Device & Hardware ({deviceLogs.length})</span>
@@ -662,26 +650,26 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                         const dotColor = isStart
                           ? 'bg-emerald-500 ring-2 ring-emerald-200 dark:ring-emerald-900/60'
                           : isResume
-                          ? 'bg-sky-500 ring-2 ring-sky-200 dark:ring-sky-900/60'
-                          : isSwitch || isNoFace
-                          ? 'bg-rose-600 ring-4 ring-rose-300 dark:ring-rose-900 animate-pulse'
-                          : isMultipleFaces
-                          ? 'bg-amber-500 ring-4 ring-amber-300 dark:ring-amber-900 animate-pulse'
-                          : isSnapshot
-                          ? 'bg-purple-500 ring-2 ring-purple-200 dark:ring-purple-900/60'
-                          : 'bg-rose-500';
+                            ? 'bg-sky-500 ring-2 ring-sky-200 dark:ring-sky-900/60'
+                            : isSwitch || isNoFace
+                              ? 'bg-rose-600 ring-4 ring-rose-300 dark:ring-rose-900 animate-pulse'
+                              : isMultipleFaces
+                                ? 'bg-amber-500 ring-4 ring-amber-300 dark:ring-amber-900 animate-pulse'
+                                : isSnapshot
+                                  ? 'bg-purple-500 ring-2 ring-purple-200 dark:ring-purple-900/60'
+                                  : 'bg-rose-500';
 
                         const badgeStyle = isStart
                           ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
                           : isResume
-                          ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-400 border-sky-200 dark:border-sky-800'
-                          : isSwitch || isNoFace
-                          ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200 border-rose-300 dark:border-rose-700 font-bold'
-                          : isMultipleFaces
-                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-bold'
-                          : isSnapshot
-                          ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-400 border-purple-200 dark:border-purple-800'
-                          : 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border-rose-200 dark:border-rose-800';
+                            ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-400 border-sky-200 dark:border-sky-800'
+                            : isSwitch || isNoFace
+                              ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200 border-rose-300 dark:border-rose-700 font-bold'
+                              : isMultipleFaces
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-bold'
+                                : isSnapshot
+                                  ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-400 border-purple-200 dark:border-purple-800'
+                                  : 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border-rose-200 dark:border-rose-800';
 
                         return (
                           <div key={log.id} className="relative group">
@@ -868,9 +856,8 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
 
                 <div className="p-3 bg-slate-50 dark:bg-slate-950/80 rounded-xl border border-slate-200 dark:border-slate-800">
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">Device Switches</span>
-                  <span className={`mt-1 text-sm font-extrabold font-mono block ${
-                    deviceSwitchesCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'
-                  }`}>
+                  <span className={`mt-1 text-sm font-extrabold font-mono block ${deviceSwitchesCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'
+                    }`}>
                     {deviceSwitchesCount} alert{deviceSwitchesCount === 1 ? '' : 's'}
                   </span>
                 </div>
@@ -906,28 +893,26 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                       return (
                         <div
                           key={log.id}
-                          className={`p-3.5 rounded-xl border transition ${
-                            isSwitch
+                          className={`p-3.5 rounded-xl border transition ${isSwitch
                               ? 'bg-rose-50/60 dark:bg-rose-950/30 border-rose-300 dark:border-rose-800/80 ring-1 ring-rose-400/30'
                               : isSnapshot
-                              ? 'bg-purple-50/40 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800/60'
-                              : isStart
-                              ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60'
-                              : 'bg-slate-50 dark:bg-slate-950/80 border-slate-200 dark:border-slate-800'
-                          }`}
+                                ? 'bg-purple-50/40 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800/60'
+                                : isStart
+                                  ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60'
+                                  : 'bg-slate-50 dark:bg-slate-950/80 border-slate-200 dark:border-slate-800'
+                            }`}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <span
-                                className={`px-2 py-0.5 rounded text-[10px] font-mono border font-bold ${
-                                  isSwitch
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono border font-bold ${isSwitch
                                     ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200 border-rose-300'
                                     : isSnapshot
-                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border-purple-300'
-                                    : isStart
-                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300'
-                                    : 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 border-sky-300'
-                                }`}
+                                      ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border-purple-300'
+                                      : isStart
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300'
+                                        : 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 border-sky-300'
+                                  }`}
                               >
                                 {log.event_type}
                               </span>
@@ -1118,8 +1103,8 @@ export const CandidateDossierModal: React.FC<CandidateDossierModalProps> = ({
                         {dossier.total_score !== null && dossier.total_score !== undefined
                           ? `${dossier.total_score.toFixed(1)}%`
                           : totalMaxWeight > 0
-                          ? `${((totalRawEarned / totalMaxWeight) * 100).toFixed(1)}%`
-                          : '0.0%'}
+                            ? `${((totalRawEarned / totalMaxWeight) * 100).toFixed(1)}%`
+                            : '0.0%'}
                       </td>
                     </tr>
                   </tfoot>

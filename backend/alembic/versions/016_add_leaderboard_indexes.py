@@ -1,7 +1,7 @@
 """add_leaderboard_indexes
 
-Revision ID: 015_leaderboard_indexes
-Revises: 014_verification_photo_url
+Revision ID: 016_leaderboard_indexes
+Revises: 015_target_colleges_to_exams
 Create Date: 2026-09-20 22:30:00.000000
 
 """
@@ -10,8 +10,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "015_leaderboard_indexes"
-down_revision: Union[str, None] = "014_verification_photo_url"
+revision: str = "016_leaderboard_indexes"
+down_revision: Union[str, None] = "015_target_colleges_to_exams"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

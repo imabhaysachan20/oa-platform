@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import CodeMirror from '@uiw/react-codemirror';
+import CodeMirror, { ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { EditorView } from '@codemirror/view';
 import { python } from '@codemirror/lang-python';
 import { cpp } from '@codemirror/lang-cpp';
@@ -115,13 +115,38 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   }, [language, onPasteAttempt, allowPaste]);
 
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const editorRef = useRef<ReactCodeMirrorRef | null>(null);
+  const editorViewRef = useRef<EditorView | null>(null);
+
+  const getEditorView = (): EditorView | null => {
+    return editorRef.current?.view || editorViewRef.current || null;
+  };
 
   const handleConfirmReset = () => {
     setIsResetModalOpen(false);
+    const targetCode =
+      starterCode !== undefined && starterCode !== null
+        ? starterCode
+        : STARTER_CODE[language] || '';
+
+    // Direct dispatch into CodeMirror view for instant, guaranteed visual update
+    const view = getEditorView();
+    if (view) {
+      view.dispatch({
+        changes: {
+          from: 0,
+          to: view.state.doc.length,
+          insert: targetCode,
+        },
+      });
+    }
+
+    // Always propagate to parent state
+    onChange(targetCode);
+
+    // Call onReset callback if provided
     if (onReset) {
       onReset();
-    } else {
-      onChange(starterCode || STARTER_CODE[language] || '');
     }
   };
 
@@ -168,11 +193,15 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       {/* Editor Body */}
       <div className="flex-1 overflow-hidden text-sm font-mono relative bg-slate-50/50 dark:bg-transparent">
         <CodeMirror
+          ref={editorRef}
           value={value}
           height="100%"
           theme={theme === 'dark' ? oneDark : 'light'}
           extensions={extensions}
           onChange={(val) => onChange(val)}
+          onCreateEditor={(view) => {
+            editorViewRef.current = view;
+          }}
           readOnly={readOnly}
           basicSetup={{
             lineNumbers: true,

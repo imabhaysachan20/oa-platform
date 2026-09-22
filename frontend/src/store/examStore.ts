@@ -138,8 +138,10 @@ export const useExamStore = create<ExamState>((set) => ({
       if (!drafts[questionId]) {
         drafts[questionId] = {};
       }
-      if (!drafts[questionId][language]) {
-        drafts[questionId][language] = STARTER_CODE[language] || '';
+      if (drafts[questionId][language] === undefined) {
+        const q = state.questions.find((item) => item.id === questionId);
+        drafts[questionId][language] =
+          q?.starter_code?.[language] || STARTER_CODE[language] || '';
       }
       return {
         selectedLanguage: {

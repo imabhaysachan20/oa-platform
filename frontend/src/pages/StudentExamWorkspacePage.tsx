@@ -652,7 +652,9 @@ export const StudentExamWorkspacePage: React.FC = () => {
   const currentLang = currentQ ? selectedLanguage[currentQ.id] || 'python' : 'python';
   const currentStarter = currentQ?.starter_code?.[currentLang] || STARTER_CODE[currentLang] || '';
   const currentCode = currentQ
-    ? codeDrafts[currentQ.id]?.[currentLang] || currentStarter
+    ? codeDrafts[currentQ.id]?.[currentLang] !== undefined
+      ? codeDrafts[currentQ.id][currentLang]
+      : currentStarter
     : '';
   const currentOutput = currentQ ? runOutputs[currentQ.id] || null : null;
 

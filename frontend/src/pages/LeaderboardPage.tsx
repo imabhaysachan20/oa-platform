@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Pagination } from '../components/ui/Pagination';
 import { CandidateDossierModal } from '../components/CandidateDossierModal';
+import { LeaderboardEntry, LeaderboardResponse } from '../types';
 import {
   Trophy,
   ArrowLeft,
@@ -75,7 +76,7 @@ export const LeaderboardPage: React.FC = () => {
     isLoading,
     isRefetching,
     refetch,
-  } = useQuery({
+  } = useQuery<LeaderboardResponse>({
     queryKey: [
       'adminLeaderboard',
       id,
@@ -203,7 +204,7 @@ export const LeaderboardPage: React.FC = () => {
   };
 
   // Helper: Render Violations Badge
-  const renderViolationsBadge = (row: any) => {
+  const renderViolationsBadge = (row: LeaderboardEntry) => {
     const count = row.total_violation_count;
     if (count === 0) {
       return (
@@ -488,7 +489,7 @@ export const LeaderboardPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800/60 text-xs">
-                {leaderboardData.items.map((row) => (
+                {leaderboardData.items.map((row: LeaderboardEntry) => (
                   <tr
                     key={row.assignment_id}
                     className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition ${

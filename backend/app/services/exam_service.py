@@ -62,6 +62,15 @@ from backend.app.services.s3_service import (
     generate_presigned_upload_url
 )
 
+PROCTORING_INFRACTION_TYPES = {
+    "TAB_SWITCH", "WINDOW_BLUR", "FULLSCREEN_EXIT", "PASTE_ATTEMPT",
+    "COPY_ATTEMPT", "DEVTOOLS_SHORTCUT", "PRINT_SAVE_SHORTCUT",
+    "DEVTOOLS_DOCK_OPENED", "MOUSE_LEAVE", "CONTEXT_MENU",
+    "DEVICE_SWITCH_DETECTED", "NO_FACE", "MULTIPLE_FACES",
+    "NAVIGATION_BLOCKED", "NAVIGATION_BLOCK", "CLIPBOARD_BLOCK",
+    "DEVTOOLS_ATTEMPT", "BLUR", "CLIPBOARD"
+}
+
 
 async def sync_unsubmitted_assignments_for_exam(db: AsyncSession, exam_id: int):
     """
@@ -1949,7 +1958,7 @@ async def get_live_exam_monitoring(
         # Count proctoring flags / infractions (PURE ANTI-CHEAT ONLY, excluding device audit logs)
         flags_stmt = select(func.count(ExamProctoringLog.id)).where(
             ExamProctoringLog.assignment_id == assign.id,
-            ExamProctoringLog.event_type.not_in(["EXAM_START_DEVICE", "EXAM_RESUME_DEVICE"])
+            ExamProctoringLog.event_type.in_(PROCTORING_INFRACTION_TYPES)
         )
         flags_count = (await db.execute(flags_stmt)).scalar() or 0
 
@@ -2068,13 +2077,7 @@ async def get_candidate_dossier(
     log_rows = (await db.execute(stmt_logs)).scalars().all()
 
     # Filter actual cheating/infraction flags (exclude normal informational device audit events)
-    INFRACTION_EVENT_TYPES = {
-        "TAB_SWITCH", "WINDOW_BLUR", "FULLSCREEN_EXIT", "PASTE_ATTEMPT",
-        "COPY_ATTEMPT", "DEVTOOLS_SHORTCUT", "PRINT_SAVE_SHORTCUT",
-        "DEVTOOLS_DOCK_OPENED", "MOUSE_LEAVE", "CONTEXT_MENU",
-        "DEVICE_SWITCH_DETECTED", "NO_FACE", "MULTIPLE_FACES"
-    }
-    infraction_rows = [l for l in log_rows if l.event_type in INFRACTION_EVENT_TYPES]
+    infraction_rows = [l for l in log_rows if l.event_type in PROCTORING_INFRACTION_TYPES]
     total_flags = len(infraction_rows)
 
     flag_counts_by_type = {}
